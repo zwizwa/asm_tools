@@ -1,6 +1,10 @@
 BeagleBone Black
 
 
+LOG:
+- 20140914 get to know BBB boot process + install rcn-ee.net kernel
+
+
 Entry: PRU
 Date: Sun Sep 14 13:27:03 CEST 2014
 
@@ -30,5 +34,471 @@ What is necessary to get a monitor to work?
 - read
 - write
 - execute / reset
+
+
+
+Entry: Step-by-step
+Date: Sun Sep 14 14:23:26 CEST 2014
+
+* Initialize the driver
+
+    modprobe uio_pruss
+
+    check if it's installed:
+    ls -l /sys/class/uio/
+    ls -l /sys/class/uio/uio0/maps/map0/addr
+
+    ( doesn't seem to be )
+
+    #include <prussdrv.h>
+    prussdrv_init();
+
+* looking ad prussdrv.h  (libprussdrv.so)
+
+   The driver essentially acts as a monitor:
+
+     prussdrv_pru_reset()
+     prussdrv_pru_write_memory()
+     prussdrv_exec_code()
+     ...
+
+  Described in [2]:
+  03-AM335x_PRU_Linux_Application_Loader-ug.pdf
+
+[1] https://github.com/beagleboard/am335x_pru_package
+[2] https://github.com/beagleboard/am335x_pru_package/raw/master/Documentation/03-AM335x_PRU_Linux_Application_Loader-ug.pdf
+
+
+Entry: empty /sys/class/uio
+Date: Sun Sep 14 14:46:49 CEST 2014
+
+- /sys/class/uio is empty after modprobe uio_pruss
+
+
+[1] http://github.jfet.org/BBKNotes2.html
+
+
+
+Entry: BBB kernel and SD card
+Date: Sun Sep 14 14:49:12 CEST 2014
+
+So it seems that getting this to work reliably does need tracking of
+more recent kernels.  Probably also figuring out how not to brick the
+device!  So let's do the latter first.
+
+Can always have ROM boot from SDCARD first (MMC0) by pressing S2 switch.
+
+Entry: BBB boot process
+Date: Sun Sep 14 14:49:59 CEST 2014
+
+Assuming this requires a ttl serial on the on-board J1 connector.
+
+1 GND
+2
+3
+4 RX
+5 TX
+6
+
+This is /dev/ttyO0  (ttyO instead of ttyS?  seems arbitrary[5])
+See next entry for boot log.
+
+BBB uses U-Boot[2].  It seems that it first tries to boot from MMC0
+(external), then MMC1 (internal).  But this[2] says otherwise.
+
+Before running U-Boot, the Sitara boots MMC1 (internal) from ROM by
+loading "MLO" file from a 12,16 or 32 bit FAT MBR.
+
+/dev/mmcblk0p1 FAT U-Boot with "MLO" file.
+/dev/mmcblk0p2 linux root
+
+What are these?
+
+/dev/mmcblk0boot0
+/dev/mmcblk0boot1
+
+They are eMMC hardware level partitions.  See[3][4].  Both are empty
+on my BBB.
+
+The simplest way to create an SSD boot card seems to be to clone the
+eMMC.  I don't have a uSSD available.  Maybe it can boot from USB[6]?
+
+This[7] confirms my impression:
+
+  If the SDCard is present, it will attempt to boot from the SDCard
+  FAT partition. If the SDCard isn’t present, it will boot from the
+  eMMC FAT partition
+
+
+
+
+
+[1] http://dave.cheney.net/2013/09/22/two-point-five-ways-to-access-the-serial-console-on-your-beaglebone-black
+[2] http://wiki.beyondlogic.org/index.php/BeagleBoneBlack_Boot_Process
+[3] http://www.micron.com/~/media/Documents/Products/Software%20Article/SWNL_hardware_vs_software_partitions.pdf
+[4] http://www.crashcourse.ca/wiki/index.php/EMMC_on_the_BBB
+[5] http://blog.nixpanic.net/2011/02/serial-ports-with-beagleboard-and-newer.html
+[6] http://www.embeddedhobbyist.com/debian-tips/beaglebone-black/beaglebone-black-usb-boot/
+[7] https://groups.google.com/forum/#!topic/beagleboard/_mOlo6T-70E
+
+
+Entry: Boot log
+Date: Sun Sep 14 15:45:14 CEST 2014
+
+This is the output of a "reboot" using pyla.
+Notice the two U-Boot stages.
+
+[master] tom@zni:~/pyla$ python3 example_uart.py 
+saleae.cpp:default at 4.000 MHz
+saleae.cpp:BeginConnect (waiting for Connect)
+config: <pylacore.uart; proxy of <Swig Object of type 'boost::shared_ptr< uart > *' at 0x7f1cc6020d80> >
+config: baudrate=115200
+config: channel=3
+saleae.cpp:A3E22C8E845D2C7D Connect
+saleae.cpp:A3E22C8E845D2C7D Start at 4.000 MHz
+drop: 81920
+drop: 81920
+drop: 81920
+saleae.cpp:A3E22C8E845D2C7D connect_sink
+Sending SIGTERM to remaining processes...
+Sending SIGKILL to remaining processes...
+Unmounting file systems.
+Unmounted /sys/fs/fuse/connections.
+Unmounted /sys/kernel/security.
+Unmounted /dev/mqueue.
+Unmounted /sys/kernel/debug.
+Disabling swaps.
+Detaching loop devices.
+Detaching DM devices.
+[  471.800647] (NULL device *): gadget not registered.
+[  471.816679] Restarting system.
+
+U-Boot SPL 2014.04-00015-gb4422bd (Apr 22 2014 - 13:24:29)
+reading args
+spl_load_image_fat_os: error reading image args, err - -1
+reading u-boot.img
+reading u-boot.img
+
+
+U-Boot 2014.04-00015-gb4422bd (Apr 22 2014 - 13:24:29)
+
+I2C:   ready
+DRAM:  512 MiB
+NAND:  0 MiB
+MMC:   OMAP SD/MMC: 0, OMAP SD/MMC: 1
+*** Warning - readenv() failed, using default environment
+
+Net:   <ethaddr> not set. Validating first E-fuse MAC
+cpsw, usb_ether
+Hit any key to stop autoboot:  0 
+gpio: pin 53 (gpio 53) value is 1
+Card did not respond to voltage select!
+mmc0(part 0) is current device
+Card did not respond to voltage select!
+gpio: pin 56 (gpio 56) value is 0
+gpio: pin 55 (gpio 55) value is 0
+gpio: pin 54 (gpio 54) value is 0
+mmc1(part 0) is current device
+gpio: pin 54 (gpio 54) value is 1
+SD/MMC found on device 1
+reading uEnv.txt
+1430 bytes read in 5 ms (279.3 KiB/s)
+gpio: pin 55 (gpio 55) value is 1
+Loaded environment from uEnv.txt
+Importing environment from mmc ...
+Checking if uenvcmd is set ...
+gpio: pin 56 (gpio 56) value is 1
+Running uenvcmd ...
+reading zImage
+3717760 bytes read in 207 ms (17.1 MiB/s)
+reading initrd.img
+2870007 bytes read in 161 ms (17 MiB/s)
+reading /dtbs/am335x-boneblack.dtb
+25080 bytes read in 9 ms (2.7 MiB/s)
+Kernel image @ 0x82000000 [ 0x000000 - 0x38ba80 ]
+## Flattened Device Tree blob at 88000000
+   Booting using the fdt blob at 0x88000000
+   Using Device Tree in place at 88000000, end 880091f7
+
+Starting kernel ...
+
+Uncompressing Linux... done, booting the kernel.
+[    0.381330] omap2_mbox_probe: platform not supported
+[    0.548334] tps65217-bl tps65217-bl: no platform data provided
+[    0.612295] bone-capemgr bone_capemgr.9: slot #0: No cape found
+[    0.649400] bone-capemgr bone_capemgr.9: slot #1: No cape found
+[    0.686508] bone-capemgr bone_capemgr.9: slot #2: No cape found
+[    0.723617] bone-capemgr bone_capemgr.9: slot #3: No cape found
+[    0.739777] bone-capemgr bone_capemgr.9: slot #6: BB-BONELT-HDMIN conflict P8.45 (#5:BB-BONELT-HDMI)
+[    0.749383] bone-capemgr bone_capemgr.9: slot #6: Failed verification
+[    0.756140] bone-capemgr bone_capemgr.9: loader: failed to load slot-6 BB-BONELT-HDMIN:00A0 (prio 2)
+[    0.772667] omap_hsmmc mmc.5: of_parse_phandle_with_args of 'reset' failed
+[    0.835220] pinctrl-single 44e10800.pinmux: pin 44e10854 already requested by 44e10800.pinmux; cannot claim for gpio-leds.8
+[    0.846932] pinctrl-single 44e10800.pinmux: pin-21 (gpio-leds.8) status -22
+[    0.854211] pinctrl-single 44e10800.pinmux: could not request pin 21 on device pinctrl-single
+Loading, please wait...
+Scanning for Btrfs filesystems
+systemd-fsck[201]: rootfs: clean, 104688/230144 files, 746829/919296 blocks
+
+Debian GNU/Linux 7 beaglebone ttyO0
+
+default username:password is [debian:temppwd]
+
+Support/FAQ: http://elinux.org/Beagleboard:BeagleBoneBlack_Debian
+
+The IP Address for usb0 is: 192.168.7.2
+beaglebone login: [   11.036817] libphy: PHY 4a101000.mdio:01 not found
+[   11.042014] net eth0: phy 4a101000.mdio:01 not found on slave 1
+
+
+Entry: Boot from uSD  (and installing new kernel)
+Date: Sun Sep 14 16:59:57 CEST 2014
+
+Using the card from my phone which incidentally has a FAT and a linux
+partition.
+
+root@beaglebone:/media/A787-15E1# cp /boot/uboot/MLO .
+root@beaglebone:/media/A787-15E1# cp /boot/uboot/u-boot.img .
+root@beaglebone:/media/A787-15E1# cp /boot/uboot/initrd.img .
+root@beaglebone:/media/A787-15E1# cp /boot/uboot/zImage .
+root@beaglebone:/media/A787-15E1# cp /boot/uboot/uEnv.txt .
+
+(EDIT: also copy SOC.sh - file with info stored as shell variables)
+
+It seems to boot from device 0 (uSD) instead of 1 (eMMC).
+
+mmc0 is current device
+gpio: pin 54 (gpio 54) value is 1
+SD/MMC found on device 0
+reading uEnv.txt
+1430 bytes read in 6 ms (232.4 KiB/s)
+
+Now need to edit the U-Boot config.
+
+My uSD isn't large enough to copy the whole system, but it should be
+enough to safely boot with a different kernel.
+
+Current: 3.8.13-bone47
+
+It seems the kernel and the modules are not installed from a debian
+package.  Is there a standard way?  See [1].  Here [2] is a collection
+of kernels.
+
+Currently the latest one is:
+wget https://rcn-ee.net/deb/wheezy-armhf/v3.17.0-rc4-bone2/install-me.sh
+
+Looks like a couple of things need to be taken care of:
+- dts
+- firmware
+
+So maybe best to let the script do this, but not yet overwrite the
+files in the /boot/uboot FAT partition.
+
+Simplest way seems to be to unmount /boot/uboot before running the
+script.
+
+
+This is what I did:
+
+cd /boot
+umount uboot
+wget https://rcn-ee.net/deb/wheezy-armhf/v3.17.0-rc4-bone2/install-me.sh
+mv install-me.sh install-me-v3.17.0-rc4-bone2.sh 
+chmod +x install-me-v3.17.0-rc4-bone2.sh
+./install-me-v3.17.0-rc4-bone2.sh
+mv uboot uboot-3.17.0-rc4-bone2
+mkdir uboot
+tar zcf uboot-3.17.0-rc4-bone2.tar.gz uboot-3.17.0-rc4-bone2
+mount uboot
+
+Then copy the contents of uboot-3.17.0-rc4-bone2 to the root of the SD card FAT partition:
+
+cp -av uboot-3.17.0-rc4-bone2/* /media/A787-15E1/
+
+
+root@beaglebone:~# cat /proc/version 
+Linux version 3.17.0-rc4-bone2 (root@a5-imx6q-wandboard-2gb) (gcc version 4.6.3 (Debian 4.6.3-14) ) #1 Mon Sep 8 21:15:00 UTC 2014
+
+
+[1] http://datko.net/2014/03/21/bbb_upgrade_3_13/
+[2] https://rcn-ee.net/deb/wheezy-armhf/
+
+
+Entry: kernel install-me.sh console log
+Date: Sun Sep 14 17:36:47 CEST 2014
+
+root@beaglebone:/boot# ./install-me-v3.17.0-rc4-bone2.sh
+./install-me-v3.17.0-rc4-bone2.sh
+wget: [1.13.4]
+wget: [this version of wget does not support sni, using --no-check-certificate]
+wget: [http://en.wikipedia.org/wiki/Server_Name_Indication]
+p11-kit: invalid config filename, will be ignored in the future: /etc/pkcs11/modules/gnome-keyring-module
+2014-09-14 15:37:19 URL:https://rcn-ee.net/deb/wheezy-armhf/v3.17.0-rc4-bone2/ [1496/1496] -> "/tmp/deb/index.html" [1]
+--2014-09-14 15:37:19--  https://rcn-ee.net/deb/wheezy-armhf/v3.17.0-rc4-bone2/linux-image-3.17.0-rc4-bone2_1wheezy_armhf.deb
+p11-kit: invalid config filename, will be ignored in the future: /etc/pkcs11/modules/gnome-keyring-module
+Resolving rcn-ee.net (rcn-ee.net)... 69.163.222.213
+Connecting to rcn-ee.net (rcn-ee.net)|69.163.222.213|:443... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 24221472 (23M) [application/x-debian-package]
+Saving to: `/tmp/deb/linux-image-3.17.0-rc4-bone2_1wheezy_armhf.deb'
+
+100%[======================================>] 24,221,472  2.78M/s   in 14s     
+
+2014-09-14 15:37:37 (1.61 MB/s) - `/tmp/deb/linux-image-3.17.0-rc4-bone2_1wheezy_armhf.deb' saved [24221472/24221472]
+
+--2014-09-14 15:37:38--  https://rcn-ee.net/deb/wheezy-armhf/v3.17.0-rc4-bone2/3.17.0-rc4-bone2-dtbs.tar.gz
+p11-kit: invalid config filename, will be ignored in the future: /etc/pkcs11/modules/gnome-keyring-module
+Resolving rcn-ee.net (rcn-ee.net)... 69.163.222.213
+Connecting to rcn-ee.net (rcn-ee.net)|69.163.222.213|:443... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 593278 (579K) [application/x-tar]
+Saving to: `/tmp/deb/3.17.0-rc4-bone2-dtbs.tar.gz'
+
+100%[======================================>] 593,278      371K/s   in 1.6s    
+
+2014-09-14 15:37:43 (371 KB/s) - `/tmp/deb/3.17.0-rc4-bone2-dtbs.tar.gz' saved [593278/593278]
+
+Installing [3.17.0-rc4-bone2-dtbs.tar.gz]
+Installing [linux-image-3.17.0-rc4-bone2_1wheezy_armhf.deb]
+Selecting previously unselected package linux-image-3.17.0-rc4-bone2.
+(Reading database ... 82268 files and directories currently installed.)
+Unpacking linux-image-3.17.0-rc4-bone2 (from .../linux-image-3.17.0-rc4-bone2_1wheezy_armhf.deb) ...
+Setting up linux-image-3.17.0-rc4-bone2 (1wheezy) ...
+update-initramfs: Generating /boot/initrd.img-3.17.0-rc4-bone2
+--2014-09-14 15:38:22--  https://rcn-ee.net/deb/wheezy-armhf/v3.17.0-rc4-bone2/thirdparty
+p11-kit: invalid config filename, will be ignored in the future: /etc/pkcs11/modules/gnome-keyring-module
+Resolving rcn-ee.net (rcn-ee.net)... 69.163.222.213
+Connecting to rcn-ee.net (rcn-ee.net)|69.163.222.213|:443... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 158 [text/plain]
+Saving to: `/tmp/deb/thirdparty'
+
+100%[======================================>] 158         --.-K/s   in 0s      
+
+2014-09-14 15:38:26 (438 KB/s) - `/tmp/deb/thirdparty' saved [158/158]
+
+--2014-09-14 15:38:26--  https://rcn-ee.net/deb/wheezy-armhf/v3.17.0-rc4-bone2/RT2870STA.dat
+p11-kit: invalid config filename, will be ignored in the future: /etc/pkcs11/modules/gnome-keyring-module
+Resolving rcn-ee.net (rcn-ee.net)... 69.163.222.213
+Connecting to rcn-ee.net (rcn-ee.net)|69.163.222.213|:443... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 1222 (1.2K) [text/plain]
+Saving to: `/etc/Wireless/RT2870STA/RT2870STA.dat'
+
+100%[======================================>] 1,222       --.-K/s   in 0s      
+
+2014-09-14 15:38:29 (3.05 MB/s) - `/etc/Wireless/RT2870STA/RT2870STA.dat' saved [1222/1222]
+
+-----------------------------
+-----------------------------
+`/boot/vmlinuz-3.17.0-rc4-bone2' -> `/boot/uboot/zImage'
+`/boot/initrd.img-3.17.0-rc4-bone2' -> `/boot/uboot/initrd.img'
+-----------------------------
+Script done: please reboot
+root@beaglebone:/boot# 
+
+
+Entry: Files on boot partition
+Date: Sun Sep 14 17:39:43 CEST 2014
+
+root@beaglebone:/boot/uboot# find .
+.
+./dtbs
+./dtbs/am335x-bone-lcd7-01-00a2.dtb
+./dtbs/omap3-gta04.dtb
+./dtbs/am335x-bone-crypto-00a0.dtb
+./dtbs/omap3-overo-storm-summit.dtb
+./dtbs/omap3-overo-palo43.dtb
+./dtbs/omap3430-sdp.dtb
+./dtbs/am335x-boneblack-lcd4-01-00a1.dtb
+./dtbs/am3517_mt_ventoux.dtb
+./dtbs/omap3-overo-storm-gallop43.dtb
+./dtbs/am335x-bone.dtb
+./dtbs/am335x-bone-lcd4-01-00a1.dtb
+./dtbs/omap3-overo-summit.dtb
+./dtbs/omap3-overo-storm-chestnut43.dtb
+./dtbs/omap3-zoom3.dtb
+./dtbs/am335x-bone-audio.dtb
+./dtbs/omap3-igep0030.dtb
+./dtbs/am335x-boneblack-audio.dtb
+./dtbs/am335x-bone-ttyO2.dtb
+./dtbs/am3517-craneboard.dtb
+./dtbs/omap3-lilly-dbb056.dtb
+./dtbs/am335x-boneblack-ttyO5.dtb
+./dtbs/omap3-evm.dtb
+./dtbs/omap3-cm-t3730.dtb
+./dtbs/am335x-boneblack-4dcape-70t.dtb
+./dtbs/am335x-base0033.dtb
+./dtbs/omap3-sbc-t3517.dtb
+./dtbs/omap3-n900.dtb
+./dtbs/am335x-pepper.dtb
+./dtbs/am335x-boneblack-4dcape-70.dtb
+./dtbs/am335x-evmsk.dtb
+./dtbs/omap3-evm-37xx.dtb
+./dtbs/omap3-beagle-xm.dtb
+./dtbs/am335x-boneblack-4dcape-43t.dtb
+./dtbs/am335x-boneblack-ttyO2.dtb
+./dtbs/am335x-boneblack-4dcape-43.dtb
+./dtbs/omap3-beagle-xm-ab.dtb
+./dtbs/am335x-boneblack-ttyO4.dtb
+./dtbs/am335x-bone-lcd7-01-00a3.dtb
+./dtbs/omap3-cm-t3530.dtb
+./dtbs/omap3-devkit8000.dtb
+./dtbs/omap3-overo-storm-alto35.dtb
+./dtbs/am335x-bone-ttyO1.dtb
+./dtbs/omap3-overo-alto35.dtb
+./dtbs/am3517-evm.dtb
+./dtbs/omap3-overo-tobi.dtb
+./dtbs/omap3-overo-storm-palo43.dtb
+./dtbs/am335x-bone-ttyO4.dtb
+./dtbs/am335x-boneblack-rtc-01-00a1.dtb
+./dtbs/omap3-beagle.dtb
+./dtbs/omap3-cm-t3517.dtb
+./dtbs/omap3-ldp.dtb
+./dtbs/omap3-n950.dtb
+./dtbs/am335x-boneblack-lcd7-01-00a3.dtb
+./dtbs/omap3-overo-chestnut43.dtb
+./dtbs/omap3-sbc-t3530.dtb
+./dtbs/am335x-boneblack-crypto-00a0.dtb
+./dtbs/am335x-bone-cape-bone-argus.dtb
+./dtbs/am335x-boneblack.dtb
+./dtbs/am335x-bone-rtc-01-00a1.dtb
+./dtbs/am335x-boneblack-cape-bone-argus.dtb
+./dtbs/am335x-boneblack-ttyO1.dtb
+./dtbs/am335x-boneblack-lcd3-01-00a2.dtb
+./dtbs/omap3-n9.dtb
+./dtbs/omap3-overo-gallop43.dtb
+./dtbs/am335x-bone-lcd3-01-00a2.dtb
+./dtbs/am335x-nano.dtb
+./dtbs/am335x-bone-ttyO5.dtb
+./dtbs/am335x-boneblack-lcd7-01-00a2.dtb
+./dtbs/omap3-sbc-t3730.dtb
+./dtbs/am335x-evm.dtb
+./dtbs/omap3-overo-storm-tobi.dtb
+./dtbs/omap3-igep0020.dtb
+./zImage
+./initrd.img
+
+
+Entry: dtbs
+Date: Sun Sep 14 17:45:53 CEST 2014
+
+So what is this dtbs business?
+
+
+Entry: pruss on 3.17.0-rc4-bone2
+Date: Sun Sep 14 17:51:28 CEST 2014
+
+Hmm... no uio_pruss module..
+Guess that means to build a new kernel or at least the driver.
+
+[1] https://rcn-ee.net/deb/wheezy-armhf/v3.17.0-rc4-bone2/defconfig
+
+
+Entry: TODO
+Date: Sun Sep 14 17:58:46 CEST 2014
+
+- build pruss module for 3.17.0-rc4-bone2
+- figure out what support is needed (firmware, device tree, initrd)
 
 
