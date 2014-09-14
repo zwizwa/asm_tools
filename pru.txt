@@ -1,0 +1,34 @@
+BeagleBone Black
+
+
+Entry: PRU
+Date: Sun Sep 14 13:27:03 CEST 2014
+
+Goal for today: get a hello world program to run on the PRU.
+
+Approach 1: use Code Composer Studio on Windows[1].  Is there a way to
+run this on Linux?  Yes:  ccs_setup_linux32.bin  Hmm... doesn't do anything.
+
+Hmm..
+
+
+[1] http://www.element14.com/community/community/designcenter/single-board-computers/next-gen_beaglebone/blog/2014/04/30/bbb--pru-c-compiler
+
+
+Entry: Start with the logic analyzer?
+Date: Sun Sep 14 13:43:33 CEST 2014
+
+Might be best to get started using an existing application.
+
+
+Entry: Monitor
+Date: Sun Sep 14 14:12:04 CEST 2014
+
+( Might be best to do this in Staapl. )
+
+What is necessary to get a monitor to work?
+- read
+- write
+- execute / reset
+
+
