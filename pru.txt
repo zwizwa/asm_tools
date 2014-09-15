@@ -19,10 +19,18 @@ Hmm..
 [1] http://www.element14.com/community/community/designcenter/single-board-computers/next-gen_beaglebone/blog/2014/04/30/bbb--pru-c-compiler
 
 
-Entry: Start with the logic analyzer?
+Entry: BeagleLogic : Start with the logic analyzer?
 Date: Sun Sep 14 13:43:33 CEST 2014
 
 Might be best to get started using an existing application.
+
+EDIT: Watching the Youtube presentation, it's clear that this is
+something to follow!  The most interesting part is of course the high
+bandwidth path from code running on the PRU to the BBB or out into a
+PC connected through USB or Ethernet.
+
+[1] http://beaglelogic.net
+
 
 
 Entry: Monitor
@@ -485,6 +493,10 @@ Date: Sun Sep 14 17:45:53 CEST 2014
 
 So what is this dtbs business?
 
+dtb = device tree binary
+dts = device tree source
+
+[1] http://elinux.org/Device_Tree
 
 Entry: pruss on 3.17.0-rc4-bone2
 Date: Sun Sep 14 17:51:28 CEST 2014
@@ -498,7 +510,322 @@ Guess that means to build a new kernel or at least the driver.
 Entry: TODO
 Date: Sun Sep 14 17:58:46 CEST 2014
 
-- build pruss module for 3.17.0-rc4-bone2
+- build pruss module for 3.17.0-rc4-bone2 from linux git[1] and config[2]
 - figure out what support is needed (firmware, device tree, initrd)
 
 
+
+Entry: Building linux kernel
+Date: Sun Sep 14 20:25:46 CEST 2014
+
+git clone https://github.com/torvalds/linux.git
+cd linux
+git checkout 3.17.0-rc4
+git checkout -b bbb
+
+wget https://rcn-ee.net/deb/wheezy-armhf/v3.17.0-rc4-bone2/defconfig
+mv defconfig arch/arm/configs/beaglebone_defconfig
+
+make ARCH=arm CROSS_COMPILE=arm-linux-gnueabi- beaglebone_defconfig
+make ARCH=arm CROSS_COMPILE=arm-linux-gnueabi- menuconfig
+make ARCH=arm CROSS_COMPILE=arm-linux-gnueabi- LOADADDR=0x82000000 -j4 uImage dtbs
+make ARCH=arm CROSS_COMPILE=arm-linux-gnueabi- modules
+
+(don't use arm-linux-gnueabihf- ?)
+
+I took LOADADDR from uEnv.txt
+
+us the "uImage-dtb.am335x-boneblack" step necessary?
+
+Some other notes [4].
+
+So with all these different approach I'm left with the questions:
+- does a vanilla kernel work or is a different branch necessary?
+- does the dtb need to be compiled in?
+- what about firmware?
+
+This[5] is the official one.
+Looks like it got switched to 3.14 recently[6]:
+
+    So the "-bone" is close to mainline (small # of patches). The
+    "-ti" we are a basing on a ti branch: (git.ti.com, patchset
+    >20Mb).. Plus the 'debian' linux-image-armmp will also work once
+    we switch to jessie..  (you can even install ubuntu's linux-image
+    *.deb) the bootloader will find it.
+
+Maybe stick to 3.8?  My bbb is running 3.8.13-bone47 which in git has
+moved to 3.8.13-bone64
+
+This is compiled here[7].
+That one does have CONFIG_UIO_PRUSS=m in config[8].
+Let's try.
+
+[1] http://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git
+[2] https://rcn-ee.net/deb/wheezy-armhf/v3.17.0-rc4-bone2/defconfig
+[3] http://elinux.org/Building_BBB_Kernel
+[4] http://eewiki.net/display/linuxonarm/BeagleBone+Black
+[5] https://github.com/beagleboard/linux
+[6] http://permalink.gmane.org/gmane.comp.hardware.beagleboard.user/72908
+[7] https://rcn-ee.net/deb/wheezy-armhf/v3.8.13-bone64/
+[8] https://rcn-ee.net/deb/wheezy-armhf/v3.8.13-bone64/defconfig
+
+
+Entry: 3.8.13-bone64 /sys/class/uio
+Date: Sun Sep 14 22:00:27 CEST 2014
+
+still empty..
+
+[1] http://github.jfet.org/BBKNotes2.html
+
+
+Entry: UIO, remoteproc, rpmsg
+Date: Sun Sep 14 22:01:17 CEST 2014
+
+[1] https://www.kernel.org/doc/htmldocs/uio-howto/about.html
+[2] https://www.kernel.org/doc/Documentation/remoteproc.txt
+[3] https://www.kernel.org/doc/Documentation/rpmsg.txt
+
+
+Entry: UIO or remoteproc/rpmsg
+Date: Sun Sep 14 22:15:26 CEST 2014
+
+Maybe best to wait a bit until there is clarity!!  [1]
+
+Posted by TimHarron on Aug 08 2014 10:00 AM 
+
+1. It is said that for next SDK based on kernel 3.14 LTS, the
+   beaglebone community code and TI code will be pretty much aligned
+   for PRU. I want to know in which direction either in UIO driver
+   side or RemoteProc driver side, PRU software will be aligned ?
+
+A: We are going the remoteproc/rpmsg route. I believe the plan is to
+   eventually phase out the uio driver completely, but to my knowledge
+   that process has not yet begun in earnest.
+
+
+[1] http://e2e.ti.com/support/arm/sitara_arm/f/791/t/360568.aspx
+
+
+Entry: Conclusion
+Date: Sun Sep 14 22:17:49 CEST 2014
+
+Not ready yet.
+Go back to 3.2 to get a working uio_pruss driver?
+
+asked on irc:
+
+
+22:23 < doelie> hi. which kernel is recommended for playing with the PRUs? i tried 3.8.13-bone47 (original) and 
+                3.8.13-bone64 but both seem to give empty /sys/class/uio after modprobe uio_pruss
+22:23 < doelie> this is a bbb from digikey, 2 months ago, running debian
+22:33 < LuaStoned> doelie what do you want to do with /sys/class/uio?
+22:35 < doelie> LuaStoned: access the PRUs using libprussdrv.so  -- is there another way?
+22:36 -!- konradoo77 [~debian@151.248.42.178] has joined #beagle
+22:37 < LuaStoned> well, I just started reading about the PRU two days ago.. this getting started guide helped me quite 
+                   a bit: 
+http://www.element14.com/community/community/designcenter/single-board-computers/next-gen_beaglebone//blog/2013/05/22/bbb--working-with-the-pru-icssprussv2
+22:42 < doelie> thanks i'll have a look at the device tree stuff.
+22:43 < doelie> what i read though is that kernel 3.8 has problems with the driver:
+22:43 < doelie> https://groups.google.com/forum/?fromgroups=#!topic/beagleboard/gqCjxh4uZi0
+22:43 < doelie> ppl mention using 3.2
+22:44 < doelie> i wonder if a more recent one is better?
+22:44 < LuaStoned> I tested various example programs and they seem to run fine?
+22:44 < doelie> what kernel are you running?
+22:44 < LuaStoned> btw I'm on 3.8.13-xenomai bone53
+22:44 < doelie> did you compile from source?
+22:44 < LuaStoned> Yeah
+22:45 < doelie> ok i should probably try that.. where did you get the xenomai tree?
+22:45 < LuaStoned> https://github.com/cdsteinkuehler/linux-dev
+22:46 < LuaStoned> I'm pretty sure the default / most recent kernel works just fine if you follow the steps mentioned
+
+Entry: TODO: PRU
+Date: Sun Sep 14 22:51:05 CEST 2014
+
+Follow instructions here [1]
+
+[1] http://www.element14.com/community/community/designcenter/single-board-computers/next-gen_beaglebone//blog/2013/05/22/bbb--working-with-the-pru-icssprussv2
+
+
+Entry: Xenomai
+Date: Sun Sep 14 23:03:21 CEST 2014
+
+https://github.com/cdsteinkuehler/linux-dev
+http://brunosmartins.info/xenomai-on-the-beaglebone-black-in-14-easy-steps/
+
+
+
+Entry: HDMI cape
+Date: Mon Sep 15 15:03:01 CEST 2014
+
+Need to disable HDMI cape[1].
+
+Before:
+
+root@beaglebone:~# cat /sys/devices/bone_capemgr.9/slots 
+ 0: 54:PF--- 
+ 1: 55:PF--- 
+ 2: 56:PF--- 
+ 3: 57:PF--- 
+ 4: ff:P-O-L Bone-LT-eMMC-2G,00A0,Texas Instrument,BB-BONE-EMMC-2G
+ 5: ff:P-O-L Bone-Black-HDMI,00A0,Texas Instrument,BB-BONELT-HDMI
+
+
+After disabling HDMI in uEnv.txt :
+
+##Disable HDMI
+optargs=capemgr.disable_partno=BB-BONELT-HDMI,BB-BONELT-HDMIN
+
+
+root@beaglebone:/sys/devices/bone_capemgr.9# cat slots
+ 0: 54:PF--- 
+ 1: 55:PF--- 
+ 2: 56:PF--- 
+ 3: 57:PF--- 
+ 4: ff:P-O-L Bone-LT-eMMC-2G,00A0,Texas Instrument,BB-BONE-EMMC-2G
+ 5: ff:P-O-- Bone-Black-HDMI,00A0,Texas Instrument,BB-BONELT-HDMI
+ 6: ff:P-O-- Bone-Black-HDMIN,00A0,Texas Instrument,BB-BONELT-HDMIN
+
+root@beaglebone:/sys/devices/bone_capemgr.9# echo BB-BEAGLELOGIC > /sys/devices/bone_capemgr.*/slots
+
+[   98.424752] bone-capemgr bone_capemgr.9: part_number 'BB-BEAGLELOGIC', version 'N/A'
+[   98.424930] bone-capemgr bone_capemgr.9: slot #7: generic override
+[   98.424974] bone-capemgr bone_capemgr.9: bone: Using override eeprom data at slot 7
+[   98.425023] bone-capemgr bone_capemgr.9: slot #7: 'Override Board Name,00A0,Override Manuf,BB-BEAGLELOGIC'
+[   98.427402] bone-capemgr bone_capemgr.9: slot #7: Requesting part number/version based 'BB-BEAGLELOGIC-00A0.dtbo
+[   98.427464] bone-capemgr bone_capemgr.9: slot #7: Requesting firmware 'BB-BEAGLELOGIC-00A0.dtbo' for board-name 'Override Board Name', version '00A0'
+[   98.427521] bone-capemgr bone_capemgr.9: slot #7: dtbo 'BB-BEAGLELOGIC-00A0.dtbo' loaded; converting to live tree
+[   98.428513] bone-capemgr bone_capemgr.9: slot #7: #2 overlays
+[   98.449458] omap_hwmod: pruss: failed to hardreset
+[   98.455454] pru-rproc 4a300000.prurproc: #8 PRU interrupts registered
+[   98.455631] pru-rproc 4a300000.prurproc: sysevent-to-channel-map [17] <- 1
+[   98.455665] pru-rproc 4a300000.prurproc: sysevent-to-channel-map [18] <- 0
+[   98.455698] pru-rproc 4a300000.prurproc: sysevent-to-channel-map [19] <- 2
+[   98.455731] pru-rproc 4a300000.prurproc: sysevent-to-channel-map [20] <- 3
+[   98.455763] pru-rproc 4a300000.prurproc: sysevent-to-channel-map [21] <- 0
+[   98.455795] pru-rproc 4a300000.prurproc: sysevent-to-channel-map [22] <- 1
+[   98.455827] pru-rproc 4a300000.prurproc: sysevent-to-channel-map [24] <- 4
+[   98.455859] pru-rproc 4a300000.prurproc: sysevent-to-channel-map [25] <- 5
+[   98.455891] pru-rproc 4a300000.prurproc: sysevent-to-channel-map [26] <- 6
+[   98.455923] pru-rproc 4a300000.prurproc: sysevent-to-channel-map [27] <- 7
+[   98.455970] pru-rproc 4a300000.prurproc: channel-to-host-interrupt-map [0] <- 0
+[   98.456003] pru-rproc 4a300000.prurproc: channel-to-host-interrupt-map [1] <- 1
+[   98.456035] pru-rproc 4a300000.prurproc: channel-to-host-interrupt-map [2] <- 2
+[   98.456066] pru-rproc 4a300000.prurproc: channel-to-host-interrupt-map [3] <- 3
+[   98.456098] pru-rproc 4a300000.prurproc: channel-to-host-interrupt-map [4] <- 0
+[   98.456129] pru-rproc 4a300000.prurproc: channel-to-host-interrupt-map [5] <- 6
+[   98.456161] pru-rproc 4a300000.prurproc: channel-to-host-interrupt-map [6] <- 1
+[   98.456192] pru-rproc 4a300000.prurproc: channel-to-host-interrupt-map [7] <- 7
+[   98.456263] pru-rproc 4a300000.prurproc: found #2 PRUs
+[   98.462551] pru-rproc 4a300000.prurproc: No resource-table node node; slave PRU
+[   98.462674] pru-rproc 4a300000.prurproc: No resource-table node node; slave PRU
+[   98.463097]  remoteproc0: 4a300000.prurproc is available
+[   98.463128]  remoteproc0: Note: remoteproc is still under development and considered experimental.
+[   98.463154]  remoteproc0: THE BINARY FORMAT IS NOT YET FINALIZED, and backward compatibility isn't yet guaranteed.
+[   98.468006]  remoteproc0: powering up 4a300000.prurproc
+[   98.525236]  remoteproc0: failed to load beaglelogic-pru1
+[   98.531471]  remoteproc0: request_firmware failed: -2
+[   98.537110] pru-rproc 4a300000.prurproc: rproc_boot failed
+[   98.542994]  remoteproc1: releasing 4a300000.prurproc
+[   98.548496] pru-rproc: probe of 4a300000.prurproc failed with error -2
+[   98.549831] bone-capemgr bone_capemgr.9: slot #7: Applied #2 overlays.
+
+root@beaglebone:/sys/devices/bone_capemgr.9# modprobe beaglelogic
+
+[  213.551129] BeagleLogic loaded and initializing
+[  213.551224] beaglelogic: probe of pru-beaglelogic.12 failed with error -1
+
+
+Missing firmware:
+-rw-r--r--  1 root   root   6679 Jun 22 18:38 beaglelogic-firmware.tar.gz
+-rw-r--r--  1 debian admin  2566 Jun 22 18:36 BB-BEAGLELOGIC-00A0.dtbo
+-rw-rw-r--  1 debian admin 11160 Jun 21 16:14 beaglelogic-pru0
+-rw-rw-r--  1 debian admin 12648 Jun 21 16:14 beaglelogic-pru1
+
+Get it here[2]
+
+now it loads:
+
+root@beaglebone:~# echo BB-BEAGLELOGIC > /sys/devices/bone_capemgr.*/slots
+
+[   35.172109] bone-capemgr bone_capemgr.9: part_number 'BB-BEAGLELOGIC', version 'N/A'
+[   35.172287] bone-capemgr bone_capemgr.9: slot #7: generic override
+[   35.172333] bone-capemgr bone_capemgr.9: bone: Using override eeprom data at slot 7
+[   35.172383] bone-capemgr bone_capemgr.9: slot #7: 'Override Board Name,00A0,Override Manuf,BB-BEAGLELOGIC'
+[   35.172634] bone-capemgr bone_capemgr.9: slot #7: Requesting part number/version based 'BB-BEAGLELOGIC-00A0.dtbo
+[   35.172681] bone-capemgr bone_capemgr.9: slot #7: Requesting firmware 'BB-BEAGLELOGIC-00A0.dtbo' for board-name 'Override Board Name', version '00A0'
+[   35.172736] bone-capemgr bone_capemgr.9: slot #7: dtbo 'BB-BEAGLELOGIC-00A0.dtbo' loaded; converting to live tree
+[   35.176193] bone-capemgr bone_capemgr.9: slot #7: #2 overlays
+[   35.196956] omap_hwmod: pruss: failed to hardreset
+[   35.203512] pru-rproc 4a300000.prurproc: #8 PRU interrupts registered
+[   35.203690] pru-rproc 4a300000.prurproc: sysevent-to-channel-map [17] <- 1
+[   35.203727] pru-rproc 4a300000.prurproc: sysevent-to-channel-map [18] <- 0
+[   35.203760] pru-rproc 4a300000.prurproc: sysevent-to-channel-map [19] <- 2
+[   35.203793] pru-rproc 4a300000.prurproc: sysevent-to-channel-map [20] <- 3
+[   35.203824] pru-rproc 4a300000.prurproc: sysevent-to-channel-map [21] <- 0
+[   35.203856] pru-rproc 4a300000.prurproc: sysevent-to-channel-map [22] <- 1
+[   35.203888] pru-rproc 4a300000.prurproc: sysevent-to-channel-map [24] <- 4
+[   35.203920] pru-rproc 4a300000.prurproc: sysevent-to-channel-map [25] <- 5
+[   35.203952] pru-rproc 4a300000.prurproc: sysevent-to-channel-map [26] <- 6
+[   35.203983] pru-rproc 4a300000.prurproc: sysevent-to-channel-map [27] <- 7
+[   35.204029] pru-rproc 4a300000.prurproc: channel-to-host-interrupt-map [0] <- 0
+[   35.204062] pru-rproc 4a300000.prurproc: channel-to-host-interrupt-map [1] <- 1
+[   35.204094] pru-rproc 4a300000.prurproc: channel-to-host-interrupt-map [2] <- 2
+[   35.204125] pru-rproc 4a300000.prurproc: channel-to-host-interrupt-map [3] <- 3
+[   35.204156] pru-rproc 4a300000.prurproc: channel-to-host-interrupt-map [4] <- 0
+[   35.204188] pru-rproc 4a300000.prurproc: channel-to-host-interrupt-map [5] <- 6
+[   35.204220] pru-rproc 4a300000.prurproc: channel-to-host-interrupt-map [6] <- 1
+[   35.204251] pru-rproc 4a300000.prurproc: channel-to-host-interrupt-map [7] <- 7
+[   35.204323] pru-rproc 4a300000.prurproc: found #2 PRUs
+[   35.208620] pru-rproc 4a300000.prurproc: No resource-table node node; slave PRU
+[   35.208738] pru-rproc 4a300000.prurproc: No resource-table node node; slave PRU
+[   35.209173]  remoteproc0: 4a300000.prurproc is available
+[   35.209203]  remoteproc0: Note: remoteproc is still under development and considered experimental.
+[   35.209229]  remoteproc0: THE BINARY FORMAT IS NOT YET FINALIZED, and backward compatibility isn't yet guaranteed.
+[   35.216359]  remoteproc0: powering up 4a300000.prurproc
+[   35.216746]  remoteproc0: Booting fw image beaglelogic-pru1, size 12648
+[   35.216810]  remoteproc0: PRU#1 bootcnt=0
+[   35.216838]  remoteproc0: PRU#1 entry-point 0x764
+[   35.216864]  remoteproc0: remote processor 4a300000.prurproc is now up
+[   35.217084]  remoteproc1: 4a300000.prurproc is available
+[   35.217112]  remoteproc1: Note: remoteproc is still under development and considered experimental.
+[   35.217137]  remoteproc1: THE BINARY FORMAT IS NOT YET FINALIZED, and backward compatibility isn't yet guaranteed.
+[   35.220244]  remoteproc1: powering up 4a300000.prurproc
+[   35.220566]  remoteproc1: Booting fw image beaglelogic-pru0, size 11160
+[   35.220626]  remoteproc1: PRU#0 bootcnt=0
+[   35.220654]  remoteproc1: PRU#0 entry-point 0x310
+[   35.220679]  remoteproc1: remote processor 4a300000.prurproc is now up
+[   35.220804] pru-rproc 4a300000.prurproc: Loaded OK
+[   35.225423] bone-capemgr bone_capemgr.9: slot #7: Applied #2 overlays.
+
+
+root@beaglebone:~# modprobe beaglelogic
+
+[   97.089144] BeagleLogic loaded and initializing
+[   97.091533] misc beaglelogic: BeagleLogic PRU Firmware version: 0.2
+[   97.091624] misc beaglelogic: Device supports max 128 vector transfers
+[   97.091700] misc beaglelogic: Valid PRU capture context structure found at offset 0000
+[   97.091763] misc beaglelogic: Default sample rate=50000000 Hz, sampleunit=1, triggerflags=0. Buffer in units of 4194304 bytes each
+
+[1] https://github.com/abhishek-kakkar/BeagleLogic/wiki/Getting-Started
+[2] https://github.com/abhishek-kakkar/BeagleLogic/wiki/Build-BeagleLogic
+
+
+Entry: capemgr
+Date: Mon Sep 15 15:26:30 CEST 2014
+
+What does it mean to manage a cape?
+It's about dynamic device tree management.
+
+source:    linux/firmware/capes
+installed: /lib/firmware
+
+[1] http://elinux.org/Capemgr
+
+
+Entry: Playing with kernel
+Date: Mon Sep 15 15:28:42 CEST 2014
+
+First set up debricking strategy.
+
+Might be best to setup network boot, though doesn't add much value if
+booting from SD.
