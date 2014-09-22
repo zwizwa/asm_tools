@@ -652,6 +652,8 @@ Date: Sun Sep 14 23:03:21 CEST 2014
 https://github.com/cdsteinkuehler/linux-dev
 http://brunosmartins.info/xenomai-on-the-beaglebone-black-in-14-easy-steps/
 
+rtnet:
+http://comments.gmane.org/gmane.linux.real-time.rtnet.user/4077
 
 
 Entry: HDMI cape
@@ -829,3 +831,6 @@ First set up debricking strategy.
 
 Might be best to setup network boot, though doesn't add much value if
 booting from SD.
+
+
+
