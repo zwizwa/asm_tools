@@ -885,4 +885,43 @@ mov' :: r -> r -> m ()
 This should provide enough of a skeleton.
 
 
-    
+
+
+Entry: Jumps vs. unrolling
+Date: Mon May 21 12:50:55 EDT 2018
+
+Two different semantics are needed: one that produces "assembly code",
+where jumps are represented symbolically, and one that executes the jumps.
+
+Executing the jumps is the same as inlining the code.
+
+This means a label "is" a program.
+
+
+main = do
+  loop
+
+loop = do
+  mov r10 r11
+  mov r11 r10
+  jmp loop
+
+  
+As an assembly program, this should generate the label.  As trace
+interpretation, this should generate the infintate trace.
+
+It needs to be done like this:
+
+main = do
+  loop <- label
+  mov r10 r11
+  mov r11 r10
+  jmp loop
+
+
+
+
+The base monad for trace is a state-continuation monad.  I've done
+that before, and then it was also more instructive to implement it
+explicitly.
+
