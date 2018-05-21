@@ -986,6 +986,27 @@ It seems that an explicit interpreter is the way to go.
 
 This means the state continuation monad is not necessary.
 
-So let's go the free monad route.
+
+EDIT: Still trying the SC route.
+
+To make this two-pass, the first pass should produce a map of basic
+blocks.
+
+Then this can be executed by jumping into a particular basic block.
+
+
+
+
+Entry: Needs a rethink....
+Date: Mon May 21 17:25:27 EDT 2018
+
+To be able to "emulate" the coroutines, it is necessary to perform
+run-time jumps.  I don't see a simpler way than using an explicit
+interpreter where memory is numerically indexed.
+
+
+
+
+
 
 

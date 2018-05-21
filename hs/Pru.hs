@@ -12,13 +12,14 @@ import qualified Data.Map as Map
 
 class Monad m => Pru m where
   label :: m Label
+  block :: Label -> m () -> m ()
   jmp :: Label -> m ()
   op2 :: Opc2 -> Op -> Op -> m ()
   
 
 data Op = Reg String      deriving Show
 data Opc2 = Mov           deriving Show
-data Label = Label String deriving Show
+data Label = Label Int    deriving Show
 data Ins = Op2 Opc2 Op Op
          | Jmp Label      deriving Show
 
@@ -37,16 +38,21 @@ o2 f a b = do
 
 -- Debug: print to console.
 instance Pru IO where
-  label = do
-    let l = Label "label"
-    putStrLn $ show l
-    return l
-
-  op2 opc a b = do
-    putStrLn $ show $ Op2 opc a b
-  jmp l =
-    putStrLn $ show $ Jmp l
+  label     = return $ Label "FIXME_unique" 
+  block l b = print l >> b
+  op2 o a b = print $ Op2 o a b
+  jmp l     = print $ Jmp l
   
+
+
+-- Block / Trace is a two-pass compiler.
+-- Pass1: construct a dictionary of basic blocks
+-- Pass2: execute a trace
+
+-- A basic block
+
+-- Pass1 is constructed through a 
+
 
 -- Trace: show register trace
 
@@ -54,39 +60,57 @@ instance Pru IO where
 -- evaluated to a concrete trace.  Simplify traces to differentially
 -- encoded register updates.
 
+-- 
+
 type Trace   = [(Delay,RegName,RegVal)]
 type Delay   = Int
 type RegName = String
 type RegVal  = Int
 
-type TraceM = SC State Trace  -- monad
-type State = (Regs, Trace)    -- threaded state
-type Regs = Map RegName RegVal
+type TraceM = SC State Blocks   -- monad
+type State  = (Label, Labels)   -- threaded state
+type Regs   = Map RegName RegVal
+type Labels = (Label, Block)
+type Label  = Int
 
 trace :: TraceM () -> Trace
 trace (SC sc) = sc s0 k where
   k (_, trace) () = trace  -- top level continuation
-  s0 = (regs0, [])         -- initial state
+  s0 = (regs0, [], [])     -- initial state
   regs0 = empty
 
 instance Pru TraceM where
 
-  label = do
-    return $ Label "label"
+  -- I find it more instructive to just spell out each monadic
+  -- operation as an explicit state continuation passing call: k s r
+  
+  -- Allocate a number, but do not evaluate the dictionary, so we can
+  -- use knot-tying.
+  label = SC sc where
+    sc (regs, (n, labelMap), trace) k = k s' r where
+      s' = (regs, (n+1, labelMap) trace)
+      r = Label n
 
-  -- I find it more instructive to just spell this out completely,
-  -- writing the primitives in CPS as explicit state-continuation
-  -- operations.
+  -- Operations are deferred.
   
   op2 Mov (Reg dst) (Reg src) = SC sc where
-    sc (regs, trace) k = k s' () where
+    sc (regs, labels, trace) k = k s' () where
       val    = regs ! src
       regs'  = Map.insert dst val regs
       delay  = 1
       trace' = (delay, dst, val):trace  -- strict?
-      s'     = (regs', trace')
+      s'     = (regs', labels, trace')
+
+  block _ b = b
       
-  jmp _ =
+  jmp (Label l) = SC sc where
+    sc s k = k s () where
+      (_, (_, labelMap, _), _) = s
+      k' = 
+
+      
+      s' = (regs, labels', trace)
+    
     return ()
 
 
