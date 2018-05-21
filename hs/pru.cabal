@@ -4,13 +4,13 @@ cabal-version: >= 1.18
 build-type: Simple
 license: BSD3
 
-executable pru
-    build-depends: base
-    main-is: pru-trace.hs
-    default-language: Haskell2010
+-- executable pru
+--     build-depends: base
+--     main-is: pru-trace.hs
+--     default-language: Haskell2010
 
 Test-Suite test-pru
-    build-depends: base
+    build-depends: base, containers
     type:       exitcode-stdio-1.0
     main-is:    test-pru.hs
     build-depends: base

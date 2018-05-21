@@ -8,14 +8,11 @@ main = do
   putStrLn "As Trace:"
   putStrLn $ show $ trace test
 
+
 test = do  
-  loop <- label
+  loop <- label "test"
   mov r10 r11
   mov r11 r10
   jmp loop
 
-  
-  
-  
 
-  

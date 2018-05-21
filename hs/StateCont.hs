@@ -1,4 +1,4 @@
-module StateCont(SC(..)) where
+module StateCont(SC(..),Comp,Cont) where
 
 import Control.Applicative
 import Control.Monad

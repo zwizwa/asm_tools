@@ -925,3 +925,67 @@ The base monad for trace is a state-continuation monad.  I've done
 that before, and then it was also more instructive to implement it
 explicitly.
 
+
+Edit: labels need circular references, so some global state needs to
+be used to "patch" this.
+
+The test here is to write a mutually recursive loop structure.
+
+The idea is likely to separate declaration of labels from definition.
+
+
+test_loop = do
+  label1 <- label
+  label2 <- label
+
+  def label1 $ do
+    mov r10 r11
+    jmp label2
+
+  def label2 $ do
+    mov r11 r10
+    jmp label1
+
+
+It doesn't seem possible to use the Haskell language-level "letrec" to
+define graph data structures that have label-decoupling.
+
+This seems to point at something important: it is not possible to
+resolve this in a single pass.
+
+Or is it?
+
+No.  The monad structure enforces strict order!
+
+So two pases are needeed:
+
+- construct flat program
+- interpret, using label table
+
+
+It seems to be either/or:
+
+- do not use explicit labels, and only be able to create infinite structures
+- use labels and use a two-pass approach
+
+
+a third way: create a "recursion stop" where unrolling stops if a
+label is found a second time, where it is replaced by a jump.
+
+This would allow code lie
+
+loop = do  
+  label "loop"
+  mov r10 r11
+  mov r11 r10
+  loop
+
+Anyways... getting off track.
+
+It seems that an explicit interpreter is the way to go.
+
+This means the state continuation monad is not necessary.
+
+So let's go the free monad route.
+
+
