@@ -1,0 +1,16 @@
+name: pru
+version: 1.0.0
+cabal-version: >= 1.18
+build-type: Simple
+license: BSD3
+
+executable pru
+    build-depends: base
+    main-is: pru.hs
+    default-language: Haskell2010
+
+Test-Suite test-pru
+    build-depends: base
+    type:       exitcode-stdio-1.0
+    main-is:    test-pru.hs
+    build-depends: base
