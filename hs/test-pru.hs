@@ -1,6 +1,8 @@
+import Pru
 
 main = do
-  putStrLn "test-pru.hs"
+  mov r10 r11
+
     
   
   

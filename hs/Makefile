@@ -33,6 +33,7 @@ cabal-test: default.nix
 	$(NIX_SHELL) --run "cabal test --log=/dev/stdout"
 
 
+test: cabal-test
 
 
 

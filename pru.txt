@@ -834,3 +834,55 @@ booting from SD.
 
 
 
+
+
+Entry: See other pru.txt
+Date: Mon May 21 12:13:06 EDT 2018
+
+Filter out work notes.
+
+
+
+Entry: Monadic assembly language
+Date: Mon May 21 12:13:13 EDT 2018
+
+What I want:
+
+- convert assembly program to trace, to allow timing validation
+- have something that looks like assembly as the "user interface"
+
+This is what it should look like:
+
+test :: m ()
+test = do
+  mov r10 r11
+
+Assembly instructions do not return a value, so the type is just the
+monad in which it is evaluated.  Essentially, a variant of a writer
+monad.
+
+Arguments do return a value, which is the reference to be passed to
+the implementation of mov.
+
+r10 :: m r
+
+Where r is to be determined, representing some kind of argument.  This
+leads to the type
+
+mov :: m r -> m r -> m ()
+
+To translate this to r -> r -> m(), it a default evaluation order is
+assumed:
+
+mov a b = do
+    ra <- a
+    rb <- b
+    mov' ra rb
+
+where
+mov' :: r -> r -> m ()
+
+This should provide enough of a skeleton.
+
+
+    
