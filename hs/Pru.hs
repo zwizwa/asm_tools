@@ -2,26 +2,30 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Pru where
-import StateCont
-import Data.Map (Map, (!), empty)
+import Data.Map.Strict (Map, (!), empty, insert, fromList)
 import qualified Data.Map as Map
+import Control.Monad.State
+import Control.Monad.Writer
+
+
 
 
 
 class Monad m => Pru m where
   label :: m Label
-  block :: Label -> m () -> m ()
+  block :: Label -> m ()
   jmp :: Label -> m ()
   op2 :: Opc2 -> Op -> Op -> m ()
-  
 
 data Op = Reg String      deriving Show
 data Opc2 = Mov           deriving Show
-data Label = Label Int    deriving Show
 data Ins = Op2 Opc2 Op Op
-         | Jmp Label      deriving Show
+         | Jmp Label      
+         | Label Label    deriving Show
+type Label = Int
 
 r10 = Reg "R10"
 r11 = Reg "R11"
@@ -38,83 +42,76 @@ o2 f a b = do
 
 -- Debug: print to console.
 instance Pru IO where
-  label     = return $ Label "FIXME_unique" 
-  block l b = print l >> b
+  label     = return $ 0
+  block l   = print l
   op2 o a b = print $ Op2 o a b
   jmp l     = print $ Jmp l
   
 
+-- Compiler for emulator.  Some design constraints and simplifications:
+--
+-- This needs a fairly low-level emulation to be able to perform jumps
+-- based on register values.
 
--- Block / Trace is a two-pass compiler.
--- Pass1: construct a dictionary of basic blocks
--- Pass2: execute a trace
+-- The only post-procesing required is label patching, so this is a
+-- 2-pass algorithm.  To allow sparse representation, store values in
+-- an Int-indexed map.
 
--- A basic block
+-- This is a combination of a writer monad and a state monad.  Time to
+-- start using monad stacks.
 
--- Pass1 is constructed through a 
+type Pass1 = WriterT [PIns] (State (LabelNb, Addr, Labels))
+type LabelNb = Int
+type Addr = Int
+type Labels = Map LabelNb Addr
 
 
--- Trace: show register trace
+labelNb = get >>= \(n,_,_) -> return n :: Pass1 LabelNb
+addr    = get >>= \(_,a,_) -> return a :: Pass1 Addr
 
--- Central idea is to use a state-continuation monad that can be
--- evaluated to a concrete trace.  Simplify traces to differentially
--- encoded register updates.
+modifyLabelNb f = modify $ \(n,a,l) -> (f n, a, l)
+modifyAddr    f = modify $ \(n,a,l) -> (n, f a, l)
+modifyLabels  f = modify $ \(n,a,l) -> (n, a, f l)
 
--- 
 
-type Trace   = [(Delay,RegName,RegVal)]
-type Delay   = Int
-type RegName = String
-type RegVal  = Int
+-- Patchable instruction
+type PIns = Either Ins (LabelNb, Addr -> Ins)
 
-type TraceM = SC State Blocks   -- monad
-type State  = (Label, Labels)   -- threaded state
-type Regs   = Map RegName RegVal
-type Labels = (Label, Block)
-type Label  = Int
+compile1 :: Pass1 () -> (Labels, [PIns])
+compile1 m = (labels, pins) where
+  (((), w), s) = runState (runWriterT m) (0, 0, empty)
+  pins = w
+  (_, _, labels) = s
 
-trace :: TraceM () -> Trace
-trace (SC sc) = sc s0 k where
-  k (_, trace) () = trace  -- top level continuation
-  s0 = (regs0, [], [])     -- initial state
-  regs0 = empty
+compile m = ins where
+  (labels, pins) = compile1 m
+  ins = map resolve pins
+  resolve (Left ins) = ins
+  resolve (Right (label, ins')) = ins' $ labels ! label
 
-instance Pru TraceM where
 
-  -- I find it more instructive to just spell out each monadic
-  -- operation as an explicit state continuation passing call: k s r
-  
-  -- Allocate a number, but do not evaluate the dictionary, so we can
-  -- use knot-tying.
-  label = SC sc where
-    sc (regs, (n, labelMap), trace) k = k s' r where
-      s' = (regs, (n+1, labelMap) trace)
-      r = Label n
+asm :: [PIns] -> Pass1 ()
+asm lst = do
+  modifyAddr (+ 4)
+  tell lst
 
-  -- Operations are deferred.
-  
-  op2 Mov (Reg dst) (Reg src) = SC sc where
-    sc (regs, labels, trace) k = k s' () where
-      val    = regs ! src
-      regs'  = Map.insert dst val regs
-      delay  = 1
-      trace' = (delay, dst, val):trace  -- strict?
-      s'     = (regs', labels, trace')
+instance Pru Pass1 where
 
-  block _ b = b
-      
-  jmp (Label l) = SC sc where
-    sc s k = k s () where
-      (_, (_, labelMap, _), _) = s
-      k' = 
-
-      
-      s' = (regs, labels', trace)
+  label = do
+    n <- labelNb
+    modifyLabelNb (+ 1)
+    return n
     
-    return ()
-
+  block l = do
+    a <- addr
+    modifyLabels $ \ls -> insert l a ls
+    
+  jmp l = do
+    asm $ [Right $ (l, \addr -> Jmp addr)]
+    
+  op2 o a b = do
+    asm $ [Left $ Op2 o a b]
+    
 
   
-  
-
   
