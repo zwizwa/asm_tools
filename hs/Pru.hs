@@ -128,5 +128,3 @@ trace prog = next where
     ins = code ! pc
     s' = ins s
 
-machineInit :: MachineState
-machineInit = fromList [(PC,0)]

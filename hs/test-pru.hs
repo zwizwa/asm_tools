@@ -10,6 +10,11 @@ main = do
   
   print $ take 3 $ trace test machineInit
   
+machineInit :: Pru.MachineState
+machineInit = Map.fromList [
+  (Pru.PC,0),
+  (Pru.StateR 10,1),
+  (Pru.StateR 11,2)]
   
 
 
