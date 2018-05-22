@@ -1,6 +1,8 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
 
 import Pru
+import PruIO
+import PruEmu
 import Data.Map.Strict as Map
 
 main = do
@@ -8,13 +10,20 @@ main = do
   test
   putStrLn "As Emulator:"
   
-  print $ take 3 $ trace test machineInit
+  print $ take 3 $ test_emu
+
+test_emu :: [(Int,Int)]
+test_emu = Prelude.map select trace where
+  trace = stateTrace machineInit (test :: EmuProg)
+  select ms =
+    (ms ! PCounter,
+     ms ! StateR 10)
   
-machineInit :: Pru.MachineState
+machineInit :: MachineState
 machineInit = Map.fromList [
-  (Pru.PC,0),
-  (Pru.StateR 10,1),
-  (Pru.StateR 11,2)]
+  (PCounter,0),
+  (StateR 10,1),
+  (StateR 11,2)]
   
 
 

@@ -1015,3 +1015,5 @@ targets properly encoded.
 I don't really need instructions though.  An indexable list of state
 transformers is enough.
 
+EDIT: So an instruction is a state transformer, and a state is a
+Data.Map of registers + PC.
