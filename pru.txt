@@ -1006,7 +1006,12 @@ interpreter where memory is numerically indexed.
 
 
 
+Entry: 2-pass
+Date: Mon May 21 21:35:46 EDT 2018
 
+So I now have a 2-pass that produces a list of instructions with jump
+targets properly encoded.
 
-
+I don't really need instructions though.  An indexable list of state
+transformers is enough.
 

@@ -11,24 +11,24 @@ import Control.Monad.State
 import Control.Monad.Writer
 
 
-
-
-
 class Monad m => Pru m where
   label :: m Label
   block :: Label -> m ()
   jmp :: Label -> m ()
   op2 :: Opc2 -> Op -> Op -> m ()
 
-data Op = Reg String      deriving Show
+data Op = OpR R           deriving (Show, Eq, Ord)
 data Opc2 = Mov           deriving Show
 data Ins = Op2 Opc2 Op Op
          | Jmp Label      
          | Label Label    deriving Show
 type Label = Int
 
-r10 = Reg "R10"
-r11 = Reg "R11"
+type R = Int
+
+
+r10 = OpR 10
+r11 = OpR 11
 
 mov :: Pru m => Op -> Op -> m ()
 mov = op2 Mov
@@ -48,54 +48,58 @@ instance Pru IO where
   jmp l     = print $ Jmp l
   
 
--- Compiler for emulator.  Some design constraints and simplifications:
+-- Compile to emulator.
 --
 -- This needs a fairly low-level emulation to be able to perform jumps
 -- based on register values.
 
--- The only post-procesing required is label patching, so this is a
--- 2-pass algorithm.  To allow sparse representation, store values in
--- an Int-indexed map.
+-- Due to label patching, compilation is a 2-pass algorithm.
+compile :: Emu () -> Map Addr MachineTrans
+compile = pass2 . pass1
 
--- This is a combination of a writer monad and a state monad.  Time to
--- start using monad stacks.
+-- First pass uses a stack of a writer monad and a state monad.
+pass1 :: Emu () -> (Labels, [Patchable])
+pass1 m = (labels, pins) where
+  (((), w), s) = runState (runWriterT m) (0, 0, empty)
+  pins = w
+  (_, _, labels) = s
 
-type Pass1 = WriterT [PIns] (State (LabelNb, Addr, Labels))
+-- Second pass patches all unresolved addresses.
+pass2 (labels, pins) = code where
+  ins = map resolve pins
+  resolve (Left ins) = ins
+  resolve (Right (label, ins')) = ins' $ labels ! label
+  code = fromList $ zip [0,4..] ins 
+
+
+type Emu = WriterT [Patchable] (State (LabelNb, Addr, Labels))
 type LabelNb = Int
 type Addr = Int
 type Labels = Map LabelNb Addr
 
+-- Patchable instruction
+type Patchable = Either MachineTrans (LabelNb, Addr -> MachineTrans)
+type MachineTrans = MachineState -> MachineState
 
-labelNb = get >>= \(n,_,_) -> return n :: Pass1 LabelNb
-addr    = get >>= \(_,a,_) -> return a :: Pass1 Addr
+labelNb = get >>= \(n,_,_) -> return n :: Emu LabelNb
+addr    = get >>= \(_,a,_) -> return a :: Emu Addr
 
 modifyLabelNb f = modify $ \(n,a,l) -> (f n, a, l)
 modifyAddr    f = modify $ \(n,a,l) -> (n, f a, l)
 modifyLabels  f = modify $ \(n,a,l) -> (n, a, f l)
 
-
--- Patchable instruction
-type PIns = Either Ins (LabelNb, Addr -> Ins)
-
-compile1 :: Pass1 () -> (Labels, [PIns])
-compile1 m = (labels, pins) where
-  (((), w), s) = runState (runWriterT m) (0, 0, empty)
-  pins = w
-  (_, _, labels) = s
-
-compile m = ins where
-  (labels, pins) = compile1 m
-  ins = map resolve pins
-  resolve (Left ins) = ins
-  resolve (Right (label, ins')) = ins' $ labels ! label
-
-
-asm :: [PIns] -> Pass1 ()
+asm :: [Patchable] -> Emu ()
 asm lst = do
   modifyAddr (+ 4)
   tell lst
 
-instance Pru Pass1 where
+-- Third pass is the evaluation, which starts from a run-time state.
+-- Seems easiest to just use a Map with some well-defined keys.
+
+data MachineVar = StateR R | PC deriving (Eq,Ord,Show)
+type MachineState = Map MachineVar Int
+
+instance Pru Emu where
 
   label = do
     n <- labelNb
@@ -107,11 +111,22 @@ instance Pru Pass1 where
     modifyLabels $ \ls -> insert l a ls
     
   jmp l = do
-    asm $ [Right $ (l, \addr -> Jmp addr)]
+    asm $ [Right $ (l, \addr -> insert PC addr)]
     
-  op2 o a b = do
-    asm $ [Left $ Op2 o a b]
-    
+  op2 Mov (OpR a) (OpR b) = asm [Left trans] where
+    trans s = s' where
+      v = s ! StateR b
+      s' = insert (StateR a) v s
 
-  
-  
+
+-- Get PC, find instruction, evaluate state transition, repeat.
+trace :: Emu () -> MachineState -> [MachineState]
+trace prog = next where
+  code = compile prog
+  next s = (s' : next s') where
+    pc = s ! PC
+    ins = code ! pc
+    s' = ins s
+
+machineInit :: MachineState
+machineInit = fromList [(PC,0)]

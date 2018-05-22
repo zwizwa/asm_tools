@@ -1,13 +1,16 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
 
 import Pru
+import Data.Map.Strict as Map
 
 main = do
   putStrLn "As IO:"
   test
-  putStrLn "As Pass1:"
-  putStrLn $ show $ compile test
-
+  putStrLn "As Emulator:"
+  
+  print $ take 3 $ trace test machineInit
+  
+  
 
 
 -- Let's make a more concrete test.  I really want 100% control over
