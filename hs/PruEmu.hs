@@ -7,7 +7,7 @@
 module PruEmu(compile,stateTrace,Emu,EmuProg,MachineState(..),MachineVar(..)) where
 
 import Pru
-import Data.Map.Strict (Map, (!), empty, insert, fromList, adjust)
+import Data.Map.Strict (Map, (!), lookup, empty, insert, fromList, adjust)
 import qualified Data.Map as Map
 import Control.Monad.State
 import Control.Monad.Writer
@@ -22,15 +22,15 @@ import Data.Bits
 -- an abstract code representation as an addressable map of machine
 -- state transformations.  Code is an intermediate representation.
 -- We're mostly interested in what we can do with it (see stateTrace).
-type Code = Map Addr MachineTrans
+type EmuCode = Map Addr MachineTrans
 
-compile :: EmuProg -> Code
+compile :: EmuProg -> EmuCode
 compile = pass2 . pass1
 
 -- No tagging needed for implementation.
 type EmuProg = Emu ()
 type Emu = WriterT [Patchable] (State (LabelNb, Addr, Labels)) -- see Pru instance
-type Patchable = Either MachineTrans (LabelNb, Addr -> MachineTrans)
+type Patchable = (LabelNb -> Addr) -> MachineTrans
 type LabelNb = Int
 type Addr = Int
 type Labels = Map LabelNb Addr
@@ -46,8 +46,7 @@ pass1 m = (labels, patchable) where
 pass2 (labels, patchable) = code where
   code = fromList $ zip [0,4..] ins 
   ins = map patch patchable
-  patch (Left ins) = ins
-  patch (Right (label, addr2ins)) = addr2ins $ labels ! label
+  patch ins = ins (labels !)
 
 
 -- Compilation state access
@@ -57,18 +56,15 @@ appLabelNb f (n,a,l) = (f n, a, l)
 appAddr    f (n,a,l) = (n, f a, l)
 appLabels  f (n,a,l) = (n, a, f l)
 
--- Generic primitive compiler
-comp :: [Patchable] -> EmuProg
-comp ins = do
-  modify $ appAddr (+ (4 * length ins))
-  tell ins
-
 -- Compile a patchable instruction
-toPatch open = comp [ Right open ]
+comp :: [Patchable] -> EmuProg
+comp inss = do
+  modify $ appAddr (+ (4 * length inss))
+  tell inss
 
--- Compile a 1-tick instruction
-noPatch closed = comp [ Left closed ]
-
+-- Compile a single instruction
+comp' :: MachineTrans -> EmuProg
+comp' ins  = comp [\_ -> ins]
   
 
 -- Machine instructions are represented as state->state transformers.
@@ -79,6 +75,7 @@ data MachineVar
   = File Int  -- register file
   | CFlag     -- carry flag
   | PCounter  -- program counter
+  | Time      -- instruction counter
   deriving (Eq,Ord,Show)
 
 -- State transformers are wrapped in a State monad for ease of
@@ -91,7 +88,13 @@ storem :: MachineVar -> Int -> MachineTrans
 storem var val = modify $ insert var val
 
 loadm :: MachineVar -> Machine Int
-loadm var = get >>= return . (! var)
+loadm var = do
+  maybe <- gets $ (Map.lookup var)
+  return $ checkVar var maybe
+
+checkVar var (Just val) = val
+checkVar var Nothing = error $ "Uninitialized MachineVar: " ++ show var
+
 
 -- Registers are special: they have word, byte subaccess.
 load :: R -> Machine Int
@@ -135,7 +138,13 @@ instance Pru Emu where
     modify $ appLabels $ \ls -> insert l a ls
 
   -- Label use needs patching
-  jmp l = toPatch $ (l, \a -> storem PCounter a)
+  jmp l = comp [\a -> storem PCounter (a l)]
+  insro JAL (R r) (Im l) = comp  [ \a -> jalop r (a l) ]
+  insro JAL (R r) o      = comp' $ op o >>= jalop r
+
+        
+  -- FIXME: immediates can all be addresses, so maybe make all
+  -- instructions patchable?
 
   -- Generic instructions
   insrr MOV ra rb = movop ra (Reg rb)
@@ -143,11 +152,11 @@ instance Pru Emu where
   insrro ADD = intop2 (+)
   insrro CLR = intop2 clrbit
   insrro SET = intop2 setbit
-  insiri XOUT _ _ _ = noPatch next -- FIXME
+  insiri XOUT _ _ _ = comp' next -- FIXME
 
   -- Implemented as spin
-  ins HALT = noPatch $ return ()
-  ins NOP  = noPatch next
+  ins HALT = comp' $ return ()
+  ins NOP  = comp' next
 
   comment _ = return ()
 
@@ -158,7 +167,7 @@ next =  modify $ adjust (+ 4) PCounter
 -- Generic 2-operand Integer operations operations, truncated to 32
 -- bit results.
 intop2 :: (Int -> Int -> Int) -> R -> R -> O -> Emu ()
-intop2 f ra rb c = noPatch $ do
+intop2 f ra rb c = comp' $ do
   b' <- op $ Reg rb
   c' <- op c
   store ra $ b' + c'
@@ -167,10 +176,15 @@ intop2 f ra rb c = noPatch $ do
 -- Generic move.  On PRU this is split into two instructions: MOV and
 -- LDI, instead of one instruction that can take multiple operand
 -- types.
-movop ra b = noPatch $ do
+movop ra b = comp' $ do
   v <- op b
   store ra v
   next
+
+jalop r nextpc = do
+    pc <- loadm PCounter
+    storem (File r) (pc + 4)
+    storem PCounter nextpc
 
 
 -- Generic operand dereference.
@@ -190,11 +204,18 @@ op (Reg r)   = load r
 
 -- Note: it is assumed all instructions take exactly one cycle.
 
-stateTrace :: MachineState -> EmuProg -> [MachineState]
-stateTrace s0 prog = (s0 : next s0) where
-  code = compile prog
-  next s = (s' : next s') where
-    pc = s ! PCounter
-    ins = code ! pc
-    s' = execState ins s
+stateTrace ::
+  MachineState ->                    -- Initial state
+  (MachineState -> MachineState) ->  -- External IO effects
+  EmuCode ->
+  [MachineState]
+stateTrace s0 io code = s0 : evalState stateSeq s0 where
+  stateSeq = sequence $ cycle [tick]
+  tick = do
+    modify io                   -- Apply external influence
+    pc <- gets (! PCounter)     -- Program counter from state
+    code ! pc                   -- Run code at PC
+    modify $ adjust (+ 1) Time 
+    get                         -- return state for trace
 
+  

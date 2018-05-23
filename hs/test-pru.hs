@@ -32,121 +32,49 @@
 import Pru
 import PruGen
 import PruEmu
+import BeagleLogic
+
 import Data.List
 import Data.Map.Strict as Map
 
 main = do
   putStrLn "PruGen:" >> (print $ asm test1)
-  putStrLn "PruEmu:" >> (print $ take 7 $ test_emu)
+  putStrLn "PruEmu:" >> (print $ take 200 $ test_emu)
 
-test_emu :: [(Int,Int)]
 test_emu = Prelude.map select trace where
-  trace = stateTrace machineInit (test1 :: EmuProg)
-  select ms =
-    (ms ! PCounter,
-     ms ! (File 10))
+  trace = stateTrace machineInit test_io (compile test1)
+  select ms = ms ! PCounter
+
+test_io s =
+  Map.insert (File 31) (s ! Time) s
+  
   
 machineInit :: MachineState
 machineInit = Map.fromList [
   (PCounter, 0),
+  (Time, 0),
   (File 10, 1),
   (File 11, 2)]
-  
 
 
 test1 :: forall m. Pru m => m ()
 test1 = do
+  
   -- Symbolic label names are avoided in the embedding Haskell code.
   -- Pro: identifiers behave better than strings
   -- Con: generated code will have non-descript labels
   -- To alleviate, comments can be inserted in assembly.
 
-  test_preroll
+  initRegs
+  
+  comment "bl_weave sample"
+  bl_weave (sample :: [m ()])
   comment "End"
     
+
   
-
--- The test case is a weaver for the PRU1 data acquisition loop used
--- in the BeagleLogic.  It consists of two statically interwoven tasks:
-
--- a) Sample + I/O control
--- b) Transport + loop control
-
--- The skeleton is the same as in the BeagleLogic, but parameterized
--- to be able to play with it a bit.
-
--- Essentially, these two loops need to be aligned by creating a
--- preroll of the first loop.
-
--- As an example, recreate the BeagleLogic 100MHz loop.
-
-test_preroll :: forall m. Pru m => m L
-test_preroll = do
-  comment "test_preroll"
-  again <- declare  -- label used inside loop
-  let pre   = 2
-      pad   = nops :: Int -> [m()]
-      loop1 = sample :: [m()]
-      loop2 = transfer (length loop1) again :: [m()]
-
-  entry <- label' -- main entry label
-  preroll_zip pre pad again loop1 loop2
-  return entry
-
-preroll_zip nb_pre pad again loop1 loop2 = code where
-  (pre1, rest) = splitAt nb_pre loop1
-  loop1' = rest ++ pre1
-
-  pre  = merge [pre1, pad (length pre1)]
-  loop = merge [loop1', loop2]
-
-  code =
-    sequence_ pre >>
-    label again >>
-    sequence_ loop
-  
-         
--- interleaving merge
-merge = concat . transpose
-  
-  
+initRegs = sequence_ $ [ ldi (R r) 0 | r <- [0..31] ]
 
 
-
-
-
--- a) I/O control preparing for sample.  This can be a coroutine call.
-
--- b) sample from R31.b0 to R21 - R29
-sample :: Pru m => [m ()]
-sample = do
-  r <- [21..28]
-  b <- [0,1,2,3]
-  return $ mov (Rb r b) (Rb 31 0)
-  
--- c) loop maintenance + moving data from R21 - R29 across the broadside bus
-transfer :: forall m. Pru m => Int -> L -> [m ()]
-transfer nb_samples again = fill ++ tail where
-  fill =
-    nops $ nb_samples - length tail
-    :: [m ()]
-  tail =
-    [xout 10 (R 21) 32,   -- Move data across the broadside
-     ldi  (R 31) 36,      -- Interrupt PRU0
-     jmp again]
-    :: [m ()]
-              
-nops :: forall m. Pru m => Int -> [m ()]
-nops nb = replicate nb nop
-
-
-
-
--- FIXME: handcode the aquisition loop
-
-
- 
-    
-  
   
   

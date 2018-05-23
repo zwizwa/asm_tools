@@ -1052,6 +1052,9 @@ Suppose there are only two loops:
 - sample + I/O control loop
 - write out + nop pad
 
+EDIT: Got it.  This is a door opener.
+
+
 
 
 

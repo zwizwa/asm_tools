@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Pru where
 
@@ -13,6 +14,7 @@ class Monad m => Pru m where
   jmp     :: L -> m ()
   insrr   :: OpcRR  -> R -> R      -> m ()
   insri   :: OpcRI  -> R -> I      -> m ()
+  insro   :: OpcRO  -> R -> O      -> m ()
   insrro  :: OpcRRO -> R -> R -> O -> m ()
   insiri  :: OpcIRI -> I -> R -> I -> m ()
   ins     :: Opc -> m ()
@@ -27,6 +29,7 @@ type L = Int
 -- Instructions
 data OpcRR  = MOV  deriving Show
 data OpcRI  = LDI  deriving Show
+data OpcRO  = JAL  deriving Show
 data OpcIRI = XOUT deriving Show
 data Opc    = NOP | HALT deriving Show
 data OpcRRO = ADD | CLR | SET deriving Show
@@ -55,6 +58,9 @@ halt = ins HALT
 
 nop :: Pru m => m ()
 nop = ins NOP
+
+jal :: Pru m => R -> O -> m ()
+jal = insro JAL
   
 
 
@@ -66,12 +72,6 @@ label' = do
   return l
 
 
--- -- As a convenience.  The explicit dereference is quite annoying when
--- -- the reference producer doesn't have any side effects.
--- o2 f a b = do
---   a' <- a
---   b' <- b
---   f a' b'
-
-  
+nops :: forall m. Pru m => Int -> [m ()]
+nops nb = replicate nb nop
 
