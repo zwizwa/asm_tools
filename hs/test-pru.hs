@@ -27,10 +27,12 @@
 -- used to write code generators (macros), and validation tests.
 
 {-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 import Pru
 import PruGen
 import PruEmu
+import Data.List
 import Data.Map.Strict as Map
 
 main = do
@@ -52,11 +54,13 @@ machineInit = Map.fromList [
   
 
 
+test1 :: forall m. Pru m => m ()
 test1 = do
   -- Symbolic label names are avoided in the embedding Haskell code.
   -- Pro: identifiers behave better than strings
   -- Con: generated code will have non-descript labels
 
+  comment "Mutual References"
   -- For forward references, a separate declaration step is needed...
   l2 <- declare
 
@@ -72,18 +76,42 @@ test1 = do
   ldi (R 10) 2
   jmp l1
 
-test2 = do
-
-  preroll <- label'
-  mov (R 10) (R 11)
-  mov (R 11) (R 10)
+  comment "BeagleLogic PRU1 loop"
 
   loop <- label'
-  mov (R 10) (R 11)
-  mov (R 11) (R 10)
-  jmp loop
+  sequence_ $ interleave [sample :: [m ()], to_pru0 loop]
 
-  
+-- Generate the BeagleLogic PRU1 loop
+
+interleave = concat . transpose
+
+pru1_pru0_interrupt = 0 + 16
+
+
+-- FIXME: preamble + loop align
+
+to_pru0 :: forall m. Pru m => L -> [m ()]
+to_pru0 loop = nops ++ fragment where
+  nops = replicate (32 - length fragment) nop
+  fragment =
+    [add  (R 29) (R 29) (Im 32),      -- Update loop counter
+     xout 10 (R 21) 36,               -- Move data across the broadside
+     ldi  (R 31) pru1_pru0_interrupt, -- Jab PRU0
+     jmp  loop] :: [m ()]
+
+-- Instruction sequence for sampler
+sample = do
+  r <- [21..28]
+  b <- [0,1,2,3]
+  return $ mov (Rb r b) (Rb 31 0)
+
+
+
+-- FIXME: can SET be used instead of LDI to jab PRU0 while still using
+-- only one cycle?
+
+
+
  
     
   

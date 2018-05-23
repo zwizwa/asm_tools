@@ -138,14 +138,18 @@ instance Pru Emu where
   jmp l = toPatch $ (l, \a -> storem PCounter a)
 
   -- Generic instructions
-  ins2r MOV ra rb = movop ra (Reg rb)
-  ins2i LDI ra ib = movop ra (Im ib)
-  ins3 ADD = intop2 (+)
-  ins3 CLR = intop2 clrbit
-  ins3 SET = intop2 setbit
+  insrr MOV ra rb = movop ra (Reg rb)
+  insri LDI ra ib = movop ra (Im ib)
+  insrro ADD = intop2 (+)
+  insrro CLR = intop2 clrbit
+  insrro SET = intop2 setbit
+  insiri XOUT _ _ _ = noPatch next -- FIXME
 
   -- Implemented as spin
-  halt = noPatch $ return ()
+  ins HALT = noPatch $ return ()
+  ins NOP  = noPatch next
+
+  comment _ = return ()
 
 -- Used in comp1
 next :: MachineTrans

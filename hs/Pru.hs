@@ -11,10 +11,12 @@ class Monad m => Pru m where
   declare :: m L
   label   :: L -> m ()
   jmp     :: L -> m ()
-  ins2r   :: Opc2r -> R -> R      -> m ()
-  ins2i   :: Opc2i -> R -> I      -> m ()
-  ins3    :: Opc3  -> R -> R -> O -> m ()
-  halt    :: m ()
+  insrr   :: OpcRR  -> R -> R      -> m ()
+  insri   :: OpcRI  -> R -> I      -> m ()
+  insrro  :: OpcRRO -> R -> R -> O -> m ()
+  insiri  :: OpcIRI -> I -> R -> I -> m ()
+  ins     :: Opc -> m ()
+  comment :: String -> m ()
 
 -- Operands
 data O = Reg R | Im I | Label L deriving (Show, Eq, Ord)
@@ -23,26 +25,38 @@ type I = Int
 type L = Int
 
 -- Instructions
-data Opc2r = MOV  deriving Show
-data Opc2i = LDI  deriving Show
-data Opc3  = ADD | CLR | SET
-  deriving Show
+data OpcRR  = MOV  deriving Show
+data OpcRI  = LDI  deriving Show
+data OpcIRI = XOUT deriving Show
+data Opc    = NOP | HALT deriving Show
+data OpcRRO = ADD | CLR | SET deriving Show
 
 
 mov :: Pru m => R -> R -> m ()
-mov = ins2r MOV
+mov = insrr MOV
 
 ldi :: Pru m => R -> I -> m ()
-ldi = ins2i LDI
+ldi = insri LDI
 
 add :: Pru m => R -> R -> O -> m ()
-add = ins3 ADD
+add = insrro ADD
 
 clr :: Pru m => R -> R -> O -> m ()
-clr = ins3 CLR
+clr = insrro CLR
 
 set :: Pru m => R -> R -> O -> m ()
-set = ins3 SET
+set = insrro SET
+
+xout :: Pru m => I -> R -> I -> m()
+xout = insiri XOUT
+
+halt :: Pru m => m ()
+halt = ins HALT
+
+nop :: Pru m => m ()
+nop = ins NOP
+  
+
 
 -- Shortcut in case no back-references are required.
 label' :: Pru m => m L
