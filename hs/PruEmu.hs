@@ -76,9 +76,9 @@ noPatch closed = comp [ Left closed ]
 type MachineState = Map MachineVar Int
 -- Comprised of
 data MachineVar
-  = Reg Register  -- register file
-  | CFlag         -- carry flag
-  | PCounter      -- program counter
+  = R Reg     -- register file
+  | CFlag     -- carry flag
+  | PCounter  -- program counter
   deriving (Eq,Ord,Show)
 
 -- State transformers are wrapped in a State monad for ease of
@@ -108,7 +108,8 @@ instance Pru Emu where
   jmp l = toPatch $ (l, \a -> store PCounter a)
 
   -- Generic instructions
-  ins2 Mov ra b = noPatch $ op b >>= store (Reg ra) >> next
+  ins2r Mov ra rb = noPatch $ op (Reg rb) >>= store (R ra) >> next
+  ins2i Ldi ra b  = noPatch $ op (Im  b)  >>= store (R ra) >> next
   ins3 Add = int2 (+)
 
   -- Implemented as spin
@@ -121,14 +122,14 @@ next =  modify $ adjust (+ 4) PCounter
 -- Generic 2-operand Integer operations operations, truncated to 32
 -- bit results.
 int2 f ra rb c = noPatch $ do
-  b' <- op $ R rb
+  b' <- op $ Reg rb
   c' <- op c
-  store (Reg ra) $ trunc32 $ b' + c'
+  store (R ra) $ trunc32 $ b' + c'
   next
 
 -- Generic operand dereference.
-op (L lit) = return lit
-op (R reg) = load $ Reg reg
+op (Im  im)  = return im
+op (Reg reg) = load $ R reg
 
 trunc32 = (.&. 4294967295)  -- 0xFFFFFFFF
 

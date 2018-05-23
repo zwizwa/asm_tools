@@ -11,25 +11,24 @@ class Monad m => Pru m where
   declare :: m Label
   label   :: Label -> m ()
   jmp     :: Label -> m ()
-  ins2    :: Ins2 -> Register -> Op -> m ()
-  ins3    :: Ins3 -> Register -> Register -> Op -> m ()
+  ins2r   :: Opc2r -> Reg -> Reg       -> m ()
+  ins2i   :: Opc2i -> Reg -> Im        -> m ()
+  ins3    :: Opc3  -> Reg -> Reg -> Op -> m ()
   halt    :: m ()
 
 -- Operands
-data Op = R Register
-        | L Literal
+data Op = Reg Reg | Im Im  
   deriving (Show, Eq, Ord)
 
 -- Instructions
-data Ins2 = Mov
-  deriving Show
-data Ins3 = Add
-  deriving Show
+data Opc2r = Mov  deriving Show
+data Opc2i = Ldi  deriving Show
+data Opc3  = Add  deriving Show
 
 -- No need for further wrapping.
-type Register = Int
-type Label    = Int
-type Literal  = Int
+type Reg   = Int
+type Label = Int
+type Im    = Int
 
 -- Register file.  Spell these out as identifiers.  Maybe not necessary..
 -- r0  = R  0 ; r1  = R  1 ; r2  = R  2 ; r3  = R 3
@@ -41,13 +40,19 @@ type Literal  = Int
 -- r24 = R 24 ; r25 = R 25 ; r26 = R 26 ; r27 = R 27
 -- r28 = R 27 ; r29 = R 29 ; r30 = R 30 ; r31 = R 31
 
--- 2-operand instructions
-mov :: Pru m => Register -> Op -> m ()
-mov = ins2 Mov
 
--- 3-operand instructions
-add :: Pru m => Register -> Register -> Op -> m ()
+mov :: Pru m => Reg -> Reg -> m ()
+mov = ins2r Mov
+
+ldi :: Pru m => Reg -> Im -> m ()
+ldi = ins2i Ldi
+
+add :: Pru m => Reg -> Reg -> Op -> m ()
 add = ins3 Add
+
+clr :: Pru m => Reg -> Reg -> Op -> m ()
+clr = ins3 Add
+
 
 -- Shortcut in case no back-references are required.
 label' :: Pru m => m Label
