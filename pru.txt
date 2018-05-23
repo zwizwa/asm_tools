@@ -1024,4 +1024,35 @@ Entry: Register byte access
 Date: Wed May 23 09:22:29 EDT 2018
 
 This complicates things a bit.
+EDIT: Done
+
+
+Entry: Interleaving streams
+Date: Wed May 23 16:08:40 EDT 2018
+
+Interesting problem.
+- phase + pre-roll
+- one of them needs the JMP
+
+In this case, there is the sampling, which needs to be started off at
+a particular well-defined point, and the transfer loop, which "locked"
+to the sample loop in that the write out needs to come right in
+between the last sample aquisition in the current block, and the first
+in the next block.
+
+It's easy to do by hand, but not so easy to automate.
+
+Conceptually, the sample loop needs to be "pulled up" a couple of
+ticks to allow for the write loop to align properly.  That way the
+write loop can have a fixed position.
+
+How to express this?
+
+Suppose there are only two loops:
+- sample + I/O control loop
+- write out + nop pad
+
+
+
+
 

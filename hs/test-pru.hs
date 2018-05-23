@@ -59,57 +59,90 @@ test1 = do
   -- Symbolic label names are avoided in the embedding Haskell code.
   -- Pro: identifiers behave better than strings
   -- Con: generated code will have non-descript labels
+  -- To alleviate, comments can be inserted in assembly.
 
-  comment "Mutual References"
-  -- For forward references, a separate declaration step is needed...
-  l2 <- declare
-
-  -- .. while label' combines declare and label in case it is not.
-  l1 <- label'
-  ldi (Rb 10 1) 1
-  jmp l2
-
+  test_preroll
+  comment "End"
+    
   
-  halt -- not reached
 
-  label l2
-  ldi (R 10) 2
-  jmp l1
+-- The test case is a weaver for the PRU1 data acquisition loop used
+-- in the BeagleLogic.  It consists of two statically interwoven tasks:
 
-  comment "BeagleLogic PRU1 loop"
+-- a) Sample + I/O control
+-- b) Transport + loop control
 
-  loop <- label'
-  sequence_ $ interleave [sample :: [m ()], to_pru0 loop]
+-- The skeleton is the same as in the BeagleLogic, but parameterized
+-- to be able to play with it a bit.
 
--- Generate the BeagleLogic PRU1 loop
+-- Essentially, these two loops need to be aligned by creating a
+-- preroll of the first loop.
 
-interleave = concat . transpose
+-- As an example, recreate the BeagleLogic 100MHz loop.
 
-pru1_pru0_interrupt = 0 + 16
+test_preroll :: forall m. Pru m => m L
+test_preroll = do
+  comment "test_preroll"
+  again <- declare  -- label used inside loop
+  let pre   = 2
+      pad   = nops :: Int -> [m()]
+      loop1 = sample :: [m()]
+      loop2 = transfer (length loop1) again :: [m()]
+
+  entry <- label' -- main entry label
+  preroll_zip pre pad again loop1 loop2
+  return entry
+
+preroll_zip nb_pre pad again loop1 loop2 = code where
+  (pre1, rest) = splitAt nb_pre loop1
+  loop1' = rest ++ pre1
+
+  pre  = merge [pre1, pad (length pre1)]
+  loop = merge [loop1', loop2]
+
+  code =
+    sequence_ pre >>
+    label again >>
+    sequence_ loop
+  
+         
+-- interleaving merge
+merge = concat . transpose
+  
+  
 
 
--- FIXME: preamble + loop align
 
-to_pru0 :: forall m. Pru m => L -> [m ()]
-to_pru0 loop = nops ++ fragment where
-  nops = replicate (32 - length fragment) nop
-  fragment =
-    [add  (R 29) (R 29) (Im 32),      -- Update loop counter
-     xout 10 (R 21) 36,               -- Move data across the broadside
-     ldi  (R 31) pru1_pru0_interrupt, -- Jab PRU0
-     jmp  loop] :: [m ()]
 
--- Instruction sequence for sampler
+
+-- a) I/O control preparing for sample.  This can be a coroutine call.
+
+-- b) sample from R31.b0 to R21 - R29
+sample :: Pru m => [m ()]
 sample = do
   r <- [21..28]
   b <- [0,1,2,3]
   return $ mov (Rb r b) (Rb 31 0)
+  
+-- c) loop maintenance + moving data from R21 - R29 across the broadside bus
+transfer :: forall m. Pru m => Int -> L -> [m ()]
+transfer nb_samples again = fill ++ tail where
+  fill =
+    nops $ nb_samples - length tail
+    :: [m ()]
+  tail =
+    [xout 10 (R 21) 32,   -- Move data across the broadside
+     ldi  (R 31) 36,      -- Interrupt PRU0
+     jmp again]
+    :: [m ()]
+              
+nops :: forall m. Pru m => Int -> [m ()]
+nops nb = replicate nb nop
 
 
 
--- FIXME: can SET be used instead of LDI to jab PRU0 while still using
--- only one cycle?
 
+-- FIXME: handcode the aquisition loop
 
 
  
