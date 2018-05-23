@@ -42,13 +42,13 @@ test_emu = Prelude.map select trace where
   trace = stateTrace machineInit (test1 :: EmuProg)
   select ms =
     (ms ! PCounter,
-     ms ! R 10)
+     ms ! (File 10))
   
 machineInit :: MachineState
 machineInit = Map.fromList [
   (PCounter, 0),
-  (R 10, 1),
-  (R 11, 2)]
+  (File 10, 1),
+  (File 11, 2)]
   
 
 
@@ -62,25 +62,25 @@ test1 = do
 
   -- .. while label' combines declare and label in case it is not.
   l1 <- label'
-  ldi 10 1
+  ldi (Rb 10 1) 1
   jmp l2
 
   
   halt -- not reached
 
   label l2
-  ldi 10 2
+  ldi (R 10) 2
   jmp l1
 
 test2 = do
 
   preroll <- label'
-  mov 10 11
-  mov 11 10
+  mov (R 10) (R 11)
+  mov (R 11) (R 10)
 
   loop <- label'
-  mov 10 11
-  mov 11 10
+  mov (R 10) (R 11)
+  mov (R 11) (R 10)
   jmp loop
 
   

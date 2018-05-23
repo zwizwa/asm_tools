@@ -1017,3 +1017,11 @@ transformers is enough.
 
 EDIT: So an instruction is a state transformer, and a state is a
 Data.Map of registers + PC.
+
+
+
+Entry: Register byte access
+Date: Wed May 23 09:22:29 EDT 2018
+
+This complicates things a bit.
+

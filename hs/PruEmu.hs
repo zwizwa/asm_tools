@@ -76,7 +76,7 @@ noPatch closed = comp [ Left closed ]
 type MachineState = Map MachineVar Int
 -- Comprised of
 data MachineVar
-  = R Reg     -- register file
+  = File Int  -- register file
   | CFlag     -- carry flag
   | PCounter  -- program counter
   deriving (Eq,Ord,Show)
@@ -87,11 +87,41 @@ type Machine = State MachineState
 type MachineTrans = Machine ()
 
 -- State variable access
-store :: MachineVar -> Int -> MachineTrans
-store var val = modify $ insert var val
-load :: MachineVar -> Machine Int
-load var = get >>= return . (! var)
+storem :: MachineVar -> Int -> MachineTrans
+storem var val = modify $ insert var val
 
+loadm :: MachineVar -> Machine Int
+loadm var = get >>= return . (! var)
+
+-- Registers are special: they have word, byte subaccess.
+load :: R -> Machine Int
+load (R r)    = loadm (File r)
+load (Rw r w) = word 16 w <$> (loadm $ File r)
+load (Rb r b) = word  8 b <$> (loadm $ File r)
+
+mask bits = shift 1 bits
+word bits w v = v' .&. (mask bits) where
+  v' = shift v $ 0 - bits
+
+trunc bits = (.&. (mask bits))
+
+  
+store :: R -> Int -> MachineTrans
+store (R r) = (storem (File r)) . (trunc 32)
+store (Rw r w) = store' 16 w (R r)
+store (Rb r b) = store'  8 b (R r)
+
+store' bits index (R r) sub = do
+  old <- loadm (File r)
+  let shift' = shift $ bits * index
+      kill   = complement $ shift' (mask bits)
+      sub'   = shift' sub
+      old'   = old .&. kill
+  storem (File r) $ old' .|. sub'
+  
+
+clrbit val bit = val .&. (complement $ shift 1 bit)
+setbit val bit = val .|. (shift 1 bit)
 
 instance Pru Emu where
 
@@ -105,12 +135,14 @@ instance Pru Emu where
     modify $ appLabels $ \ls -> insert l a ls
 
   -- Label use needs patching
-  jmp l = toPatch $ (l, \a -> store PCounter a)
+  jmp l = toPatch $ (l, \a -> storem PCounter a)
 
   -- Generic instructions
-  ins2r MOV ra rb = noPatch $ op (Reg rb) >>= store (R ra) >> next
-  ins2i LDI ra ib = noPatch $ op (Im  ib) >>= store (R ra) >> next
-  ins3 ADD = int2 (+)
+  ins2r MOV ra rb = movop ra (Reg rb)
+  ins2i LDI ra ib = movop ra (Im ib)
+  ins3 ADD = intop2 (+)
+  ins3 CLR = intop2 clrbit
+  ins3 SET = intop2 setbit
 
   -- Implemented as spin
   halt = noPatch $ return ()
@@ -121,17 +153,28 @@ next =  modify $ adjust (+ 4) PCounter
 
 -- Generic 2-operand Integer operations operations, truncated to 32
 -- bit results.
-int2 f ra rb c = noPatch $ do
+intop2 :: (Int -> Int -> Int) -> R -> R -> O -> Emu ()
+intop2 f ra rb c = noPatch $ do
   b' <- op $ Reg rb
   c' <- op c
-  store (R ra) $ trunc32 $ b' + c'
+  store ra $ b' + c'
   next
+
+-- Generic move.  On PRU this is split into two instructions: MOV and
+-- LDI, instead of one instruction that can take multiple operand
+-- types.
+movop ra b = noPatch $ do
+  v <- op b
+  store ra v
+  next
+
 
 -- Generic operand dereference.
 op (Im  im)  = return im
-op (Reg reg) = load $ R reg
+op (Reg r)   = load r
 
-trunc32 = (.&. 4294967295)  -- 0xFFFFFFFF
+
+
 
 
 
