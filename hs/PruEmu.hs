@@ -108,9 +108,9 @@ instance Pru Emu where
   jmp l = toPatch $ (l, \a -> store PCounter a)
 
   -- Generic instructions
-  ins2r Mov ra rb = noPatch $ op (Reg rb) >>= store (R ra) >> next
-  ins2i Ldi ra b  = noPatch $ op (Im  b)  >>= store (R ra) >> next
-  ins3 Add = int2 (+)
+  ins2r MOV ra rb = noPatch $ op (Reg rb) >>= store (R ra) >> next
+  ins2i LDI ra ib = noPatch $ op (Im  ib) >>= store (R ra) >> next
+  ins3 ADD = int2 (+)
 
   -- Implemented as spin
   halt = noPatch $ return ()

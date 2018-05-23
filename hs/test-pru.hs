@@ -34,7 +34,7 @@ import PruEmu
 import Data.Map.Strict as Map
 
 main = do
-  putStrLn "PruGen:" >> test1
+  putStrLn "PruGen:" >> (print $ asm test1)
   putStrLn "PruEmu:" >> (print $ take 7 $ test_emu)
 
 test_emu :: [(Int,Int)]

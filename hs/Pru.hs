@@ -17,13 +17,13 @@ class Monad m => Pru m where
   halt    :: m ()
 
 -- Operands
-data Op = Reg Reg | Im Im  
+data Op = Reg Reg | Im Im | Label Label
   deriving (Show, Eq, Ord)
 
 -- Instructions
-data Opc2r = Mov  deriving Show
-data Opc2i = Ldi  deriving Show
-data Opc3  = Add  deriving Show
+data Opc2r = MOV  deriving Show
+data Opc2i = LDI  deriving Show
+data Opc3  = ADD  deriving Show
 
 -- No need for further wrapping.
 type Reg   = Int
@@ -42,16 +42,14 @@ type Im    = Int
 
 
 mov :: Pru m => Reg -> Reg -> m ()
-mov = ins2r Mov
+mov = ins2r MOV
 
 ldi :: Pru m => Reg -> Im -> m ()
-ldi = ins2i Ldi
+ldi = ins2i LDI
 
 add :: Pru m => Reg -> Reg -> Op -> m ()
-add = ins3 Add
+add = ins3 ADD
 
-clr :: Pru m => Reg -> Reg -> Op -> m ()
-clr = ins3 Add
 
 
 -- Shortcut in case no back-references are required.
