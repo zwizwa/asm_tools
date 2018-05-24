@@ -1,13 +1,8 @@
-name: pru
+name: asmtools
 version: 1.0.0
 cabal-version: >= 1.18
 build-type: Simple
 license: BSD3
-
--- executable pru
---     build-depends: base
---     main-is: pru-trace.hs
---     default-language: Haskell2010
 
 Test-Suite test-pru
     build-depends: base, containers, mtl
