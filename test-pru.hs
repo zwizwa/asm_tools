@@ -46,8 +46,9 @@ test_coroutine = do
   print $ asm coroutine
   let (code, labels) = compile' coroutine
   print $ labels
-  let trace = stateTrace code id (machineInit' 123 [10,11])
-  printl $ take 5 $ trace
+  let (_, log) = logTrace' code id (machineInit' 123 [10,11]) 10
+  putStrLn "log:"
+  putStr log
 
 printl es = sequence_ $ Data.List.map print es
   

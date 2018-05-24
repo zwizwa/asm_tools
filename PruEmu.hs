@@ -6,7 +6,7 @@
 
 module PruEmu(compile,compile',Emu,EmuSrc,EmuCode,
               MachineState(..),MachineVar(..),
-              --logTrace, EmuLog(..),
+              logTrace, logTrace', EmuLog(..),
               machineInit,machineInit0,machineInit',
               stateTrace) where
 
@@ -81,11 +81,13 @@ data MachineVar
 -- State transformers are wrapped in a State monad.
 type Machine = WriterT [EmuLog] (State MachineState)
 type MachineOp = Machine ()
-data EmuLog = LogState MachineState | LogString String deriving Show
 
 -- State variable access
 storem :: MachineVar -> Int -> MachineOp
-storem var val = modify $ insert var val
+storem var val = do
+  modify $ insert var val
+  -- emuLog "storem" (var,val)
+
 
 loadm :: MachineVar -> Machine Int
 loadm var = do
@@ -95,6 +97,11 @@ loadm var = do
 checkVar var (Just val) = val
 checkVar var Nothing = error $ "Uninitialized MachineVar: " ++ show var
 
+-- For now, just use strings.
+type EmuLog = Char
+emuLog :: Show t => String -> t -> MachineOp
+emuLog tag v = tell $ tag ++ ": " ++ show v ++ "\n"
+
 
 -- Registers are special: they have word, byte subaccess.
 load :: R -> Machine Int
@@ -102,7 +109,7 @@ load (R r)    = loadm (File r)
 load (Rw r w) = word 16 w <$> (loadm $ File r)
 load (Rb r b) = word  8 b <$> (loadm $ File r)
 
-mask bits = shift 1 bits
+mask bits = (shift 1 bits) - 1
 word bits w v = v' .&. (mask bits) where
   v' = shift v $ 0 - bits
 
@@ -191,6 +198,7 @@ comp_link_ref f o = do
 -- LDI, instead of one instruction that can take multiple operand
 -- types.
 move ra = comp_link_ref $ \b -> do
+  -- emuLog "move" (ra,b)
   store ra b
   next
 
@@ -239,18 +247,20 @@ stateTrace code io s = s : stateSeq where
 -- available at the end of the computation, so the program needs to be
 -- finite.  However it is possible to "chunk" like below.  Is there a
 -- more elegant way?
-
 logTrace code io = next where
-  next s0 = w0 <> next s1 where
-    (s1, w0) = logTrace1 code io s0
+  next s = w <> next s where
+    (s', w) = logTrace' code io s' 1
 
-logTrace1 ::
+-- Run for a finite amount of time.
+logTrace' ::
   EmuCode ->
   (MachineState -> MachineState) ->  -- External IO effects
   MachineState ->                    -- Initial state
+  Int ->
   (MachineState,[EmuLog])
-logTrace1 code io s = (s',w) where
-  (((),w), s') = runState (runWriterT tick') s
+logTrace' code io s n = (s',w) where
+  (((),w), s') = runState (runWriterT m) s
+  m = sequence_ $ replicate n tick'
   tick' = do
     modify io   -- Apply external influence
     tick code   -- Normal machine cycle
