@@ -1055,7 +1055,15 @@ Suppose there are only two loops:
 EDIT: Got it.  This is a door opener.
 
 
+Entry: knot tying for labels
+Date: Wed May 23 20:43:06 EDT 2018
+
+https://stackoverflow.com/questions/11060565/tying-the-knot-with-a-state-monad
+https://wiki.haskell.org/wikiupload/1/14/TMR-Issue6.pdf
+Assembly: Circular Programming with Recursive do
 
 
-
+The idea is to pass in an environment, but not use it until there has
+been a path that produces the association table, such that the
+environment can then be fed into the computation.
 

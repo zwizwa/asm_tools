@@ -7,46 +7,41 @@
 module PruEmu(compile,stateTrace,Emu,EmuProg,MachineState(..),MachineVar(..)) where
 
 import Pru
-import Data.Map.Strict (Map, (!), lookup, empty, insert, fromList, adjust)
+import Data.Map.Lazy (Map, (!), lookup, empty, insert, fromList, adjust)
 import qualified Data.Map as Map
 import Control.Monad.State
 import Control.Monad.Writer
+import Control.Monad.Reader
 import Data.Bits
 
 -- Compile to emulator.
 --
--- This needs a fairly low-level emulation to be able to perform jumps
--- based on register values.
+-- Emulation needs a fairly low-level emulation to be able to perform
+-- jumps based on register values.  The PRU can do this in a single
+-- cycle, which is what makes it so useful for signal generation.
 
--- Due to label patching, compilation is a 2-pass algorithm to produce
--- an abstract code representation as an addressable map of machine
--- state transformations.  Code is an intermediate representation.
--- We're mostly interested in what we can do with it (see stateTrace).
+-- Assembly generally requires a 2-pass algorithm for address
+-- resolution, but here we can use circular programming.  Also see:
+-- https://wiki.haskell.org/wikiupload/1/14/TMR-Issue6.pdf
+
+-- Code is treated as an internal intermediate representation.  We're
+-- mostly interested in what we can do with it (see stateTrace).
+
 type EmuCode = Map Addr MachineTrans
-
-compile :: EmuProg -> EmuCode
-compile = pass2 . pass1
-
--- No tagging needed for implementation.
 type EmuProg = Emu ()
-type Emu = WriterT [Patchable] (State (LabelNb, Addr, Labels)) -- see Pru instance
-type Patchable = (LabelNb -> Addr) -> MachineTrans
+type Emu = ReaderT Link (WriterT [MachineTrans] (State (LabelNb, Addr, Labels))) -- see Pru instance
+type Link = (LabelNb -> Addr)
 type LabelNb = Int
 type Addr = Int
 type Labels = Map LabelNb Addr
 
--- First pass uses a stack of a writer monad and a state monad.
-pass1 :: EmuProg -> (Labels, [Patchable])
-pass1 m = (labels, patchable) where
-  (((), w), s) = runState (runWriterT m) (0, 0, empty)
-  patchable = w
-  (_, _, labels) = s
 
--- Second pass patches all unresolved addresses.
-pass2 (labels, patchable) = code where
-  code = fromList $ zip [0,4..] ins 
-  ins = map patch patchable
-  patch ins = ins (labels !)
+compile :: EmuProg -> EmuCode
+compile m = code  where
+  (((), w), s) = runState (runWriterT (runReaderT m e)) (0, 0, empty)
+  code = fromList $ zip [0,1..] w
+  (_, _, labels) = s
+  e = (labels !) -- circular
 
 
 -- Compilation state access
@@ -57,15 +52,11 @@ appAddr    f (n,a,l) = (n, f a, l)
 appLabels  f (n,a,l) = (n, a, f l)
 
 -- Compile a patchable instruction
-comp :: [Patchable] -> EmuProg
+comp :: [MachineTrans] -> EmuProg
 comp inss = do
-  modify $ appAddr (+ (4 * length inss))
   tell inss
-
--- Compile a single instruction
-comp' :: MachineTrans -> EmuProg
-comp' ins  = comp [\_ -> ins]
-  
+  modify $ appAddr (+ (length inss))
+comp' ins = comp [ins]  
 
 -- Machine instructions are represented as state->state transformers.
 -- The Machine is a map to integer values
@@ -126,6 +117,10 @@ store' bits index (R r) sub = do
 clrbit val bit = val .&. (complement $ shift 1 bit)
 setbit val bit = val .|. (shift 1 bit)
 
+-- Label resolution is not in the evaluation path that computes the
+-- table, so circular progamming works here.
+link l = do a <- ask ; return $ a l
+
 instance Pru Emu where
 
   declare = do
@@ -137,15 +132,19 @@ instance Pru Emu where
     a <- addr
     modify $ appLabels $ \ls -> insert l a ls
 
-  -- Label use needs patching
-  jmp l = comp [\a -> storem PCounter (a l)]
-  insro JAL (R r) (Im l) = comp  [ \a -> jalop r (a l) ]
+  jmp l = do
+    a <- link l;
+    comp' $ storem PCounter a
+    
+  insro JAL (R r) (Im l) = do
+    a <- link l
+    comp' $ jalop r a
+    
   insro JAL (R r) o      = comp' $ op o >>= jalop r
 
         
-  -- FIXME: immediates can all be addresses, so maybe make all
-  -- instructions patchable?
-
+  -- FIXME: immediates can all be addresses.  Not jet supported.
+    
   -- Generic instructions
   insrr MOV ra rb = movop ra (Reg rb)
   insri LDI ra ib = movop ra (Im ib)
@@ -162,7 +161,7 @@ instance Pru Emu where
 
 -- Used in comp1
 next :: MachineTrans
-next =  modify $ adjust (+ 4) PCounter
+next =  modify $ adjust (+ 1) PCounter
 
 -- Generic 2-operand Integer operations operations, truncated to 32
 -- bit results.
@@ -183,7 +182,7 @@ movop ra b = comp' $ do
 
 jalop r nextpc = do
     pc <- loadm PCounter
-    storem (File r) (pc + 4)
+    storem (File r) (pc + 1)
     storem PCounter nextpc
 
 
