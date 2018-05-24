@@ -46,8 +46,11 @@ test_coroutine = do
   print $ asm coroutine
   let (code, labels) = compile' coroutine
   print $ labels
-  let trace = logTrace code id (machineInit' 123 [10,11])
-  print $ take 5 $ trace
+  let trace = stateTrace code id (machineInit' 123 [10,11])
+  printl $ take 5 $ trace
+
+printl es = sequence_ $ Data.List.map print es
+  
 
 -- test_beaglelogic_loop = do
 --   putStrLn "--- test1"

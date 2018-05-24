@@ -1067,3 +1067,9 @@ The idea is to pass in an environment, but not use it until there has
 been a path that produces the association table, such that the
 environment can then be fed into the computation.
 
+
+
+Entry: Trying Writer output for logs
+Date: Thu May 24 13:08:00 EDT 2018
+
+But obviously, can't have infinite program.

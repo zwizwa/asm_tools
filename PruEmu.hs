@@ -6,9 +6,9 @@
 
 module PruEmu(compile,compile',Emu,EmuSrc,EmuCode,
               MachineState(..),MachineVar(..),
-              EmuLog(..),
+              --logTrace, EmuLog(..),
               machineInit,machineInit0,machineInit',
-              logTrace) where
+              stateTrace) where
 
 import Pru
 import Data.Map.Strict (Map, (!), lookup, empty, insert, fromList, adjust)
@@ -78,8 +78,7 @@ data MachineVar
   | Time      -- instruction counter
   deriving (Eq,Ord,Show)
 
--- State transformers are wrapped in a State monad for ease of
--- use and to allow extensions such as logging.
+-- State transformers are wrapped in a State monad.
 type Machine = WriterT [EmuLog] (State MachineState)
 type MachineOp = Machine ()
 data EmuLog = LogState MachineState | LogString String deriving Show
@@ -220,26 +219,44 @@ tick code = do
 
 -- One particular interpretation of programs we're interested in is
 -- state traces.  These can then be filtered to isolate a specific
--- signal.  Embed the state trace into the main emulation log.
-logTrace ::
+-- signal.  The machine is run lazily this way.
+stateTrace ::
   EmuCode ->
   (MachineState -> MachineState) ->  -- External IO effects
   MachineState ->                    -- Initial state
-  [EmuLog]
-logTrace code io s0 = (LogState s0 : w) where
-  ((), w) = evalState (runWriterT stateSeq) s0
-  stateSeq = sequence_ $ cycle [tick']
+  [MachineState]
+stateTrace code io s = s : stateSeq where
+  (stateSeq,w) = evalState (runWriterT mStateSeq) s
+  mStateSeq = sequence $ cycle [tick']
   tick' = do
-    modify io          -- Apply external influence
-    tick code          -- Normal machine cycle
---  s <- get
-    return ()
---  tell [LogState s]  -- Use Log writer
+    modify io   -- Apply external influence
+    tick code   -- Normal machine cycle
+    get         -- Return machine state
 
 
--- Minimal init needed for tick to work.  It seems more convenient to
--- just use machine code to initialize registers, as opposed to
--- explicitly constructint the state.
+-- To be able to use the Writer log, the machine cannot be run with an
+-- infinite program as above.  The Writer monoid final result is only
+-- available at the end of the computation, so the program needs to be
+-- finite.  However it is possible to "chunk" like below.  Is there a
+-- more elegant way?
+
+logTrace code io = next where
+  next s0 = w0 <> next s1 where
+    (s1, w0) = logTrace1 code io s0
+
+logTrace1 ::
+  EmuCode ->
+  (MachineState -> MachineState) ->  -- External IO effects
+  MachineState ->                    -- Initial state
+  (MachineState,[EmuLog])
+logTrace1 code io s = (s',w) where
+  (((),w), s') = runState (runWriterT tick') s
+  tick' = do
+    modify io   -- Apply external influence
+    tick code   -- Normal machine cycle
+
+-- However, it is then possible to "chunk" the execution.
+
 
 machineInit = machineInit0 []
 machineInit0 = machineInit' 0
