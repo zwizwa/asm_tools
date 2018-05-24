@@ -4,7 +4,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
 
-module PruEmu(compile,stateTrace,Emu,EmuProg,MachineState(..),MachineVar(..)) where
+module PruEmu(compile,stateTrace,Emu,EmuSource,MachineState(..),MachineVar(..)) where
 
 import Pru
 import Data.Map.Strict (Map, (!), lookup, empty, insert, fromList, adjust)
@@ -24,19 +24,22 @@ import Data.Bits
 -- resolution, but here we can use circular programming.  Also see:
 -- https://wiki.haskell.org/wikiupload/1/14/TMR-Issue6.pdf
 
--- Code is treated as an internal intermediate representation.  We're
--- mostly interested in what we can do with it (see stateTrace).
+-- EmuCompiled is the compiled form of EmuSource, ready to be emulate
+-- run-time behavior.  We're mostly interested in the latter (see
+-- stateTrace).
 
-type EmuCode = Map Addr MachineTrans
-type EmuProg = Emu ()
-type Emu = ReaderT Link (WriterT [MachineTrans] (State (LabelNb, Addr, Labels))) -- see Pru instance
-type Link = (LabelNb -> Addr)
+type EmuSource = Emu ()                       -- embedded source
+type EmuCompiled = Map Addr MachineOp         -- compiled emulator functions
+type Emu = ReaderT Link                       -- main monad
+          (WriterT [MachineOp]
+          (State (LabelNb, Addr, Labels)))
+type Link = (LabelNb -> Addr)                 -- address resolution
 type LabelNb = Int
 type Addr = Int
 type Labels = Map LabelNb Addr
 
 
-compile :: EmuProg -> EmuCode
+compile :: EmuSource -> EmuCompiled
 compile m = code  where
   s0 = (0, 0, empty)
   (((), w), s) = runState (runWriterT (runReaderT m r)) s0
@@ -53,11 +56,11 @@ appAddr    f (n,a,l) = (n, f a, l)
 appLabels  f (n,a,l) = (n, a, f l)
 
 -- Compile a patchable instruction
-comp :: [MachineTrans] -> EmuProg
-comp inss = do
-  tell inss
-  modify $ appAddr (+ (length inss))
-comp' ins = comp [ins]  
+comp :: MachineOp -> EmuSource
+comp ins = do
+  tell [ins]
+  modify $ appAddr (+ 1)
+
 
 -- Machine instructions are represented as state->state transformers.
 -- The Machine is a map to integer values
@@ -73,10 +76,10 @@ data MachineVar
 -- State transformers are wrapped in a State monad for ease of
 -- use and to allow later extensions.
 type Machine = State MachineState
-type MachineTrans = Machine ()
+type MachineOp = Machine ()
 
 -- State variable access
-storem :: MachineVar -> Int -> MachineTrans
+storem :: MachineVar -> Int -> MachineOp
 storem var val = modify $ insert var val
 
 loadm :: MachineVar -> Machine Int
@@ -101,7 +104,7 @@ word bits w v = v' .&. (mask bits) where
 trunc bits = (.&. (mask bits))
 
   
-store :: R -> Int -> MachineTrans
+store :: R -> Int -> MachineOp
 store (R r) = (storem (File r)) . (trunc 32)
 store (Rw r w) = store' 16 w (R r)
 store (Rb r b) = store'  8 b (R r)
@@ -113,7 +116,7 @@ store' bits index (R r) sub = do
       sub'   = shift' sub
       old'   = old .&. kill
   storem (File r) $ old' .|. sub'
-  
+    
 
 clrbit val bit = val .&. (complement $ shift 1 bit)
 setbit val bit = val .|. (shift 1 bit)
@@ -140,22 +143,12 @@ instance Pru Emu where
     a <- addr
     modify $ appLabels $ \ls -> insert l a ls
 
-  -- Note the difference between:
-  -- link: compile time lookup (label -> addr)
-  -- op:   run time lookup (reg -> value)
-  inso JMP o = do
-    o' <- link o
-    comp' $ do
-      o'' <- op o'
-      storem PCounter o''
+  inso JMP = compo $ storem PCounter
     
-  insro JAL (R r) o  = do
-    o' <- link o
-    comp' $ do
-      o'' <- op o
+  insro JAL (R r) = compo $ \o' -> do
       pc <- loadm PCounter
       storem (File r) (pc + 1)
-      storem PCounter o''
+      storem PCounter o'
     
   -- FIXME: all immediates can all be addresses.  It might be simpler
   -- to just link all the arguments.
@@ -166,67 +159,72 @@ instance Pru Emu where
   insrro ADD = intop2 (+)
   insrro CLR = intop2 clrbit
   insrro SET = intop2 setbit
-  insiri XOUT _ _ _ = comp' next -- FIXME
+  insiri XOUT _ _ _ = comp next -- FIXME
 
   -- Implemented as spin
-  ins HALT = comp' $ return ()
-  ins NOP  = comp' next
+  ins HALT = comp $ return ()
+  ins NOP  = comp next
 
   comment _ = return ()
 
--- Used in comp1
-next :: MachineTrans
-next =  modify $ adjust (+ 1) PCounter
+-- Adjust state to resume at the next instruction
+next :: MachineOp
+next = modify $ adjust (+ 1) PCounter
 
--- Generic 2-operand Integer operations operations, truncated to 32
--- bit results.
-intop2 :: (Int -> Int -> Int) -> R -> R -> O -> Emu ()
-intop2 f ra rb c = do
-  c' <- link c
-  comp' $ do
-    b' <- op $ Reg rb
-    c'' <- op c'
-    store ra $ b' + c''
-    next
+-- Convenient 2-level dereference of operand to Int.
+-- Note the difference between:
+-- link: compile time lookup (label -> addr)
+-- op:   run time lookup (reg -> value)
+compo :: (Int -> MachineOp) -> O -> EmuSource
+compo f o = do
+  o' <- link o
+  comp $ do
+    o'' <- op o'
+    f o''
 
 -- Generic move.  On PRU this is split into two instructions: MOV and
 -- LDI, instead of one instruction that can take multiple operand
 -- types.
-movop ra b = do
-  b' <- link b
-  comp' $ do
-    v <- op b'
-    store ra v
+movop ra = compo $ \b -> do
+  store ra b
+  next
+
+-- Generic 2-operand Integer operations.
+intop2 :: (Int -> Int -> Int) -> R -> R -> O -> Emu ()
+intop2 f ra rb c = do
+  c' <- link c
+  comp $ do
+    b'  <- op $ Reg rb
+    c'' <- op c'
+    store ra $ f b' c''
     next
 
 
+-- Running the EmuCompiled code.
 
 
+-- Normal machine cycle.
+tick :: EmuCompiled -> MachineOp
+tick code = do
+  pc <- gets (! PCounter)     -- Read program counter from state
+  code ! pc                   -- Run instruction, which updates PCounter
+  modify $ adjust (+ 1) Time  -- FIXME: Assumes 1 cycle / instruction
 
 
-
-
-
--- Running the abstract Code.
-
--- One part particular interpretation of programs we're interested in
--- is state traces.  These can then be filtered to produce a specific
+-- One particular interpretation of programs we're interested in is
+-- state traces.  These can then be filtered to isolate a specific
 -- signal.  A program produces a sequence of machines states.
-
--- Note: it is assumed all instructions take exactly one cycle.
 
 stateTrace ::
   MachineState ->                    -- Initial state
   (MachineState -> MachineState) ->  -- External IO effects
-  EmuCode ->
+  EmuCompiled ->
   [MachineState]
 stateTrace s0 io code = s0 : evalState stateSeq s0 where
-  stateSeq = sequence $ cycle [tick]
-  tick = do
-    modify io                   -- Apply external influence
-    pc <- gets (! PCounter)     -- Program counter from state
-    code ! pc                   -- Run code at PC
-    modify $ adjust (+ 1) Time 
-    get                         -- return state for trace
+  stateSeq = sequence $ cycle [tick']
+  tick' = do
+    modify io   -- Apply external influence
+    tick code   -- Normal machine cycle
+    get         -- return state for trace
 
-  
+
