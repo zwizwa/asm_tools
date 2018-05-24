@@ -5,8 +5,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 
 module PruEmu(compile,compile',Emu,EmuSrc,EmuCode,
-              MachineState(..),MachineVar(..),
-              logTrace, logTrace', EmuLog(..),
+              MachineState(..),MachineVar(..),MachineOp,
+              logTrace, logTrace', EmuLog(..), emuLog,
               machineInit,machineInit0,machineInit',
               stateTrace) where
 
@@ -229,15 +229,15 @@ tick code = do
 -- state traces.  These can then be filtered to isolate a specific
 -- signal.  The machine is run lazily this way.
 stateTrace ::
-  EmuCode ->
-  (MachineState -> MachineState) ->  -- External IO effects
-  MachineState ->                    -- Initial state
+  EmuCode ->         -- Compiled assembly listing
+  MachineOp ->       -- E.g for external IO effects
+  MachineState ->    -- Initial state
   [MachineState]
-stateTrace code io s = s : stateSeq where
+stateTrace code pre s = s : stateSeq where
   (stateSeq,w) = evalState (runWriterT mStateSeq) s
   mStateSeq = sequence $ cycle [tick']
   tick' = do
-    modify io   -- Apply external influence
+    pre         -- Apply external influence
     tick code   -- Normal machine cycle
     get         -- Return machine state
 
@@ -253,17 +253,11 @@ logTrace code io = next where
 
 -- Run for a finite amount of time.
 logTrace' ::
-  EmuCode ->
-  (MachineState -> MachineState) ->  -- External IO effects
-  MachineState ->                    -- Initial state
-  Int ->
+  EmuCode -> MachineOp -> MachineState -> Int ->
   (MachineState,[EmuLog])
-logTrace' code io s n = (s',w) where
+logTrace' code pre s n = (s',w) where
   (((),w), s') = runState (runWriterT m) s
-  m = sequence_ $ replicate n tick'
-  tick' = do
-    modify io   -- Apply external influence
-    tick code   -- Normal machine cycle
+  m = sequence_ $ replicate n $ pre >> tick code
 
 -- However, it is then possible to "chunk" the execution.
 

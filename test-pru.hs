@@ -33,43 +33,52 @@ import Pru
 import PruGen
 import PruEmu
 import BeagleLogic
-import Weave
 
 import Data.List
 import Data.Map.Strict as Map
+import Control.Monad.State
+
 
 main = do
   test_coroutine
+  test_beaglelogic_loop
 
 test_coroutine = do
   putStrLn "--- run_test_coroutine"
   print $ asm coroutine
   let (code, labels) = compile' coroutine
   print $ labels
-  let (_, log) = logTrace' code id (machineInit' 123 [10,11]) 10
-  putStrLn "log:"
-  putStr log
+  print $ take 30 $ mvtrace1 code pre (machineInit' 123 [10,11]) PCounter
+  -- let (_, log) = logTrace' code pre (machineInit' 123 [10,11]) 10
+  -- putStrLn "log:"
+  -- putStr log
+  
+
+-- FIXME: parameterize the log output
+pre = do
+  -- state <- get
+  -- emuLog "State" state
+  return ()
 
 printl es = sequence_ $ Data.List.map print es
   
 
--- test_beaglelogic_loop = do
---   putStrLn "--- test1"
---   print $ asm beaglelogic_loop
---   let (code, labels) = compile' beaglelogic_loop
---   print $ take 200 $ mvtrace1 code machineInit PCounter
+test_beaglelogic_loop = do
+  putStrLn "--- test1"
+  print $ asm beaglelogic_loop
+  let (code, labels) = compile' beaglelogic_loop
+  print $ take 200 $ mvtrace1 code pre machineInit PCounter
 
 
--- -- MachineVar trace
--- mvtrace :: EmuCode -> MachineState -> [MachineVar] -> [[Int]]
--- mvtrace code s0 mach_vars = Prelude.map select trace where
---   trace = Data.List.filter keep $ logTrace s0 pru_input code
---   keep (LogState s) = True ; keep _ = False
---   select (LogState ms) = [ms ! v | v <- mach_vars]
+-- MachineVar trace
+mvtrace :: EmuCode -> MachineOp -> MachineState -> [MachineVar] -> [[Int]]
+mvtrace code pre s0 mach_vars = Prelude.map select trace where
+  trace = stateTrace code pre s0
+  select ms = [ms ! v | v <- mach_vars]
 
--- -- Single
--- mvtrace1 code s0 mach_var =
---   Prelude.map head $ mvtrace code s0 [mach_var]
+-- Single
+mvtrace1 code pre s0 mach_var =
+  Prelude.map head $ mvtrace code pre s0 [mach_var]
 
 
 -- Some arbitrary input
