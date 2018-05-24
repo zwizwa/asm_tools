@@ -39,27 +39,44 @@ import Data.List
 import Data.Map.Strict as Map
 
 main = do
-  putStrLn "PruGen:" >> (print $ asm test1)
-  putStrLn "PruEmu:" >> (print $ take 200 $ test_emu)
+  test_coroutine
 
-test_emu = Prelude.map select trace where
-  trace = stateTrace machineInit test_io (compile test1)
-  select ms = ms ! PCounter
+test_coroutine = do
+  putStrLn "--- run_test_coroutine"
+  print $ asm coroutine
+  let (code, labels) = compile' coroutine
+  print $ labels
+  let trace = logTrace code id (machineInit' 123 [10,11])
+  print $ take 5 $ trace
 
-test_io s =
+-- test_beaglelogic_loop = do
+--   putStrLn "--- test1"
+--   print $ asm beaglelogic_loop
+--   let (code, labels) = compile' beaglelogic_loop
+--   print $ take 200 $ mvtrace1 code machineInit PCounter
+
+
+-- -- MachineVar trace
+-- mvtrace :: EmuCode -> MachineState -> [MachineVar] -> [[Int]]
+-- mvtrace code s0 mach_vars = Prelude.map select trace where
+--   trace = Data.List.filter keep $ logTrace s0 pru_input code
+--   keep (LogState s) = True ; keep _ = False
+--   select (LogState ms) = [ms ! v | v <- mach_vars]
+
+-- -- Single
+-- mvtrace1 code s0 mach_var =
+--   Prelude.map head $ mvtrace code s0 [mach_var]
+
+
+-- Some arbitrary input
+pru_input s =
   Map.insert (File 31) (s ! Time) s
   
-  
-machineInit :: MachineState
-machineInit = Map.fromList [
-  (PCounter, 0),
-  (Time, 0),
-  (File 10, 1),
-  (File 11, 2)]
 
 
-test1 :: forall m. Pru m => m ()
-test1 = do
+
+beaglelogic_loop :: forall m. Pru m => m ()
+beaglelogic_loop = do
   
   -- Symbolic label names are avoided in the embedding Haskell code.
   -- Pro: identifiers behave better than strings
@@ -76,10 +93,27 @@ test1 = do
   
   comment "End"
 
+initRegs = sequence_ $ [ ldi (R r) (I 0) | r <- [0..31] ]
   
 
-  
-initRegs = sequence_ $ [ ldi (R r) (I 0) | r <- [0..31] ]
+coroutine :: forall m. Pru m => m ()
+coroutine = do
+
+  comment "routine instruction pointer init"
+  loop_10 <- declare
+  loop_11 <- declare
+  ldi (R 10) loop_10
+  ldi (R 11) loop_11
+
+  comment "routine 10 body"
+  label loop_10
+  jal (R 10) (Reg (R 11))  -- save state in R10, jump to R11
+  jmp (Im loop_10)
+
+  comment "routine 11 body"
+  label loop_11
+  jal (R 11) (Reg (R 10))  -- save state in R11, jump to R10
+  jmp (Im loop_11)
 
 
   

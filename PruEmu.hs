@@ -4,7 +4,11 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
 
-module PruEmu(compile,stateTrace,Emu,EmuSource,MachineState(..),MachineVar(..)) where
+module PruEmu(compile,compile',Emu,EmuSrc,EmuCode,
+              MachineState(..),MachineVar(..),
+              EmuLog(..),
+              machineInit,machineInit0,machineInit',
+              logTrace) where
 
 import Pru
 import Data.Map.Strict (Map, (!), lookup, empty, insert, fromList, adjust)
@@ -24,23 +28,24 @@ import Data.Bits
 -- resolution, but here we can use circular programming.  Also see:
 -- https://wiki.haskell.org/wikiupload/1/14/TMR-Issue6.pdf
 
--- EmuCompiled is the compiled form of EmuSource, ready to be emulate
--- run-time behavior.  We're mostly interested in the latter (see
--- stateTrace).
+-- EmuCode is the compiled form of EmuSrc.  Each memory address
+-- contains a function that emulates the instruction at that location.
 
-type EmuSource = Emu ()                       -- embedded source
-type EmuCompiled = Map Addr MachineOp         -- compiled emulator functions
-type Emu = ReaderT Link                       -- main monad
+type EmuSrc = Emu ()                       -- embedded source
+type EmuCode = Map Addr MachineOp          -- compiled emulator functions
+type Emu = ReaderT Link                    -- main monad
           (WriterT [MachineOp]
           (State (LabelNb, Addr, Labels)))
-type Link = (LabelNb -> Addr)                 -- address resolution
+type Link = (LabelNb -> Addr)              -- address resolution
 type LabelNb = Int
 type Addr = Int
 type Labels = Map LabelNb Addr
 
 
-compile :: EmuSource -> EmuCompiled
-compile m = code  where
+compile = fst . compile'
+
+compile' :: EmuSrc -> (EmuCode, Labels)
+compile' m = (code, labels)  where
   s0 = (0, 0, empty)
   (((), w), s) = runState (runWriterT (runReaderT m r)) s0
   code = fromList $ zip [0,1..] w
@@ -56,7 +61,7 @@ appAddr    f (n,a,l) = (n, f a, l)
 appLabels  f (n,a,l) = (n, a, f l)
 
 -- Compile a patchable instruction
-comp :: MachineOp -> EmuSource
+comp :: MachineOp -> EmuSrc
 comp ins = do
   tell [ins]
   modify $ appAddr (+ 1)
@@ -74,9 +79,10 @@ data MachineVar
   deriving (Eq,Ord,Show)
 
 -- State transformers are wrapped in a State monad for ease of
--- use and to allow later extensions.
-type Machine = State MachineState
+-- use and to allow extensions such as logging.
+type Machine = WriterT [EmuLog] (State MachineState)
 type MachineOp = Machine ()
+data EmuLog = LogState MachineState | LogString String deriving Show
 
 -- State variable access
 storem :: MachineVar -> Int -> MachineOp
@@ -122,9 +128,9 @@ clrbit val bit = val .&. (complement $ shift 1 bit)
 setbit val bit = val .|. (shift 1 bit)
 
 -- Generic run time operand dereference.
-op (Im (I im))  = return im
-op (Im (L l))   = error $ "label " ++ show l ++ " not resolved"
-op (Reg r)      = load r
+ref (Im (I im))  = return im
+ref (Im (L l))   = error $ "label " ++ show l ++ " not resolved"
+ref (Reg r)      = load r
 
 -- Compile time resolution.
 -- Label resolution is not in the evaluation path that computes the
@@ -143,19 +149,19 @@ instance Pru Emu where
     a <- addr
     modify $ appLabels $ \ls -> insert l a ls
 
-  inso JMP = compo $ storem PCounter
+  inso JMP = comp_link_ref $ storem PCounter
     
-  insro JAL (R r) = compo $ \o' -> do
+  insro JAL (R r) = comp_link_ref $ \o -> do
       pc <- loadm PCounter
       storem (File r) (pc + 1)
-      storem PCounter o'
+      storem PCounter o
     
   -- FIXME: all immediates can all be addresses.  It might be simpler
   -- to just link all the arguments.
     
   -- Generic instructions
-  insrr MOV ra rb = movop ra (Reg rb)
-  insri LDI ra ib = movop ra (Im ib)
+  insrr MOV ra rb = move ra (Reg rb)
+  insri LDI ra ib = move ra (Im ib)
   insrro ADD = intop2 (+)
   insrro CLR = intop2 clrbit
   insrro SET = intop2 setbit
@@ -174,18 +180,18 @@ next = modify $ adjust (+ 1) PCounter
 -- Convenient 2-level dereference of operand to Int.
 -- Note the difference between:
 -- link: compile time lookup (label -> addr)
--- op:   run time lookup (reg -> value)
-compo :: (Int -> MachineOp) -> O -> EmuSource
-compo f o = do
+-- ref:  run time lookup (reg -> value)
+comp_link_ref :: (Int -> MachineOp) -> O -> EmuSrc
+comp_link_ref f o = do
   o' <- link o
   comp $ do
-    o'' <- op o'
+    o'' <- ref o'
     f o''
 
 -- Generic move.  On PRU this is split into two instructions: MOV and
 -- LDI, instead of one instruction that can take multiple operand
 -- types.
-movop ra = compo $ \b -> do
+move ra = comp_link_ref $ \b -> do
   store ra b
   next
 
@@ -194,37 +200,51 @@ intop2 :: (Int -> Int -> Int) -> R -> R -> O -> Emu ()
 intop2 f ra rb c = do
   c' <- link c
   comp $ do
-    b'  <- op $ Reg rb
-    c'' <- op c'
+    b'  <- ref $ Reg rb
+    c'' <- ref c'
     store ra $ f b' c''
     next
 
 
--- Running the EmuCompiled code.
+-- Running the EmuCode code.
 
 
 -- Normal machine cycle.
-tick :: EmuCompiled -> MachineOp
+tick :: EmuCode -> MachineOp
 tick code = do
   pc <- gets (! PCounter)     -- Read program counter from state
   code ! pc                   -- Run instruction, which updates PCounter
   modify $ adjust (+ 1) Time  -- FIXME: Assumes 1 cycle / instruction
 
 
+
 -- One particular interpretation of programs we're interested in is
 -- state traces.  These can then be filtered to isolate a specific
--- signal.  A program produces a sequence of machines states.
-
-stateTrace ::
-  MachineState ->                    -- Initial state
+-- signal.  Embed the state trace into the main emulation log.
+logTrace ::
+  EmuCode ->
   (MachineState -> MachineState) ->  -- External IO effects
-  EmuCompiled ->
-  [MachineState]
-stateTrace s0 io code = s0 : evalState stateSeq s0 where
-  stateSeq = sequence $ cycle [tick']
+  MachineState ->                    -- Initial state
+  [EmuLog]
+logTrace code io s0 = (LogState s0 : w) where
+  ((), w) = evalState (runWriterT stateSeq) s0
+  stateSeq = sequence_ $ cycle [tick']
   tick' = do
-    modify io   -- Apply external influence
-    tick code   -- Normal machine cycle
-    get         -- return state for trace
+    modify io          -- Apply external influence
+    tick code          -- Normal machine cycle
+--  s <- get
+    return ()
+--  tell [LogState s]  -- Use Log writer
 
+
+-- Minimal init needed for tick to work.  It seems more convenient to
+-- just use machine code to initialize registers, as opposed to
+-- explicitly constructint the state.
+
+machineInit = machineInit0 []
+machineInit0 = machineInit' 0
+
+machineInit' :: Int -> [Int] -> MachineState
+machineInit' init regs = Map.fromList $
+  [(PCounter, 0), (Time, 0)] ++ [(File r, init) | r <- regs]
 
