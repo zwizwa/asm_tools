@@ -7,7 +7,7 @@
 module PruEmu(compile,stateTrace,Emu,EmuProg,MachineState(..),MachineVar(..)) where
 
 import Pru
-import Data.Map.Lazy (Map, (!), lookup, empty, insert, fromList, adjust)
+import Data.Map.Strict (Map, (!), lookup, empty, insert, fromList, adjust)
 import qualified Data.Map as Map
 import Control.Monad.State
 import Control.Monad.Writer
@@ -38,10 +38,11 @@ type Labels = Map LabelNb Addr
 
 compile :: EmuProg -> EmuCode
 compile m = code  where
-  (((), w), s) = runState (runWriterT (runReaderT m e)) (0, 0, empty)
+  s0 = (0, 0, empty)
+  (((), w), s) = runState (runWriterT (runReaderT m r)) s0
   code = fromList $ zip [0,1..] w
   (_, _, labels) = s
-  e = (labels !) -- circular
+  r = (labels !) -- circular
 
 
 -- Compilation state access
