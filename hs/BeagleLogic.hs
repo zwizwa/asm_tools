@@ -40,10 +40,21 @@ bl_weave loop1 = do
   loop_start <- declare
   let pre   = 2  -- this aligns xout with mov (see asm output)
       pad   = nops :: Int -> [m()]
-      loop1 = sample :: [m()]
       loop2 = transfer (length loop1) loop_start :: [m()]
 
   entry <- label'
   shift_loops pre pad loop_start loop1 loop2
   return entry
 
+
+
+-- Weave in a coroutine call.
+sample_and_yield :: forall m. Pru m => Int -> Int -> [m ()]
+sample_and_yield r1 r2 = thread where
+  -- Create a yield thread
+  n = length (sample :: [m ()])
+  yields = replicate n yield
+  yield = (jal (R r1) (Reg (R r2)))
+
+  -- Merge the two :: [m ()] into a single :: [m ()]
+  thread = zipWith (>>) yields sample

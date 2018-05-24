@@ -33,6 +33,7 @@ import Pru
 import PruGen
 import PruEmu
 import BeagleLogic
+import Weave
 
 import Data.List
 import Data.Map.Strict as Map
@@ -67,10 +68,15 @@ test1 = do
 
   initRegs
   
-  comment "bl_weave sample"
-  bl_weave (sample :: [m ()])
+--  comment "bl_weave sample"
+--  bl_weave (sample :: [m ()])
+
+  comment "bl_weave sample_and_yield"
+  bl_weave (sample_and_yield 10 11 :: [m ()])
+  
   comment "End"
-    
+
+  
 
   
 initRegs = sequence_ $ [ ldi (R r) (I 0) | r <- [0..31] ]
