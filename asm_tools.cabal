@@ -1,8 +1,12 @@
-name: asmtools
+name: asm-tools
 version: 1.0.0
 cabal-version: >= 1.18
 build-type: Simple
 license: BSD3
+
+Library
+    build-depends: base, containers, mtl
+    build-depends: base
 
 Test-Suite test-pru
     build-depends: base, containers, mtl

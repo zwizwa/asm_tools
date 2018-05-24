@@ -14,8 +14,8 @@ clean:
 # Release build
 compile: default.nix release.nix
 	nix-build release.nix
-	ls -l result/bin/asmtools
-default.nix: asmtools.cabal
+	ls -l result/bin/asm_tools
+default.nix: asm_tools.cabal
 	cabal2nix . >$@
 
 # Shell with build deps
