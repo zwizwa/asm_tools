@@ -224,32 +224,33 @@ tick code = do
   modify $ adjust (+ 1) Time  -- FIXME: Assumes 1 cycle / instruction
 
 
+-- Run machine with custom tracer.
+-- Machine runs indefinitely producing a lazy stream.
+tickTrace ::
+  EmuCode ->         -- Compiled assembly listing
+  Machine t ->       -- Runs before tick
+  MachineState ->    -- Initial state
+  [t]
+tickTrace code preTick s = seq where
+  (seq, _) = evalState (runWriterT mseq) s
+  mseq = sequence $ cycle [tick']
+  tick' = do
+    s <- preTick  -- User-provided action
+    tick code     -- Normal machine cycle
+    return s
 
 -- One particular interpretation of programs we're interested in is
 -- state traces.  These can then be filtered to isolate a specific
--- signal.  The machine is run lazily this way.
-stateTrace ::
-  EmuCode ->         -- Compiled assembly listing
-  MachineOp ->       -- E.g for external IO effects
-  MachineState ->    -- Initial state
-  [MachineState]
-stateTrace code pre s = s : stateSeq where
-  (stateSeq,w) = evalState (runWriterT mStateSeq) s
-  mStateSeq = sequence $ cycle [tick']
-  tick' = do
-    pre         -- Apply external influence
-    tick code   -- Normal machine cycle
-    get         -- Return machine state
+-- signal.  
+stateTrace code pre =
+  tickTrace code $ do s <- get ; pre ; return s
 
 
--- To be able to use the Writer log, the machine cannot be run with an
--- infinite program as above.  The Writer monoid final result is only
--- available at the end of the computation, so the program needs to be
--- finite.  However it is possible to "chunk" like below.  Is there a
--- more elegant way?
-logTrace code io = next where
-  next s = w <> next s where
-    (s', w) = logTrace' code io s' 1
+-- Note that the Writer log is different.  The machine cannot be run
+-- with an infinite program as above.  The final log result is only
+-- available _after_ the computation has finished, so the program
+-- needs to be finite.  However it is possible to "chunk" like below.
+-- Is there a more elegant way?
 
 -- Run for a finite amount of time.
 logTrace' ::
@@ -259,7 +260,12 @@ logTrace' code pre s n = (s',w) where
   (((),w), s') = runState (runWriterT m) s
   m = sequence_ $ replicate n $ pre >> tick code
 
--- However, it is then possible to "chunk" the execution.
+-- Chunked infinite run.  If there is no log output, this diverges.
+logTrace code pre = next where
+  next s = w <> next s where
+    (s', w) = logTrace' code pre s' 1
+
+
 
 
 machineInit = machineInit0 []
