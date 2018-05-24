@@ -13,7 +13,7 @@ import Pru
 -- Compile to intermediate Ins language using Writer+State monad.
 
 type Gen = WriterT [Ins] (State Int)
-data Ins = Ins String [O] | Lbl L | Comment String deriving Show
+data Ins = Ins String [O] | Lbl Int | Comment String deriving Show
 data Asm = Asm [Ins]
 
 asm :: Gen () -> Asm
@@ -23,13 +23,14 @@ asm m = Asm w where
 w i = tell [i]
 
 instance Pru Gen where
-  declare        = do l <- get ; modify (+1) ; return l
-  label l        = w $ Lbl l
+  declare        = do l <- get ; modify (+1) ; return $ L l
+  label (L l)    = w $ Lbl l
   insri o a b    = w $ Ins (show o) [Reg a, Im b]
   insrr o a b    = w $ Ins (show o) [Reg a, Reg b]
   insrro o a b c = w $ Ins (show o) [Reg a, Reg b, c]
   insiri o a b c = w $ Ins (show o) [Im a, Reg b, Im c]
-  jmp l          = w $ Ins "JMP" [Label l]
+  insro o a b    = w $ Ins (show o) [Reg a, b]
+  inso o a       = w $ Ins (show o) [a]
   ins o          = w $ Ins (show o) []
   comment c      = w $ Comment c
 
@@ -47,7 +48,7 @@ lbl l = "L" ++ (show l)
 op (Reg (R r)) = "R" ++ show r
 op (Reg (Rw r w)) = "R" ++ show r ++ ".w" ++ show w
 op (Reg (Rb r b)) = "R" ++ show r ++ ".b" ++ show b
-op (Im i)  = show i
-op (Label l) = lbl l
+op (Im (I i))  = show i
+op (Im (L l))  = lbl l
 
 

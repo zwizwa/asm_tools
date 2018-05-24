@@ -73,7 +73,7 @@ test1 = do
     
 
   
-initRegs = sequence_ $ [ ldi (R r) 0 | r <- [0..31] ]
+initRegs = sequence_ $ [ ldi (R r) (I 0) | r <- [0..31] ]
 
 
   

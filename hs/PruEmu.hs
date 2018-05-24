@@ -118,33 +118,47 @@ store' bits index (R r) sub = do
 clrbit val bit = val .&. (complement $ shift 1 bit)
 setbit val bit = val .|. (shift 1 bit)
 
+-- Generic run time operand dereference.
+op (Im (I im))  = return im
+op (Im (L l))   = error $ "label " ++ show l ++ " not resolved"
+op (Reg r)      = load r
+
+-- Compile time resolution.
 -- Label resolution is not in the evaluation path that computes the
 -- table, so circular progamming works here.
-link l = do a <- ask ; return $ a l
+link (Im (L l)) = do a <- ask ; return $ Im (I (a l))
+link o          = return $ o
 
 instance Pru Emu where
 
   declare = do
     n <- labelNb
     modify $ appLabelNb (+ 1)
-    return n
+    return $ L n
     
-  label l = do
+  label (L l) = do
     a <- addr
     modify $ appLabels $ \ls -> insert l a ls
 
-  jmp l = do
-    a <- link l;
-    comp' $ storem PCounter a
+  -- Note the difference between:
+  -- link: compile time lookup (label -> addr)
+  -- op:   run time lookup (reg -> value)
+  inso JMP o = do
+    o' <- link o
+    comp' $ do
+      o'' <- op o'
+      storem PCounter o''
     
-  insro JAL (R r) (Im l) = do
-    a <- link l
-    comp' $ jalop r a
+  insro JAL (R r) o  = do
+    o' <- link o
+    comp' $ do
+      o'' <- op o
+      pc <- loadm PCounter
+      storem (File r) (pc + 1)
+      storem PCounter o''
     
-  insro JAL (R r) o      = comp' $ op o >>= jalop r
-
-        
-  -- FIXME: immediates can all be addresses.  Not jet supported.
+  -- FIXME: all immediates can all be addresses.  It might be simpler
+  -- to just link all the arguments.
     
   -- Generic instructions
   insrr MOV ra rb = movop ra (Reg rb)
@@ -167,29 +181,26 @@ next =  modify $ adjust (+ 1) PCounter
 -- Generic 2-operand Integer operations operations, truncated to 32
 -- bit results.
 intop2 :: (Int -> Int -> Int) -> R -> R -> O -> Emu ()
-intop2 f ra rb c = comp' $ do
-  b' <- op $ Reg rb
-  c' <- op c
-  store ra $ b' + c'
-  next
+intop2 f ra rb c = do
+  c' <- link c
+  comp' $ do
+    b' <- op $ Reg rb
+    c'' <- op c'
+    store ra $ b' + c''
+    next
 
 -- Generic move.  On PRU this is split into two instructions: MOV and
 -- LDI, instead of one instruction that can take multiple operand
 -- types.
-movop ra b = comp' $ do
-  v <- op b
-  store ra v
-  next
-
-jalop r nextpc = do
-    pc <- loadm PCounter
-    storem (File r) (pc + 1)
-    storem PCounter nextpc
+movop ra b = do
+  b' <- link b
+  comp' $ do
+    v <- op b'
+    store ra v
+    next
 
 
--- Generic operand dereference.
-op (Im  im)  = return im
-op (Reg r)   = load r
+
 
 
 

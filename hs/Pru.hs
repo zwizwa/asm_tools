@@ -9,9 +9,9 @@ module Pru where
 
 -- FIXME: Instructions are implemented as needed by the driving application.
 class Monad m => Pru m where
-  declare :: m L
-  label   :: L -> m ()
-  jmp     :: L -> m ()
+  declare :: m I
+  label   :: I -> m ()
+  inso    :: OpcO   -> O           -> m ()
   insrr   :: OpcRR  -> R -> R      -> m ()
   insri   :: OpcRI  -> R -> I      -> m ()
   insro   :: OpcRO  -> R -> O      -> m ()
@@ -21,12 +21,13 @@ class Monad m => Pru m where
   comment :: String -> m ()
 
 -- Operands
-data O = Reg R | Im I | Label L deriving (Show, Eq, Ord)
+data O = Reg R | Im I                    deriving (Show,Eq,Ord)
+data I = I Int | L Int                   deriving (Show,Eq,Ord)
 data R = R Int | Rw Int Int | Rb Int Int deriving (Show,Eq,Ord)
-type I = Int
-type L = Int
+
 
 -- Instructions
+data OpcO   = JMP  deriving Show
 data OpcRR  = MOV  deriving Show
 data OpcRI  = LDI  deriving Show
 data OpcRO  = JAL  deriving Show
@@ -61,11 +62,15 @@ nop = ins NOP
 
 jal :: Pru m => R -> O -> m ()
 jal = insro JAL
+
+jmp :: Pru m => O -> m ()
+jmp = inso JMP
+
   
 
 
 -- Shortcut in case no back-references are required.
-label' :: Pru m => m L
+label' :: Pru m => m I
 label' = do
   l <- declare
   label l
