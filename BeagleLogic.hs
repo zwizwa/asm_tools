@@ -9,11 +9,15 @@ import Weave
 -- BeagleLogic.  It interleaves two loops:
 
 -- a) Sample (possibly combined with other I/O control)
-sample :: Pru m => [m ()]
+
+sample :: forall m. Pru m => [m ()]
 sample = do
   r <- [21..28]
   b <- [0,1,2,3]
-  return $ mov (Rb r b) (Rb 31 0)
+  return $ do
+    snapshot "sample"
+    mov (Rb r b) (Rb 31 0)
+
 
 -- b) data transfer to PRU0 + loop control
 transfer :: forall m. Pru m => Int -> I -> [m ()]

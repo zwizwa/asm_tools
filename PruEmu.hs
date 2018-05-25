@@ -6,7 +6,7 @@
 
 module PruEmu(compile,compile',Emu,EmuSrc,EmuCode,
               MachineState(..),MachineVar(..),MachineOp,
-              logTrace, logTrace', EmuLog(..), emuLog,
+              logTrace, logTrace', EmuLog(..),
               machineInit,machineInit0,machineInit',
               stateTrace) where
 
@@ -34,7 +34,7 @@ import Data.Bits
 type EmuSrc = Emu ()                       -- embedded source
 type EmuCode = Map Addr MachineOp          -- compiled emulator functions
 type Emu = ReaderT Link                    -- main monad
-          (WriterT [MachineOp]
+          (WriterT [Either PseudoOp MachineOp]
           (State (LabelNb, Addr, Labels)))
 type Link = (LabelNb -> Addr)              -- address resolution
 type LabelNb = Int
@@ -48,9 +48,20 @@ compile' :: EmuSrc -> (EmuCode, Labels)
 compile' m = (code, labels)  where
   s0 = (0, 0, empty)
   (((), w), s) = runState (runWriterT (runReaderT m r)) s0
-  code = fromList $ zip [0,1..] w
+  w' = mergePre w
+  code = fromList $ zip [0,1..] w'
   (_, _, labels) = s
   r = (labels !) -- circular
+
+-- zero-width instrumentation instructions are prefixed to the first
+-- actual instruction. FIXME: This feels a bit hacky.  Maybe Reader is
+-- not the right tool for this.
+mergePre :: [Either MachineOp MachineOp] -> [MachineOp]
+mergePre = f0 where
+  f0 = f $ return ()
+  f pre [] = [pre] -- insert pseudo instruction at the end
+  f pre ((Right m):cells) = (pre >> m) : (f0 cells)
+  f pre ((Left  m):cells) = f (pre >> m) cells
 
 
 -- Compilation state access
@@ -60,12 +71,12 @@ appLabelNb f (n,a,l) = (f n, a, l)
 appAddr    f (n,a,l) = (n, f a, l)
 appLabels  f (n,a,l) = (n, a, f l)
 
--- Compile a patchable instruction
+-- Compile a (pseudo) instruction
 comp :: MachineOp -> EmuSrc
-comp ins = do
-  tell [ins]
-  modify $ appAddr (+ 1)
+comp ins = do tell [Right ins] ; modify $ appAddr (+ 1)
 
+pseudo :: PseudoOp -> EmuSrc
+pseudo ins = tell [Left ins]
 
 -- Machine instructions are represented as state->state transformers.
 -- The Machine is a map to integer values
@@ -79,14 +90,16 @@ data MachineVar
   deriving (Eq,Ord,Show)
 
 -- State transformers are wrapped in a State monad.
+-- type EmuMachine w t = EmuMachine (WriterT [w] (State MachineState) t)
+
 type Machine = WriterT [EmuLog] (State MachineState)
 type MachineOp = Machine ()
+type PseudoOp = MachineOp
 
 -- State variable access
 storem :: MachineVar -> Int -> MachineOp
 storem var val = do
   modify $ insert var val
-  -- emuLog "storem" (var,val)
 
 
 loadm :: MachineVar -> Machine Int
@@ -97,10 +110,12 @@ loadm var = do
 checkVar var (Just val) = val
 checkVar var Nothing = error $ "Uninitialized MachineVar: " ++ show var
 
--- For now, just use strings.
-type EmuLog = Char
-emuLog :: Show t => String -> t -> MachineOp
-emuLog tag v = tell $ tag ++ ": " ++ show v ++ "\n"
+-- Ideally, the log would be a type parameter, but it seems quite a
+-- bit of work to make that change.  For now just support some basic
+-- hardcoded types: generic strings, and string-tagged machine state
+-- snapshots.
+data EmuLog = LogString String | LogState String MachineState deriving Show
+
 
 
 -- Registers are special: they have word, byte subaccess.
@@ -177,7 +192,10 @@ instance Pru Emu where
   ins HALT = comp $ return ()
   ins NOP  = comp next
 
-  comment _ = return ()
+  -- Instrumentation
+  logStr str   = pseudo $ tell [LogString str]
+  snapshot tag = pseudo $ do s <- get ; tell [LogState tag s]
+
 
 -- Adjust state to resume at the next instruction
 next :: MachineOp
@@ -198,7 +216,6 @@ comp_link_ref f o = do
 -- LDI, instead of one instruction that can take multiple operand
 -- types.
 move ra = comp_link_ref $ \b -> do
-  -- emuLog "move" (ra,b)
   store ra b
   next
 
@@ -224,7 +241,7 @@ tick code = do
   modify $ adjust (+ 1) Time  -- FIXME: Assumes 1 cycle / instruction
 
 
--- Run machine with custom tracer.
+-- Run machine with custom per-tick tracer.
 -- Machine runs indefinitely producing a lazy stream.
 tickTrace ::
   EmuCode ->         -- Compiled assembly listing
@@ -249,16 +266,16 @@ stateTrace code pre =
 -- Note that the Writer log is different.  The machine cannot be run
 -- with an infinite program as above.  The final log result is only
 -- available _after_ the computation has finished, so the program
--- needs to be finite.  However it is possible to "chunk" like below.
--- Is there a more elegant way?
+-- needs to be finite.  However it is possible to "chunk" it like
+-- below.  Is there a more elegant way?
 
 -- Run for a finite amount of time.
 logTrace' ::
-  EmuCode -> MachineOp -> MachineState -> Int ->
+  EmuCode -> Machine t -> MachineState -> Int ->
   (MachineState,[EmuLog])
-logTrace' code pre s n = (s',w) where
-  (((),w), s') = runState (runWriterT m) s
-  m = sequence_ $ replicate n $ pre >> tick code
+logTrace' code preTick s n = (s',w) where
+  (((), w), s') = runState (runWriterT m) s
+  m = sequence_ $ replicate n $ preTick >> tick code
 
 -- Chunked infinite run.  If there is no log output, this diverges.
 logTrace code pre = next where

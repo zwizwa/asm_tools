@@ -18,7 +18,11 @@ class Monad m => Pru m where
   insrro  :: OpcRRO -> R -> R -> O -> m ()
   insiri  :: OpcIRI -> I -> R -> I -> m ()
   ins     :: Opc -> m ()
-  comment :: String -> m ()
+
+  -- Instrumentation
+  comment  :: String -> m () ; comment _  = return ()
+  logStr   :: String -> m () ; logStr _   = return ()
+  snapshot :: String -> m () ; snapshot _ = return ()
 
 -- Operands
 data O = Reg R | Im I                    deriving (Show,Eq,Ord)

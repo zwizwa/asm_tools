@@ -1073,3 +1073,32 @@ Entry: Trying Writer output for logs
 Date: Thu May 24 13:08:00 EDT 2018
 
 But obviously, can't have infinite program.
+EDIT: Was fixable.
+
+
+Entry: Parameterizing the emulator Writer monoid
+Date: Thu May 24 17:06:05 EDT 2018
+
+Would be good for instrumentation.
+
+Will require some type->data changes + instances.
+
+This is actually a lot of work to push that parameter all the way down
+and add tagging everywhere.  There must be a simpler way.
+
+
+What is it I actually want to do.  I want to record time stamps of
+particular events.  Why not use (String,MachineState)?
+
+EDIT: Trying some more things.  Currently it is not possible to
+interleave pseudo ops that do not take instruction space.  It doesn't
+seem straightforward to change this.  I'm already getting into the
+"implementation is law" part of this project it seems.
+
+Anyway, it is possible by modifying the Map.  Probably a good idea to
+implement.  This requires "zero width" instructions.
+
+
+EDIT: Working.  Maybe try parameterizing the log anyway?
+
+

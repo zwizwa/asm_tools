@@ -64,10 +64,14 @@ printl es = sequence_ $ Data.List.map print es
   
 
 test_beaglelogic_loop = do
-  putStrLn "--- test1"
-  print $ asm beaglelogic_loop
-  let (code, labels) = compile' beaglelogic_loop
+  putStrLn "--- test1" ; print $ asm beaglelogic_loop
+
+  let code = compile beaglelogic_loop
   print $ take 200 $ mvtrace1 code pre machineInit PCounter
+
+  let ss = take 5 $ snd $ logTrace' code pre machineInit 100
+  print $ Data.List.map (\(LogState "sample" s) -> s ! Time) ss
+
 
 
 -- MachineVar trace
@@ -86,8 +90,6 @@ pru_input s =
   Map.insert (File 31) (s ! Time) s
   
 
-
-
 beaglelogic_loop :: forall m. Pru m => m ()
 beaglelogic_loop = do
   
@@ -101,7 +103,22 @@ beaglelogic_loop = do
 --  comment "bl_weave sample"
 --  bl_weave (sample :: [m ()])
 
+  comment "coroutine instruction pointer init"
+  comment "R10: beaglelogic sampler"
+  comment "R11: custom control, delay loop"
+  entry_10 <- declare
+  entry_11 <- declare
+  ldi (R 10) entry_10
+  ldi (R 11) entry_11
+  
+  comment "R10 routine body"
+  label entry_11
+  jal (R 11) (Reg (R 10))  -- save state in R11, jump to R10
+  jmp (Im entry_11)
+
+  comment "R11 routine body"
   comment "bl_weave sample_and_yield"
+  label entry_10
   bl_weave (sample_and_yield 10 11 :: [m ()])
   
   comment "End"
@@ -112,7 +129,7 @@ initRegs = sequence_ $ [ ldi (R r) (I 0) | r <- [0..31] ]
 coroutine :: forall m. Pru m => m ()
 coroutine = do
 
-  comment "routine instruction pointer init"
+  comment "coroutine instruction pointer init"
   loop_10 <- declare
   loop_11 <- declare
   ldi (R 10) loop_10
