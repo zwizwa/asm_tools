@@ -34,7 +34,7 @@ import Data.Bits
 -- Code is the compiled form of Src.  Each memory address
 -- contains a function that emulates the instruction at that location.
 
--- PRU Code is represented as a unit value in the compiler monad.
+-- PRU assembly code is unit value in the compiler monad.
 type Src w = Comp w ()
 
 -- Compilation and interpretation monads are parameterized by a logger w.
@@ -46,9 +46,8 @@ newtype Comp w t =
             MonadState CompState,
             MonadWriter [CompiledOp w],
             MonadReader Link)
-
+data CompiledOp w = PseudoOp (Emu w ()) | RealOp (Emu w ())
 type CompState = (LabelNb, Addr, Labels)
-type CompiledOp w = Either (Emu w ()) (Emu w ())
 type Link = (LabelNb -> Addr)   -- address resolution
 type LabelNb = Int
 type Addr = Int
@@ -58,7 +57,8 @@ type Labels = Map LabelNb Addr
 -- State carries the machine state, a Map of EmuVar to Int
 -- Writer carries a user-specified trace type
 newtype Emu w t = Emu { unEmu :: (WriterT w (State EmuState) t) }
-  deriving (Functor, Applicative, Monad, MonadWriter w, MonadState EmuState)
+  deriving (Functor, Applicative, Monad,
+            MonadWriter w, MonadState EmuState)
 
 type EmuState = Map EmuVar Int
 data EmuVar
@@ -78,7 +78,7 @@ compile' :: Monoid w => Src w -> (Emu w (), Labels)
 compile' m = (boot code, labels)  where
   s0 = (0, 0, empty)
   (((), w), s) = runState (runWriterT (runReaderT (unComp m) r)) s0
-  w' = mergePre w
+  w' = mergePseudoOps w
   code = fromList $ zip [0,1..] w'
   (_, _, labels) = s
   r = (labels !) -- circular
@@ -95,16 +95,16 @@ boot code = do
 -- it. This behavior is similar to breakpoints. Peudo instructions
 -- support instrumentation to perform state modification and trace
 -- writing.
-mergePre :: Monoid w => [CompiledOp w] -> [Emu w ()]
-mergePre = f0 where
+mergePseudoOps :: Monoid w => [CompiledOp w] -> [Emu w ()]
+mergePseudoOps = f0 where
   f0 = f $ return ()
   f pre [] = [pre] -- insert pseudo instruction at the end
-  f pre ((Right m):ops) = (pre >> m) : (f0 ops)
-  f pre ((Left  m):ops) = f (pre >> m) ops
+  f pre ((RealOp m):ops) = (pre >> m) : (f0 ops)
+  f pre ((PseudoOp m):ops) = f (pre >> m) ops
 
 -- Compile a (pseudo) instruction
-comp   ins = do tell [Right ins] ; modify $ appAddr (+ 1)
-pseudo ins = tell [Left ins]
+comp   ins = do tell [RealOp ins] ; modify $ appAddr (+ 1)
+pseudo ins = tell [PseudoOp ins]
 
 -- Compilation state access
 labelNb :: Monoid w => Comp w LabelNb
