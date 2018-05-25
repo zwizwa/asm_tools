@@ -6,9 +6,10 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module PruEmu(compile,compile',
-              EmuSrc,EmuComp,EmuCode,EmuRunOp,
-              EmuRunState(..),EmuRunVar(..),
+              Src,Comp,Run,
+              RunState(..),RunVar(..),
               logTrace, logTrace',
+              pseudo, loadm,
               machineInit,machineInit0,machineInit',
               stateTrace) where
 
@@ -30,37 +31,37 @@ import Data.Bits
 -- resolution, but here we can use circular programming.  Also see:
 -- https://wiki.haskell.org/wikiupload/1/14/TMR-Issue6.pdf
 
--- EmuCode is the compiled form of EmuSrc.  Each memory address
+-- Code is the compiled form of Src.  Each memory address
 -- contains a function that emulates the instruction at that location.
 
 -- PRU Code is represented as a unit value in the compiler monad.
-type EmuSrc w = EmuComp w ()
+type Src w = Comp w ()
 
 -- Compilation and interpretation monads are parameterized by a logger w.
 
 -- Compilation monad
-newtype EmuComp w t =                      
-  Emu {unEmu :: (ReaderT Link (WriterT [EmuCompiledOp w] (State EmuCompState)) t) }
+newtype Comp w t =                      
+  Emu {unEmu :: (ReaderT Link (WriterT [CompiledOp w] (State CompState)) t) }
   deriving (Functor, Applicative, Monad,
-            MonadState EmuCompState,
-            MonadWriter [EmuCompiledOp w],
+            MonadState CompState,
+            MonadWriter [CompiledOp w],
             MonadReader Link)
 
-type EmuCompState = (LabelNb, Addr, Labels)
-type EmuCompiledOp w = Either (EmuRunOp w) (EmuRunOp w)
+type CompState = (LabelNb, Addr, Labels)
+type CompiledOp w = Either (Run w ()) (Run w ())
 type Link = (LabelNb -> Addr)   -- address resolution
 type LabelNb = Int
 type Addr = Int
 type Labels = Map LabelNb Addr
 
---- Run time interpretation monad
-newtype EmuRun w t = EmuRun { unEmuRun :: (WriterT w (State EmuRunState) t) }
-  deriving (Functor, Applicative, Monad, MonadWriter w, MonadState EmuRunState)
+-- Run time interpretation monad.
+-- State carries the machine state, a Map of RunVar to Int
+-- Writer carries a user-specified trace type
+newtype Run w t = Run { unRun :: (WriterT w (State RunState) t) }
+  deriving (Functor, Applicative, Monad, MonadWriter w, MonadState RunState)
 
-type EmuRunOp w = EmuRun w ()
-type EmuCode w = Map Addr (EmuRunOp w)
-type EmuRunState = Map EmuRunVar Int
-data EmuRunVar
+type RunState = Map RunVar Int
+data RunVar
   = File Int  -- register file
   | CFlag     -- carry flag
   | PCounter  -- program counter
@@ -68,12 +69,13 @@ data EmuRunVar
   deriving (Eq,Ord,Show)
 
 
-
-compile :: Monoid w => EmuSrc w -> EmuCode w
+-- The result of compilation is a machine tick operation, executing
+-- one machine cycle in the Writer,State monad
+compile :: Monoid w => Src w -> Run w ()
 compile = fst . compile'
 
-compile' :: Monoid w => EmuSrc w -> (EmuCode w, Labels)
-compile' m = (code, labels)  where
+compile' :: Monoid w => Src w -> (Run w (), Labels)
+compile' m = (run code, labels)  where
   s0 = (0, 0, empty)
   (((), w), s) = runState (runWriterT (runReaderT (unEmu m) r)) s0
   w' = mergePre w
@@ -81,53 +83,61 @@ compile' m = (code, labels)  where
   (_, _, labels) = s
   r = (labels !) -- circular
 
--- zero-width instrumentation instructions are prefixed to the first
--- actual instruction. FIXME: This feels a bit hacky.  Maybe Reader is
--- not the right tool for this.
-mergePre :: Monoid w => [EmuCompiledOp w] -> [EmuRunOp w]
+-- Normal machine cycle.
+run code = do
+  pc <- gets (! PCounter)     -- Read program counter from state
+  code ! pc                   -- Run instruction, which updates PCounter
+  modify $ adjust (+ 1) Time  -- FIXME: Assumes 1 cycle / instruction
+
+-- The compiler produces either pseudo (Left) or real (Right)
+-- instructions.  Pseudo instructions do not consume memory or cycle
+-- time, and are prefixed to the first real instruction following
+-- it. This behavior is similar to breakpoints. Peudo instructions
+-- support instrumentation to perform state modification and trace
+-- writing.
+mergePre :: Monoid w => [CompiledOp w] -> [Run w ()]
 mergePre = f0 where
   f0 = f $ return ()
   f pre [] = [pre] -- insert pseudo instruction at the end
-  f pre ((Right m):cells) = (pre >> m) : (f0 cells)
-  f pre ((Left  m):cells) = f (pre >> m) cells
+  f pre ((Right m):ops) = (pre >> m) : (f0 ops)
+  f pre ((Left  m):ops) = f (pre >> m) ops
 
+-- Compile a (pseudo) instruction
+comp   ins = do tell [Right ins] ; modify $ appAddr (+ 1)
+pseudo ins = tell [Left ins]
 
 -- Compilation state access
-labelNb :: Monoid w => EmuComp w LabelNb
+labelNb :: Monoid w => Comp w LabelNb
 labelNb = get >>= \(n,_,_) -> return n
 
-addr :: Monoid w => EmuComp w Addr
+addr :: Monoid w => Comp w Addr
 addr    = get >>= \(_,a,_) -> return a
 
 appLabelNb f (n,a,l) = (f n, a, l)
 appAddr    f (n,a,l) = (n, f a, l)
 appLabels  f (n,a,l) = (n, a, f l)
 
--- Compile a (pseudo) instruction
-comp ins = do tell [Right ins] ; modify $ appAddr (+ 1)
+-- Compile time resolution.
+-- Label resolution is not in the evaluation path that computes the
+-- table.  This enables circular progamming to be used.
+link (Im (L l)) = do a <- ask ; return $ Im (I (a l))
+link o          = return $ o
 
-pseudo ins = tell [Left ins]
-
-
--- State variable access
-storem :: Monoid w => EmuRunVar -> Int -> EmuRun w ()
+-- Run time state access
+storem :: Monoid w => RunVar -> Int -> Run w ()
 storem var val = do
   modify $ insert var val
 
-
-loadm :: Monoid w => EmuRunVar -> EmuRun w Int
+loadm :: Monoid w => RunVar -> Run w Int
 loadm var = do
   maybe <- gets $ (Map.lookup var)
   return $ checkVar var maybe
 
 checkVar var (Just val) = val
-checkVar var Nothing = error $ "Uninitialized EmuRunVar: " ++ show var
-
-
-
+checkVar var Nothing = error $ "Uninitialized RunVar: " ++ show var
 
 -- Registers are special: they have word, byte subaccess.
-load :: Monoid w => R -> EmuRun w Int
+load :: Monoid w => R -> Run w Int
 load (R r)    = loadm (File r)
 load (Rw r w) = word 16 w <$> (loadm $ File r)
 load (Rb r b) = word  8 b <$> (loadm $ File r)
@@ -137,7 +147,6 @@ word bits w v = v' .&. (mask bits) where
   v' = shift v $ 0 - bits
 
 trunc bits = (.&. (mask bits))
-
   
 store (R r) = (storem (File r)) . (trunc 32)
 store (Rw r w) = store' 16 w (R r)
@@ -150,7 +159,6 @@ store' bits index (R r) sub = do
       sub'   = shift' sub
       old'   = old .&. kill
   storem (File r) $ old' .|. sub'
-    
 
 clrbit val bit = val .&. (complement $ shift 1 bit)
 setbit val bit = val .|. (shift 1 bit)
@@ -160,13 +168,37 @@ ref (Im (I im))  = return im
 ref (Im (L l))   = error $ "label " ++ show l ++ " not resolved"
 ref (Reg r)      = load r
 
--- Compile time resolution.
--- Label resolution is not in the evaluation path that computes the
--- table, so circular progamming works here.
-link (Im (L l)) = do a <- ask ; return $ Im (I (a l))
-link o          = return $ o
+-- Adjust state to resume at the next instruction
+next :: Monoid w => Run w ()
+next = modify $ adjust (+ 1) PCounter
 
-instance Monoid w => Pru (EmuComp w) where
+-- 2-stage dereference of operand to Int.
+comp_link_ref f o = do
+  o' <- link o -- compile time lookup: label -> addr
+  comp $ do
+    o'' <- ref o' -- run time lookup: reg -> value
+    f o''
+
+-- Generic move.  On PRU this is split into two instructions: MOV and
+-- LDI, instead of one instruction that can take multiple operand
+-- types.
+move ra = comp_link_ref $ \b -> do
+  store ra b
+  next
+
+-- Generic 2-operand Integer operations.
+intop2 :: Monoid w => (Int -> Int -> Int) -> R -> R -> O -> Comp w ()
+intop2 f ra rb c = do
+  c' <- link c
+  comp $ do
+    b'  <- ref $ Reg rb
+    c'' <- ref c'
+    store ra $ f b' c''
+    next
+
+
+-- Pru source code semantics
+instance Monoid w => Pru (Comp w) where
 
   declare = do
     n <- labelNb
@@ -184,9 +216,6 @@ instance Monoid w => Pru (EmuComp w) where
       storem (File r) (pc + 1)
       storem PCounter o
     
-  -- FIXME: all immediates can all be addresses.  It might be simpler
-  -- to just link all the arguments.
-    
   -- Generic instructions
   insrr MOV ra rb = move ra (Reg rb)
   insri LDI ra ib = move ra (Im ib)
@@ -201,88 +230,58 @@ instance Monoid w => Pru (EmuComp w) where
 
 
 
--- Adjust state to resume at the next instruction
-next :: Monoid w => EmuRunOp w
-next = modify $ adjust (+ 1) PCounter
-
--- Convenient 2-level dereference of operand to Int.
--- Note the difference between:
--- link: compile time lookup (label -> addr)
--- ref:  run time lookup (reg -> value)
-comp_link_ref f o = do
-  o' <- link o
-  comp $ do
-    o'' <- ref o'
-    f o''
-
--- Generic move.  On PRU this is split into two instructions: MOV and
--- LDI, instead of one instruction that can take multiple operand
--- types.
-move ra = comp_link_ref $ \b -> do
-  store ra b
-  next
-
--- Generic 2-operand Integer operations.
-intop2 :: Monoid w => (Int -> Int -> Int) -> R -> R -> O -> EmuComp w ()
-intop2 f ra rb c = do
-  c' <- link c
-  comp $ do
-    b'  <- ref $ Reg rb
-    c'' <- ref c'
-    store ra $ f b' c''
-    next
-
-
--- Running the EmuCode code.
-
-
--- Normal machine cycle.
-tick code = do
-  pc <- gets (! PCounter)     -- Read program counter from state
-  code ! pc                   -- Run instruction, which updates PCounter
-  modify $ adjust (+ 1) Time  -- FIXME: Assumes 1 cycle / instruction
-
-
--- Run machine with custom per-tick tracer.
--- Machine runs indefinitely producing a lazy stream.
-tickTrace code preTick s = seq where
-  (seq, _) = evalState (runWriterT $ unEmuRun mseq) s
-  mseq = sequence $ cycle [tick']
-  tick' = do
-    s <- preTick  -- User-provided action
-    tick code     -- Normal machine cycle
-    return s
-
--- One particular interpretation of programs we're interested in is
--- state traces.  These can then be filtered to isolate a specific
--- signal.  
-stateTrace code pre =
-  tickTrace code $ do s <- get ; pre ; return s
-
-
--- Note that the Writer log is different.  The machine cannot be run
--- with an infinite program as above.  The final log result is only
--- available _after_ the computation has finished, so the program
--- needs to be finite.  However it is possible to "chunk" it like
--- below.  Is there a more elegant way?
-
--- Run for a finite amount of time.
-logTrace' code preTick s n = (s',w) where
-  (((), w), s') = runState (runWriterT $ unEmuRun m) s
-  m = sequence_ $ replicate n $ preTick >> tick code
-
--- Chunked infinite run.  If there is no log output, this diverges.
-logTrace code pre = next where
-  next s = w <> next s where
-    (s', w) = logTrace' code pre s' 1
 
 
 
 
+-- Execution
+
+
+-- Machines behavior is fully determined by the code represented as a
+-- tick operation produced by the compiler, and the initial machine
+-- state.
 machineInit = machineInit0 []
 machineInit0 = machineInit' 0
 
-machineInit' :: Int -> [Int] -> EmuRunState
+machineInit' :: Int -> [Int] -> RunState
 machineInit' init regs = Map.fromList $
   [(PCounter, 0), (Time, 0)] ++ [(File r, init) | r <- regs]
+
+-- NOTE: To emulate external influence, pre or postfix the tick
+-- operation or machine code source with pseudo ops.
+
+-- Two example mechanism are provided to produce traces.
+
+-- 1) Per-instruction traces
+--
+-- Run machine with custom per-tick tracer.
+-- Machine runs indefinitely producing a lazy stream.
+tickTrace tick s = seq where
+  (seq, _) = evalState (runWriterT $ unRun mseq) s
+  mseq = sequence $ cycle [tick]
+
+-- Example: trace the full machine state.
+stateTrace tick =
+  tickTrace $ do s <- get ; tick ; return s
+
+
+-- 2) Custom writer traces
+--
+-- The Writer allows to use 'tell' in pseudo ops to produce
+-- user-defined trace types.  Note that to produce a Writer output, we
+-- cannot run the machine with an infinite program as above, as the
+-- writer result is only available after the computation has finished.
+--
+-- Therefore, the operation is split into two components: one that
+-- runs the machine for a specific amount of cycles,
+logTrace' tick s n = (s',w) where
+  (((), w), s') = runState (runWriterT $ unRun m) s
+  m = sequence_ $ replicate n $ tick
+
+-- and one that produces an infinite writer stream from single ticks.
+-- Note that if there is no log output, this diverges.
+logTrace tick = next where
+  next s = w <> next s where
+    (s', w) = logTrace' tick s' 1
+
 

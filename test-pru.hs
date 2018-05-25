@@ -28,6 +28,7 @@
 
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 import Pru
 import PruGen
@@ -35,70 +36,75 @@ import PruEmu
 import BeagleLogic
 
 import Data.List
-import Data.Map.Strict as Map
+import Data.Map.Strict (Map, (!), lookup, empty, insert, fromList, adjust)
+import qualified Data.Map.Strict as Map
 import Control.Monad.State
+import Control.Monad.Writer
 
 
--- Run time logger used in this test file.
-type Log = [String] 
-type EComp = EmuComp Log
-type ECode = EmuCode Log
-type ERunOp = EmuRunOp Log
-
+-- Use a concrete logger in all tests below
+type Log = [Char]
+type EmuSrc'   = Src Log      -- emulator source
+type EmuComp'  = Comp Log     -- main emulator compiler monad
+type EmuRunOp' = Run Log ()   -- run time emulator operation
 
 
 main = do
   test_coroutine
   test_beaglelogic_loop
+  test_logger
 
 test_coroutine = do
   putStrLn "--- run_test_coroutine"
   print $ asm coroutine
-  let (code, labels) = compile' (coroutine :: EComp ())
+  let (tick, labels) = compile' (coroutine :: EmuSrc')
   print $ labels
-  print $ take 30 $ mvtrace1 code pre (machineInit' 123 [10,11]) PCounter
-  -- let (_, log) = logTrace' code pre (machineInit' 123 [10,11]) 10
-  -- putStrLn "log:"
-  -- putStr log
+  print $ take 30 $ mvtrace1 tick (machineInit' 123 [10,11]) PCounter
+
+test_logger = do
+  let log = pseudo $ do
+        t <- loadm Time
+        tell $ "sample: " ++ show t ++ "\n"
+      sample' = map (log >>) (sample :: [EmuSrc'])
+      src = do
+        initRegs
+        bl_weave sample'
+        return ()
+      tick = compile src
+      (_, str) = logTrace' tick (machineInit' 123 [10,11]) 60
+  putStrLn "log:" >> putStr str
   
 
--- FIXME: parameterize the log output
-pre = do
-  -- state <- get
-  -- emuLog "State" state
-  return ()
 
-printl es = sequence_ $ Data.List.map print es
+printl es = sequence_ $ map print es
   
 
 test_beaglelogic_loop = do
   putStrLn "--- test1" ; print $ asm beaglelogic_loop
 
-  let code = compile beaglelogic_loop
-  print $ take 200 $ mvtrace1 code pre machineInit PCounter
+  let tick = compile beaglelogic_loop
+  print $ take 200 $ mvtrace1 tick machineInit PCounter
 
--- FIXME: this broke
---  let ss = take 5 $ snd $ logTrace' code pre machineInit 100
---  print $ Data.List.map (\(LogState "sample" s) -> s ! Time) ss
 
 
 
 
 -- MachineVar trace
-mvtrace :: ECode -> ERunOp -> EmuRunState -> [EmuRunVar] -> [[Int]]
-mvtrace code pre s0 mach_vars = Prelude.map select trace where
-  trace = stateTrace code pre s0
+mvtrace :: EmuRunOp' -> RunState -> [RunVar] -> [[Int]]
+mvtrace tick s0 mach_vars = Prelude.map select trace where
+  trace = stateTrace tick s0
   select ms = [ms ! v | v <- mach_vars]
 
 -- Single
-mvtrace1 code pre s0 mach_var =
-  Prelude.map head $ mvtrace code pre s0 [mach_var]
+mvtrace1 tick s0 mach_var =
+  Prelude.map head $ mvtrace tick s0 [mach_var]
 
 
 -- Some arbitrary input
 pru_input s =
   Map.insert (File 31) (s ! Time) s
-  
+
+
 
 beaglelogic_loop :: forall m. Pru m => m ()
 beaglelogic_loop = do
@@ -110,8 +116,6 @@ beaglelogic_loop = do
 
   initRegs
   
---  comment "bl_weave sample"
---  bl_weave (sample :: [m ()])
 
   comment "coroutine instruction pointer init"
   comment "R10: beaglelogic sampler"

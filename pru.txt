@@ -1105,3 +1105,21 @@ This is the trick:
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 
+Entry: Generic tracer works
+Date: Thu May 24 23:08:04 EDT 2018
+
+  let log = do
+        -- This is the compile time context.
+        -- Compile a pseudo instruction that will query Time at run time.
+        pseudo $ do
+          -- This is the run time context.
+          t <- loadm Time
+          tell $ "sample: " ++ show t ++ "\n"
+
+
+Now it is a bit confusing due to the compile time / run time
+distinction.
+
+What his does is to insert a pseudo instruction in the stream with the
+provided behavior.
+
