@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module PruEmu(compile,compile',Emu,EmuSrc,EmuCode,
               MachineState(..),MachineVar(..),MachineOp,
@@ -90,9 +91,10 @@ data MachineVar
   deriving (Eq,Ord,Show)
 
 -- State transformers are wrapped in a State monad.
--- type EmuMachine w t = EmuMachine (WriterT [w] (State MachineState) t)
-
-type Machine = WriterT [EmuLog] (State MachineState)
+-- The log is abstract to allow custom tracing types.
+newtype EmuMachine w t = EmuMachine { unEmuMachine :: (WriterT w (State MachineState) t) }
+  deriving (Functor, Applicative, Monad, MonadWriter w, MonadState MachineState)
+type Machine = EmuMachine [EmuLog]
 type MachineOp = Machine ()
 type PseudoOp = MachineOp
 
@@ -249,7 +251,7 @@ tickTrace ::
   MachineState ->    -- Initial state
   [t]
 tickTrace code preTick s = seq where
-  (seq, _) = evalState (runWriterT mseq) s
+  (seq, _) = evalState (runWriterT $ unEmuMachine mseq) s
   mseq = sequence $ cycle [tick']
   tick' = do
     s <- preTick  -- User-provided action
@@ -274,7 +276,7 @@ logTrace' ::
   EmuCode -> Machine t -> MachineState -> Int ->
   (MachineState,[EmuLog])
 logTrace' code preTick s n = (s',w) where
-  (((), w), s') = runState (runWriterT m) s
+  (((), w), s') = runState (runWriterT $ unEmuMachine m) s
   m = sequence_ $ replicate n $ preTick >> tick code
 
 -- Chunked infinite run.  If there is no log output, this diverges.

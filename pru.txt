@@ -1101,4 +1101,7 @@ implement.  This requires "zero width" instructions.
 
 EDIT: Working.  Maybe try parameterizing the log anyway?
 
+This is the trick:
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
 
