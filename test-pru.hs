@@ -64,10 +64,10 @@ test_coroutine = do
   print $ take 30 $ vartrace1 tick (machineInit' 123 [10,11]) PCounter
 
 test_logger = do
-  let log = pseudo $ do
+  let log = do
         t <- loadm Time
         tell $ "sample: " ++ show t ++ "\n"
-      sample' = map (log >>) (sample :: [Src'])
+      sample' = map (pseudo log >>) (sample :: [Src'])
       src = do
         initRegs
         bl_weave sample'
@@ -80,7 +80,7 @@ test_beaglelogic_loop = do
   putStrLn "--- test1" ; print $ asm beaglelogic_loop
 
   let tick = compile beaglelogic_loop
-  print $ take 200 $ vartrace1 tick machineInit PCounter
+  print $ take 200 $ vartrace1 (gpi >> tick) machineInit PCounter
 
 
 printl es = sequence_ $ map print es
@@ -95,9 +95,10 @@ vartrace tick s0 mach_vars = Prelude.map select trace where
 vartrace1 tick s0 mach_var =
   Prelude.map head $ vartrace tick s0 [mach_var]
 
+
 -- Emulate GPI events by modifying register R31
--- pru_input s =
---   Map.insert (File 31) (s ! Time) s
+gpi :: RunOp'
+gpi = modify $ \s -> Map.insert (File 31) (s ! Time) s
 
 
 -- An example of "macro assembler" use.
