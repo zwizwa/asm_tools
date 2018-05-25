@@ -34,9 +34,20 @@ import Data.Bits
 
 type EmuSrc = Emu ()                       -- embedded source
 type EmuCode = Map Addr MachineOp          -- compiled emulator functions
-type Emu = ReaderT Link                    -- main monad
-          (WriterT [Either PseudoOp MachineOp]
-          (State (LabelNb, Addr, Labels)))
+
+-- Main monad, with parameterized runtime logger.
+newtype EmuComp w t =                      
+  Emu {unEmu :: (ReaderT Link (WriterT [EmuMachineOp w] (State EmuState)) t) }
+  deriving (Functor, Applicative, Monad,
+            MonadState EmuState,
+            MonadWriter [EmuMachineOp w],
+            MonadReader Link)
+type EmuMachineOp w = Either (EmuMachine w ()) (EmuMachine w ())
+type Emu = EmuComp [EmuLog]
+
+type EmuState = (LabelNb, Addr, Labels)
+type EmuOp = Either PseudoOp MachineOp
+          
 type Link = (LabelNb -> Addr)              -- address resolution
 type LabelNb = Int
 type Addr = Int
@@ -48,7 +59,7 @@ compile = fst . compile'
 compile' :: EmuSrc -> (EmuCode, Labels)
 compile' m = (code, labels)  where
   s0 = (0, 0, empty)
-  (((), w), s) = runState (runWriterT (runReaderT m r)) s0
+  (((), w), s) = runState (runWriterT (runReaderT (unEmu m) r)) s0
   w' = mergePre w
   code = fromList $ zip [0,1..] w'
   (_, _, labels) = s
