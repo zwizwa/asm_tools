@@ -92,6 +92,7 @@ vartrace tick s0 mach_vars = Prelude.map select trace where
   select ms = [ms ! v | v <- mach_vars]
 
 -- Single
+vartrace1 :: RunOp' -> RunState -> RunVar -> [Int]
 vartrace1 tick s0 mach_var =
   Prelude.map head $ vartrace tick s0 [mach_var]
 
@@ -102,6 +103,7 @@ gpi = modify $ \s -> Map.insert (File 31) (s ! Time) s
 
 
 -- An example of "macro assembler" use.
+initRegs :: Pru m => m ()
 initRegs = sequence_ $ [ ldi (R r) (I 0) | r <- [0..31] ]
   
 
