@@ -1,30 +1,30 @@
+
 -- The initial "itch" to write this code was to provide scaffolding
--- for writing code that requires exact instruction timing, where high
--- level validation consists of computing properties of timing
--- diagrams.
-
--- The PRU's single-cycle deterministic timing makes it possible to
--- implement this, and also makes it easier to emulate the behavior,
--- e.g. to make it work in the abstract first, before running it on
--- the device.
-
--- At this point, the code does not aim to be a complete emulator.
--- Only the subset of machine behavior used in the target program is
--- implemented.
-
--- Requirements:
--- 1. Generate assembly language with complete control
--- 2. Emulate execution, extracting signal traces
-
--- The embedding used is "tagless final", e.g. using a type class
--- layer to be able to give multiple interpretations to the code.  The
--- two requirements above are implemented by two instances of this
--- type class: a macro preprocessor generating flat assembly code to
--- be passed to the TI tools, and an emulator capable of generating
--- machine state traces.
-
--- Note that this allows ordinary Haskell function composition to be
--- used to write code generators (macros), and validation tests.
+-- for developing PRU code that requires exact instruction timing.  It
+-- was clear the final code would be of the woven, unrolled kind.  It
+-- seemed like a good idea to make it work in the abstract first,
+-- before validating it on the device.  The library was designed with
+-- the following requirements in mind:
+--
+-- 1. Provide a way to represent the standard assembly language
+--    exactly.  This is a macro assembler, not a high level
+--    programming language.
+--
+-- 2. Use this representation to generate an emulator that can be
+--    extended with instrumentation to compute properties of the
+--    program, e.g. state traces, I/O timing diagrams.
+--
+-- The implementation uses a "tagless final" embedding: a type class
+-- Pru is used to abstract the meaning of the embedding by way of
+-- abstracting over a compiler monad.  Two versions of this monad are
+-- implemented:
+--
+-- PruGen generates standard assembly text output
+-- PruEmu generates an extendable emulator
+--
+-- Being embedded in Haskell allows ordinary Haskell function
+-- composition to be used to write code generators (macros) and
+-- validation tests.
 
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE ScopedTypeVariables #-}
