@@ -53,7 +53,7 @@ instance RTL M R where
   -- driven signals
   op1 o (R (S a))           = fmap R $ driven $ Comb1 o a
   op2 o (R (S a)) (R (S b)) = fmap R $ driven $ Comb2 o a b
-  lit c                     = fmap R $ driven $ Const c
+  int c                     = fmap R $ driven $ Const c
 
   -- combinatorial drive
   connect (R (S dst)) (R (S src)) =

@@ -16,14 +16,15 @@ data Sig = Sig
 -- 2) is a wire if driven from combinatorial context
 -- 3) is a register if driven from sequential context
 
--- FIXME: currently there are no contexts, but there are different
--- connectivity primitives.
+-- Explicit assignment commands are used to distinguish between
+-- combinatorial and sequential assignment.  Typical HDLs use a
+-- context in which assignment changes semantics.
 
 class Monad m => RTL m r where
 
   -- Signal creaton
   signal  :: m (r Sig)               -- Undriven
-  lit     :: Int -> m (r Sig)        -- Driven by constant
+  int     :: Int -> m (r Sig)        -- Driven by constant
 
   -- Drive
   connect :: r Sig -> r Sig -> m ()  -- Combinatorial connect
@@ -34,6 +35,9 @@ class Monad m => RTL m r where
   op2 :: Op2 -> r Sig -> r Sig -> m (r Sig)
   op1 :: Op1 -> r Sig -> m (r Sig)
 
+-- Note that combinatorial drive is a code smell.  It is typically a
+-- good idea to register the outputs of a module, meaing that all
+-- combinatorial signals are generated implicitly through opx.
 
 data Op2 = ADD deriving Show
 data Op1 = INV deriving Show

@@ -43,11 +43,10 @@ import Data.Map.Strict (empty, foldrWithKey)
 -- Let's start with a counter
 
 inc :: forall m r. RTL m r => r Sig -> m (r Sig)
-inc c = lit 1 >>= add c
+inc c = int 1 >>= add c
 
 counter :: forall m r. RTL m r => r Sig -> m ()
-counter b = do
-  inc b >>= next b
+counter b = inc b >>= next b
   
 main = do
   putStrLn " --- counter"
