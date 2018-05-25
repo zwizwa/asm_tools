@@ -30,10 +30,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 
-import Pru
-import PruGen
-import PruEmu
-import BeagleLogic
+import Pru           -- Abstract language
+import PruGen        -- Concrete assembly text generator
+import PruEmu        -- Compile to emulator functions
+import BeagleLogic   -- Example code to interface with BeagleLogic firmware
 
 import Data.List
 import Data.Map.Strict (Map, (!), lookup, empty, insert, fromList, adjust)
@@ -42,11 +42,13 @@ import Control.Monad.State
 import Control.Monad.Writer
 
 
--- Use a concrete logger in all tests below
+-- The emulator can use a custom Writer monoid.  In the tests below we
+-- fix this to string output.
+
 type Log = [Char]
-type EmuSrc'   = Src Log      -- emulator source
-type EmuComp'  = Comp Log     -- main emulator compiler monad
-type EmuRunOp' = Run Log ()   -- run time emulator operation
+type Src'   = Src Log      -- emulator source
+type Comp'  = Comp Log     -- main emulator compiler monad
+type RunOp' = Run Log ()   -- run time emulator operation
 
 
 main = do
@@ -57,15 +59,15 @@ main = do
 test_coroutine = do
   putStrLn "--- run_test_coroutine"
   print $ asm coroutine
-  let (tick, labels) = compile' (coroutine :: EmuSrc')
+  let (tick, labels) = compile' (coroutine :: Src')
   print $ labels
-  print $ take 30 $ mvtrace1 tick (machineInit' 123 [10,11]) PCounter
+  print $ take 30 $ vartrace1 tick (machineInit' 123 [10,11]) PCounter
 
 test_logger = do
   let log = pseudo $ do
         t <- loadm Time
         tell $ "sample: " ++ show t ++ "\n"
-      sample' = map (log >>) (sample :: [EmuSrc'])
+      sample' = map (log >>) (sample :: [Src'])
       src = do
         initRegs
         bl_weave sample'
@@ -74,48 +76,68 @@ test_logger = do
       (_, str) = logTrace' tick (machineInit' 123 [10,11]) 60
   putStrLn "log:" >> putStr str
   
-
-
-printl es = sequence_ $ map print es
-  
-
 test_beaglelogic_loop = do
   putStrLn "--- test1" ; print $ asm beaglelogic_loop
 
   let tick = compile beaglelogic_loop
-  print $ take 200 $ mvtrace1 tick machineInit PCounter
+  print $ take 200 $ vartrace1 tick machineInit PCounter
 
 
-
-
-
--- MachineVar trace
-mvtrace :: EmuRunOp' -> RunState -> [RunVar] -> [[Int]]
-mvtrace tick s0 mach_vars = Prelude.map select trace where
+printl es = sequence_ $ map print es
+  
+-- Run time state variable trace
+vartrace :: RunOp' -> RunState -> [RunVar] -> [[Int]]
+vartrace tick s0 mach_vars = Prelude.map select trace where
   trace = stateTrace tick s0
   select ms = [ms ! v | v <- mach_vars]
 
 -- Single
-mvtrace1 tick s0 mach_var =
-  Prelude.map head $ mvtrace tick s0 [mach_var]
+vartrace1 tick s0 mach_var =
+  Prelude.map head $ vartrace tick s0 [mach_var]
+
+-- Emulate GPI events by modifying register R31
+-- pru_input s =
+--   Map.insert (File 31) (s ! Time) s
 
 
--- Some arbitrary input
-pru_input s =
-  Map.insert (File 31) (s ! Time) s
+-- An example of "macro assembler" use.
+initRegs = sequence_ $ [ ldi (R r) (I 0) | r <- [0..31] ]
+  
 
 
+-- Code implementing coroutines through mutual JAL instructions.
+-- Correctness can be verified by computing a trace of PCounter.
+coroutine :: forall m. Pru m => m ()
+coroutine = do
+
+  comment "coroutine instruction pointer init"
+  loop_10 <- declare
+  loop_11 <- declare
+  ldi (R 10) loop_10
+  ldi (R 11) loop_11
+
+  comment "routine 10 body"
+  label loop_10
+  jal (R 10) (Reg (R 11))  -- save state in R10, jump to R11
+  jmp (Im loop_10)
+
+  comment "routine 11 body"
+  label loop_11
+  jal (R 11) (Reg (R 10))  -- save state in R11, jump to R10
+  jmp (Im loop_11)
+
+
+-- Beaglelogic PRU1 data acquisition loop woven with coroutine call.
 
 beaglelogic_loop :: forall m. Pru m => m ()
 beaglelogic_loop = do
   
-  -- Symbolic label names are avoided in the embedding Haskell code.
+  initRegs
+
+  -- note: Symbolic label names are avoided in the embedding Haskell code.
   -- Pro: identifiers behave better than strings
   -- Con: generated code will have non-descript labels
   -- To alleviate, comments can be inserted in assembly.
-
-  initRegs
-  
 
   comment "coroutine instruction pointer init"
   comment "R10: beaglelogic sampler"
@@ -137,27 +159,6 @@ beaglelogic_loop = do
   
   comment "End"
 
-initRegs = sequence_ $ [ ldi (R r) (I 0) | r <- [0..31] ]
-  
-
-coroutine :: forall m. Pru m => m ()
-coroutine = do
-
-  comment "coroutine instruction pointer init"
-  loop_10 <- declare
-  loop_11 <- declare
-  ldi (R 10) loop_10
-  ldi (R 11) loop_11
-
-  comment "routine 10 body"
-  label loop_10
-  jal (R 10) (Reg (R 11))  -- save state in R10, jump to R11
-  jmp (Im loop_10)
-
-  comment "routine 11 body"
-  label loop_11
-  jal (R 11) (Reg (R 10))  -- save state in R11, jump to R10
-  jmp (Im loop_11)
 
 
   
