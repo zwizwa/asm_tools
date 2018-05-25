@@ -5,13 +5,13 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module PruEmu(compile,compile',
-              Src,Comp,Run,
-              RunState(..),RunVar(..),
-              logTrace, logTrace',
-              pseudo, loadm,
-              machineInit,machineInit0,machineInit',
-              stateTrace) where
+module PruEmu(compile,compile'
+             ,Src,Comp,Run
+             ,RunState(..),RunVar(..)
+             ,runEmu,logTrace,logTrace',stateTrace,tickTrace
+             ,pseudo, loadm
+             ,machineInit,machineInit0,machineInit'
+             ) where
 
 import Pru
 import Data.Map.Strict (Map, (!), lookup, empty, insert, fromList, adjust)
@@ -75,7 +75,7 @@ compile :: Monoid w => Src w -> Run w ()
 compile = fst . compile'
 
 compile' :: Monoid w => Src w -> (Run w (), Labels)
-compile' m = (run code, labels)  where
+compile' m = (boot code, labels)  where
   s0 = (0, 0, empty)
   (((), w), s) = runState (runWriterT (runReaderT (unEmu m) r)) s0
   w' = mergePre w
@@ -84,7 +84,7 @@ compile' m = (run code, labels)  where
   r = (labels !) -- circular
 
 -- Normal machine cycle.
-run code = do
+boot code = do
   pc <- gets (! PCounter)     -- Read program counter from state
   code ! pc                   -- Run instruction, which updates PCounter
   modify $ adjust (+ 1) Time  -- FIXME: Assumes 1 cycle / instruction
@@ -247,20 +247,28 @@ machineInit' :: Int -> [Int] -> RunState
 machineInit' init regs = Map.fromList $
   [(PCounter, 0), (Time, 0)] ++ [(File r, init) | r <- regs]
 
--- NOTE: To emulate external influence, pre or postfix the tick
--- operation or machine code source with pseudo ops.
+
+-- Generic run method.  See below for usage examples.
+runEmu :: Monoid w => Run w t -> RunState -> ((t, w), RunState)
+runEmu m s = runState (runWriterT $ unRun m) s
+
+
 
 -- Two example mechanism are provided to produce traces.
 
 -- 1) Per-instruction traces
 --
--- Run machine with custom per-tick tracer.
--- Machine runs indefinitely producing a lazy stream.
-tickTrace tick s = seq where
-  (seq, _) = evalState (runWriterT $ unRun mseq) s
-  mseq = sequence $ cycle [tick]
+-- Run machine with custom per-tick tracer.  Machine runs indefinitely
+-- producing a lazy stream.  To emulate external influence and have
+-- this produce a stream of values, compose the 'tick' operation
+-- obtained from 'compile' with pre- and/or post-ops to produce the
+-- desired machine manipulation and trace readout.
 
--- Example: trace the full machine state.
+tickTrace tick s = seq where
+  ((seq, _), _) = runEmu m s 
+  m = sequence $ cycle [tick]
+  
+-- Example: infinite machine state trace.
 stateTrace tick =
   tickTrace $ do s <- get ; tick ; return s
 
@@ -275,13 +283,13 @@ stateTrace tick =
 -- Therefore, the operation is split into two components: one that
 -- runs the machine for a specific amount of cycles,
 logTrace' tick s n = (s',w) where
-  (((), w), s') = runState (runWriterT $ unRun m) s
+  ((_, w), s') = runEmu m s
   m = sequence_ $ replicate n $ tick
 
--- and one that produces an infinite writer stream from single ticks.
--- Note that if there is no log output, this diverges.
+-- and one that produces the infinite stream by repeatedly running one
+-- tick.  Note that if there is no log output, this diverges.
 logTrace tick = next where
-  next s = w <> next s where
-    (s', w) = logTrace' tick s' 1
+  next s = w <> next s' where
+    (s', w) = logTrace' tick s 1
 
 
