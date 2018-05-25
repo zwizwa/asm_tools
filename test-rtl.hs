@@ -42,15 +42,15 @@ import Data.Map.Strict (empty, foldrWithKey)
 
 -- Let's start with a counter
 
-counter :: forall m. RTL m => Signal -> m ()
+counter :: forall m r. RTL m r => r Sig -> m ()
 counter b = do
   a  <- inv b
-  b' <- add b $ L 1
-  set b b'
+  b' <- lit 1 >>= add b
+  delay b b'
   
 main = do
   putStrLn " --- counter"
-  printl $ mapToList $ compile $ signal >>= counter
+  printl $ mapToList $ compile $ (signal :: Gen (Rep Sig)) >>= counter
 
 printl es = sequence_ $ map print es
 mapToList = foldrWithKey f [] where f k v t = (k,v):t
