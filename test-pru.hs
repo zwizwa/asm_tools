@@ -39,6 +39,14 @@ import Data.Map.Strict as Map
 import Control.Monad.State
 
 
+-- Run time logger used in this test file.
+type Log = [String] 
+type EComp = EmuComp Log
+type ECode = EmuCode Log
+type ERunOp = EmuRunOp Log
+
+
+
 main = do
   test_coroutine
   test_beaglelogic_loop
@@ -46,7 +54,7 @@ main = do
 test_coroutine = do
   putStrLn "--- run_test_coroutine"
   print $ asm coroutine
-  let (code, labels) = compile' coroutine
+  let (code, labels) = compile' (coroutine :: EComp ())
   print $ labels
   print $ take 30 $ mvtrace1 code pre (machineInit' 123 [10,11]) PCounter
   -- let (_, log) = logTrace' code pre (machineInit' 123 [10,11]) 10
@@ -69,13 +77,15 @@ test_beaglelogic_loop = do
   let code = compile beaglelogic_loop
   print $ take 200 $ mvtrace1 code pre machineInit PCounter
 
-  let ss = take 5 $ snd $ logTrace' code pre machineInit 100
-  print $ Data.List.map (\(LogState "sample" s) -> s ! Time) ss
+-- FIXME: this broke
+--  let ss = take 5 $ snd $ logTrace' code pre machineInit 100
+--  print $ Data.List.map (\(LogState "sample" s) -> s ! Time) ss
+
 
 
 
 -- MachineVar trace
-mvtrace :: EmuCode -> MachineOp -> MachineState -> [MachineVar] -> [[Int]]
+mvtrace :: ECode -> ERunOp -> EmuRunState -> [EmuRunVar] -> [[Int]]
 mvtrace code pre s0 mach_vars = Prelude.map select trace where
   trace = stateTrace code pre s0
   select ms = [ms ! v | v <- mach_vars]

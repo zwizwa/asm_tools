@@ -5,9 +5,10 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module PruEmu(compile,compile',Emu,EmuSrc,EmuCode,
-              MachineState(..),MachineVar(..),MachineOp,
-              logTrace, logTrace', EmuLog(..),
+module PruEmu(compile,compile',
+              EmuSrc,EmuComp,EmuCode,EmuRunOp,
+              EmuRunState(..),EmuRunVar(..),
+              logTrace, logTrace',
               machineInit,machineInit0,machineInit',
               stateTrace) where
 
@@ -32,31 +33,46 @@ import Data.Bits
 -- EmuCode is the compiled form of EmuSrc.  Each memory address
 -- contains a function that emulates the instruction at that location.
 
-type EmuSrc = Emu ()                       -- embedded source
-type EmuCode = Map Addr MachineOp          -- compiled emulator functions
+-- PRU Code is represented as a unit value in the compiler monad.
+type EmuSrc w = EmuComp w ()
 
--- Main monad, with parameterized runtime logger.
+-- Compilation and interpretation monads are parameterized by a logger w.
+
+-- Compilation monad
 newtype EmuComp w t =                      
-  Emu {unEmu :: (ReaderT Link (WriterT [EmuMachineOp w] (State EmuState)) t) }
+  Emu {unEmu :: (ReaderT Link (WriterT [EmuCompiledOp w] (State EmuCompState)) t) }
   deriving (Functor, Applicative, Monad,
-            MonadState EmuState,
-            MonadWriter [EmuMachineOp w],
+            MonadState EmuCompState,
+            MonadWriter [EmuCompiledOp w],
             MonadReader Link)
-type EmuMachineOp w = Either (EmuMachine w ()) (EmuMachine w ())
-type Emu = EmuComp [EmuLog]
 
-type EmuState = (LabelNb, Addr, Labels)
-type EmuOp = Either PseudoOp MachineOp
-          
-type Link = (LabelNb -> Addr)              -- address resolution
+type EmuCompState = (LabelNb, Addr, Labels)
+type EmuCompiledOp w = Either (EmuRunOp w) (EmuRunOp w)
+type Link = (LabelNb -> Addr)   -- address resolution
 type LabelNb = Int
 type Addr = Int
 type Labels = Map LabelNb Addr
 
+--- Run time interpretation monad
+newtype EmuRun w t = EmuRun { unEmuRun :: (WriterT w (State EmuRunState) t) }
+  deriving (Functor, Applicative, Monad, MonadWriter w, MonadState EmuRunState)
 
+type EmuRunOp w = EmuRun w ()
+type EmuCode w = Map Addr (EmuRunOp w)
+type EmuRunState = Map EmuRunVar Int
+data EmuRunVar
+  = File Int  -- register file
+  | CFlag     -- carry flag
+  | PCounter  -- program counter
+  | Time      -- instruction counter
+  deriving (Eq,Ord,Show)
+
+
+
+compile :: Monoid w => EmuSrc w -> EmuCode w
 compile = fst . compile'
 
-compile' :: EmuSrc -> (EmuCode, Labels)
+compile' :: Monoid w => EmuSrc w -> (EmuCode w, Labels)
 compile' m = (code, labels)  where
   s0 = (0, 0, empty)
   (((), w), s) = runState (runWriterT (runReaderT (unEmu m) r)) s0
@@ -68,7 +84,7 @@ compile' m = (code, labels)  where
 -- zero-width instrumentation instructions are prefixed to the first
 -- actual instruction. FIXME: This feels a bit hacky.  Maybe Reader is
 -- not the right tool for this.
-mergePre :: [Either MachineOp MachineOp] -> [MachineOp]
+mergePre :: Monoid w => [EmuCompiledOp w] -> [EmuRunOp w]
 mergePre = f0 where
   f0 = f $ return ()
   f pre [] = [pre] -- insert pseudo instruction at the end
@@ -77,62 +93,41 @@ mergePre = f0 where
 
 
 -- Compilation state access
-labelNb = get >>= \(n,_,_) -> return n :: Emu LabelNb
-addr    = get >>= \(_,a,_) -> return a :: Emu Addr
+labelNb :: Monoid w => EmuComp w LabelNb
+labelNb = get >>= \(n,_,_) -> return n
+
+addr :: Monoid w => EmuComp w Addr
+addr    = get >>= \(_,a,_) -> return a
+
 appLabelNb f (n,a,l) = (f n, a, l)
 appAddr    f (n,a,l) = (n, f a, l)
 appLabels  f (n,a,l) = (n, a, f l)
 
 -- Compile a (pseudo) instruction
-comp :: MachineOp -> EmuSrc
 comp ins = do tell [Right ins] ; modify $ appAddr (+ 1)
 
-pseudo :: PseudoOp -> EmuSrc
 pseudo ins = tell [Left ins]
 
--- Machine instructions are represented as state->state transformers.
--- The Machine is a map to integer values
-type MachineState = Map MachineVar Int
--- Comprised of
-data MachineVar
-  = File Int  -- register file
-  | CFlag     -- carry flag
-  | PCounter  -- program counter
-  | Time      -- instruction counter
-  deriving (Eq,Ord,Show)
-
--- State transformers are wrapped in a State monad.
--- The log is abstract to allow custom tracing types.
-newtype EmuMachine w t = EmuMachine { unEmuMachine :: (WriterT w (State MachineState) t) }
-  deriving (Functor, Applicative, Monad, MonadWriter w, MonadState MachineState)
-type Machine = EmuMachine [EmuLog]
-type MachineOp = Machine ()
-type PseudoOp = MachineOp
 
 -- State variable access
-storem :: MachineVar -> Int -> MachineOp
+storem :: Monoid w => EmuRunVar -> Int -> EmuRun w ()
 storem var val = do
   modify $ insert var val
 
 
-loadm :: MachineVar -> Machine Int
+loadm :: Monoid w => EmuRunVar -> EmuRun w Int
 loadm var = do
   maybe <- gets $ (Map.lookup var)
   return $ checkVar var maybe
 
 checkVar var (Just val) = val
-checkVar var Nothing = error $ "Uninitialized MachineVar: " ++ show var
+checkVar var Nothing = error $ "Uninitialized EmuRunVar: " ++ show var
 
--- Ideally, the log would be a type parameter, but it seems quite a
--- bit of work to make that change.  For now just support some basic
--- hardcoded types: generic strings, and string-tagged machine state
--- snapshots.
-data EmuLog = LogString String | LogState String MachineState deriving Show
 
 
 
 -- Registers are special: they have word, byte subaccess.
-load :: R -> Machine Int
+load :: Monoid w => R -> EmuRun w Int
 load (R r)    = loadm (File r)
 load (Rw r w) = word 16 w <$> (loadm $ File r)
 load (Rb r b) = word  8 b <$> (loadm $ File r)
@@ -144,7 +139,6 @@ word bits w v = v' .&. (mask bits) where
 trunc bits = (.&. (mask bits))
 
   
-store :: R -> Int -> MachineOp
 store (R r) = (storem (File r)) . (trunc 32)
 store (Rw r w) = store' 16 w (R r)
 store (Rb r b) = store'  8 b (R r)
@@ -172,7 +166,7 @@ ref (Reg r)      = load r
 link (Im (L l)) = do a <- ask ; return $ Im (I (a l))
 link o          = return $ o
 
-instance Pru Emu where
+instance Monoid w => Pru (EmuComp w) where
 
   declare = do
     n <- labelNb
@@ -205,20 +199,16 @@ instance Pru Emu where
   ins HALT = comp $ return ()
   ins NOP  = comp next
 
-  -- Instrumentation
-  logStr str   = pseudo $ tell [LogString str]
-  snapshot tag = pseudo $ do s <- get ; tell [LogState tag s]
 
 
 -- Adjust state to resume at the next instruction
-next :: MachineOp
+next :: Monoid w => EmuRunOp w
 next = modify $ adjust (+ 1) PCounter
 
 -- Convenient 2-level dereference of operand to Int.
 -- Note the difference between:
 -- link: compile time lookup (label -> addr)
 -- ref:  run time lookup (reg -> value)
-comp_link_ref :: (Int -> MachineOp) -> O -> EmuSrc
 comp_link_ref f o = do
   o' <- link o
   comp $ do
@@ -233,7 +223,7 @@ move ra = comp_link_ref $ \b -> do
   next
 
 -- Generic 2-operand Integer operations.
-intop2 :: (Int -> Int -> Int) -> R -> R -> O -> Emu ()
+intop2 :: Monoid w => (Int -> Int -> Int) -> R -> R -> O -> EmuComp w ()
 intop2 f ra rb c = do
   c' <- link c
   comp $ do
@@ -247,7 +237,6 @@ intop2 f ra rb c = do
 
 
 -- Normal machine cycle.
-tick :: EmuCode -> MachineOp
 tick code = do
   pc <- gets (! PCounter)     -- Read program counter from state
   code ! pc                   -- Run instruction, which updates PCounter
@@ -256,13 +245,8 @@ tick code = do
 
 -- Run machine with custom per-tick tracer.
 -- Machine runs indefinitely producing a lazy stream.
-tickTrace ::
-  EmuCode ->         -- Compiled assembly listing
-  Machine t ->       -- Runs before tick
-  MachineState ->    -- Initial state
-  [t]
 tickTrace code preTick s = seq where
-  (seq, _) = evalState (runWriterT $ unEmuMachine mseq) s
+  (seq, _) = evalState (runWriterT $ unEmuRun mseq) s
   mseq = sequence $ cycle [tick']
   tick' = do
     s <- preTick  -- User-provided action
@@ -283,11 +267,8 @@ stateTrace code pre =
 -- below.  Is there a more elegant way?
 
 -- Run for a finite amount of time.
-logTrace' ::
-  EmuCode -> Machine t -> MachineState -> Int ->
-  (MachineState,[EmuLog])
 logTrace' code preTick s n = (s',w) where
-  (((), w), s') = runState (runWriterT $ unEmuMachine m) s
+  (((), w), s') = runState (runWriterT $ unEmuRun m) s
   m = sequence_ $ replicate n $ preTick >> tick code
 
 -- Chunked infinite run.  If there is no log output, this diverges.
@@ -301,7 +282,7 @@ logTrace code pre = next where
 machineInit = machineInit0 []
 machineInit0 = machineInit' 0
 
-machineInit' :: Int -> [Int] -> MachineState
+machineInit' :: Int -> [Int] -> EmuRunState
 machineInit' init regs = Map.fromList $
   [(PCounter, 0), (Time, 0)] ++ [(File r, init) | r <- regs]
 

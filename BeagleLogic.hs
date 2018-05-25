@@ -10,14 +10,14 @@ import Weave
 
 -- a) Sample (possibly combined with other I/O control)
 
-sample :: forall m. Pru m => [m ()]
-sample = do
+sample' :: forall m. Pru m => m () -> [m ()]
+sample' patchPoint = do
   r <- [21..28]
   b <- [0,1,2,3]
-  return $ do
-    snapshot "sample"
-    mov (Rb r b) (Rb 31 0)
+  return $ patchPoint >> mov (Rb r b) (Rb 31 0)
 
+sample :: forall m. Pru m => [m ()]
+sample = sample' (return () :: m ())
 
 -- b) data transfer to PRU0 + loop control
 transfer :: forall m. Pru m => Int -> I -> [m ()]
