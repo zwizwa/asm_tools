@@ -27,7 +27,7 @@ class Monad m => RTL m r where
 
   -- Drive
   connect :: r Sig -> r Sig -> m ()  -- Combinatorial connect
-  delay   :: r Sig -> r Sig -> m ()  -- Register write
+  next    :: r Sig -> r Sig -> m ()  -- Register update equation
 
   -- Combinatorial operations all create intermediate signals to make
   -- them fit better in a monadic language.

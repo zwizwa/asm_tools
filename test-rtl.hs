@@ -35,22 +35,23 @@
 -- very confusing.
 
 import RTL
-import RTLGen
+import qualified RTLGen as Gen
 import Data.Map.Strict (empty, foldrWithKey)
 
 
 
 -- Let's start with a counter
 
+inc :: forall m r. RTL m r => r Sig -> m (r Sig)
+inc c = lit 1 >>= add c
+
 counter :: forall m r. RTL m r => r Sig -> m ()
 counter b = do
-  a  <- inv b
-  b' <- lit 1 >>= add b
-  delay b b'
+  inc b >>= next b
   
 main = do
   putStrLn " --- counter"
-  printl $ mapToList $ compile $ (signal :: Gen (Rep Sig)) >>= counter
+  printl $ mapToList $ Gen.compile $ (signal :: Gen.M (Gen.R Sig)) >>= counter
 
 printl es = sequence_ $ map print es
 mapToList = foldrWithKey f [] where f k v t = (k,v):t
