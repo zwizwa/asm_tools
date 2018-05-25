@@ -6,8 +6,8 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module PruEmu(compile,compile'
-             ,Src,Comp,Run
-             ,RunState(..),RunVar(..)
+             ,Src,Comp,Emu
+             ,EmuState(..),EmuVar(..)
              ,runEmu,logTrace,logTrace',stateTrace,tickTrace
              ,pseudo, loadm
              ,machineInit,machineInit0,machineInit'
@@ -41,27 +41,27 @@ type Src w = Comp w ()
 
 -- Compilation monad
 newtype Comp w t =                      
-  Emu {unEmu :: (ReaderT Link (WriterT [CompiledOp w] (State CompState)) t) }
+  Comp {unComp :: (ReaderT Link (WriterT [CompiledOp w] (State CompState)) t) }
   deriving (Functor, Applicative, Monad,
             MonadState CompState,
             MonadWriter [CompiledOp w],
             MonadReader Link)
 
 type CompState = (LabelNb, Addr, Labels)
-type CompiledOp w = Either (Run w ()) (Run w ())
+type CompiledOp w = Either (Emu w ()) (Emu w ())
 type Link = (LabelNb -> Addr)   -- address resolution
 type LabelNb = Int
 type Addr = Int
 type Labels = Map LabelNb Addr
 
 -- Run time interpretation monad.
--- State carries the machine state, a Map of RunVar to Int
+-- State carries the machine state, a Map of EmuVar to Int
 -- Writer carries a user-specified trace type
-newtype Run w t = Run { unRun :: (WriterT w (State RunState) t) }
-  deriving (Functor, Applicative, Monad, MonadWriter w, MonadState RunState)
+newtype Emu w t = Emu { unEmu :: (WriterT w (State EmuState) t) }
+  deriving (Functor, Applicative, Monad, MonadWriter w, MonadState EmuState)
 
-type RunState = Map RunVar Int
-data RunVar
+type EmuState = Map EmuVar Int
+data EmuVar
   = File Int  -- register file
   | CFlag     -- carry flag
   | PCounter  -- program counter
@@ -71,13 +71,13 @@ data RunVar
 
 -- The result of compilation is a machine tick operation, executing
 -- one machine cycle in the Writer,State monad
-compile :: Monoid w => Src w -> Run w ()
+compile :: Monoid w => Src w -> Emu w ()
 compile = fst . compile'
 
-compile' :: Monoid w => Src w -> (Run w (), Labels)
+compile' :: Monoid w => Src w -> (Emu w (), Labels)
 compile' m = (boot code, labels)  where
   s0 = (0, 0, empty)
-  (((), w), s) = runState (runWriterT (runReaderT (unEmu m) r)) s0
+  (((), w), s) = runState (runWriterT (runReaderT (unComp m) r)) s0
   w' = mergePre w
   code = fromList $ zip [0,1..] w'
   (_, _, labels) = s
@@ -95,7 +95,7 @@ boot code = do
 -- it. This behavior is similar to breakpoints. Peudo instructions
 -- support instrumentation to perform state modification and trace
 -- writing.
-mergePre :: Monoid w => [CompiledOp w] -> [Run w ()]
+mergePre :: Monoid w => [CompiledOp w] -> [Emu w ()]
 mergePre = f0 where
   f0 = f $ return ()
   f pre [] = [pre] -- insert pseudo instruction at the end
@@ -124,20 +124,20 @@ link (Im (L l)) = do a <- ask ; return $ Im (I (a l))
 link o          = return $ o
 
 -- Run time state access
-storem :: Monoid w => RunVar -> Int -> Run w ()
+storem :: Monoid w => EmuVar -> Int -> Emu w ()
 storem var val = do
   modify $ insert var val
 
-loadm :: Monoid w => RunVar -> Run w Int
+loadm :: Monoid w => EmuVar -> Emu w Int
 loadm var = do
   maybe <- gets $ (Map.lookup var)
   return $ checkVar var maybe
 
 checkVar var (Just val) = val
-checkVar var Nothing = error $ "Uninitialized RunVar: " ++ show var
+checkVar var Nothing = error $ "Uninitialized EmuVar: " ++ show var
 
 -- Registers are special: they have word, byte subaccess.
-load :: Monoid w => R -> Run w Int
+load :: Monoid w => R -> Emu w Int
 load (R r)    = loadm (File r)
 load (Rw r w) = word 16 w <$> (loadm $ File r)
 load (Rb r b) = word  8 b <$> (loadm $ File r)
@@ -169,7 +169,7 @@ ref (Im (L l))   = error $ "label " ++ show l ++ " not resolved"
 ref (Reg r)      = load r
 
 -- Adjust state to resume at the next instruction
-next :: Monoid w => Run w ()
+next :: Monoid w => Emu w ()
 next = modify $ adjust (+ 1) PCounter
 
 -- 2-stage dereference of operand to Int.
@@ -243,14 +243,14 @@ instance Monoid w => Pru (Comp w) where
 machineInit = machineInit0 []
 machineInit0 = machineInit' 0
 
-machineInit' :: Int -> [Int] -> RunState
+machineInit' :: Int -> [Int] -> EmuState
 machineInit' init regs = Map.fromList $
   [(PCounter, 0), (Time, 0)] ++ [(File r, init) | r <- regs]
 
 
--- Generic run method.  See below for usage examples.
-runEmu :: Monoid w => Run w t -> RunState -> ((t, w), RunState)
-runEmu m s = runState (runWriterT $ unRun m) s
+-- Generic monad run method.  See below for usage examples.
+runEmu :: Monoid w => Emu w t -> EmuState -> ((t, w), EmuState)
+runEmu m s = runState (runWriterT $ unEmu m) s
 
 
 
