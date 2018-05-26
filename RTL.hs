@@ -10,6 +10,8 @@ module RTL where
 
 -- Abstract tag for signal representation.
 data S = S
+data SType = SInt NbBits | SInt'
+type NbBits = Int
 
 -- Semantics of signals:
 -- 1) have exactly one driver
@@ -23,7 +25,8 @@ data S = S
 class Monad m => RTL m r where
 
   -- Signal creaton
-  signal  :: m (r S)             -- Undriven
+  signal  :: SType -> m (r S)    -- Undriven
+  stype   :: r S -> m (SType)
   int     :: Int -> m (r S)      -- Driven by constant
 
   -- Drive
@@ -59,5 +62,6 @@ slr = op2 SLR
 
 inv :: forall m r. RTL m r => r S -> m (r S)
 inv = op1 INV
+
 
 

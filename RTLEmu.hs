@@ -43,8 +43,8 @@ data R t = R { unR :: Signal }
 instance RTL M R where
 
   -- undriven signal
-  signal =
-    fmap (R . Reg) makeRegNum
+  signal _ = fmap (R . Reg) makeRegNum
+  stype _ = return $ SInt'
 
   -- driven signals
   int c =

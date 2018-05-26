@@ -45,7 +45,8 @@ data R t = R { unR :: Signal }
 instance RTL M R where
 
   -- undriven signal
-  signal                        = fmap R makeSignal
+  signal _  = fmap R makeSignal
+  stype _   = return SInt'
 
   -- driven signals
   op1 o (R (Sig a))             = fmap R $ driven $ Comb1 o a
@@ -72,3 +73,5 @@ driven c = do
 
 compile m = signals where
   (_, (_, signals)) = runState (unNet m) (0, empty)
+
+

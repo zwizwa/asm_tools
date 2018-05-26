@@ -35,6 +35,7 @@
 -- very confusing.
 
 import RTL
+import RTLLib
 import qualified RTLNet as Net
 import qualified RTLEmu as Emu
 import Data.Map.Lazy (empty, foldrWithKey, insert)
@@ -47,10 +48,10 @@ import Data.Map.Lazy (empty, foldrWithKey, insert)
   
 main = do
   putStrLn "--- counter Net.compile"
-  printNet counter
+  printNet $ counter SInt'
 
   putStrLn "--- counter Emu.compile"
-  printEmu counter
+  printEmu $ counter SInt'
 
   putStrLn "--- counter Emu.trace"
   print $ take 10 $ Emu.trace test_counter
@@ -83,8 +84,7 @@ mapToList = foldrWithKey f [] where f k v t = (k,v):t
 
 -- Examples
 
-inc :: RTL m r => r S -> m (r S)
-inc c = int 1 >>= add c
+
 
 -- counter :: RTL m r => r S -> m ()
 -- counter = regFix inc
@@ -93,34 +93,19 @@ inc c = int 1 >>= add c
 -- regFix f r = f r >>= next r
 
 
-delay d = do
-  d0 <- signal -- create undriven signal
-  next d0 d    -- set up register input
-  return d0
 
-edge d = do
-  d0 <- delay d
-  d `bxor` d0
+
 
 square = do
   n <- int 2
-  c <- counter
+  c <- counter SInt'
   slr c n >>= bit
 
-bit b = do
-  int 1 >>= band b
-
--- counter :: forall m r. RTL m r => m (r S)
-counter = do
-  c <- signal
-  c' <- inc c
-  next c c'
-  return c
-
 test_counter = do
-  c <- counter
+  c1 <- counter SInt'
+  c2 <- counter SInt'
   -- [] is a meta-language construct needed for trace
-  return [c]
+  return [c1, c2]
 
 -- For testing, outputs need to be collected in lists.
 test_edge = do
