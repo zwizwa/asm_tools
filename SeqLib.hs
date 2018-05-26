@@ -34,3 +34,19 @@ int :: forall m r. Seq m r => Int -> m (r S)
 int v = constant (SInt Nothing v)
 
 
+-- A test of completeness is to implement a clock synchronizer.
+-- Simplify it to power-of-two division.
+
+-- Combinatorial part
+sync' :: forall m r. Seq m r => r S -> r S -> r S -> m (r S)
+sync' s0 i s = do
+  e  <- edge i   -- edge detector on input
+  s' <- inc s    -- free running counter
+  if' e s0 s     -- conditional reset
+  
+-- Bound to register
+sync :: Seq m r => SType -> r S -> m (r S)
+sync t i = do
+  s0 <- constant t
+  reg t $ sync' s0 i
+

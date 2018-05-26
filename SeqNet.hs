@@ -68,7 +68,7 @@ instance Seq M R where
   signal _  = fmap R makeSignal
   stype _   = return $ SInt Nothing 0
 
-  -- driven signals
+  -- driven nodes
   constant (SInt _ v) =
     fmap R $ driven $ Const v
 
@@ -104,22 +104,20 @@ driven c = do
 
 
 -- I/O ports direction is not known until it is driven, so start them
--- out as Inputs ...
+-- out as Input nodes ...
 io :: Int -> M [R S]
 io n = sequence $ [fmap R $ driven $ Input i | i <- [0..n-1]] 
 
--- ... and convert them to outputs here.  Other signals cannot be
--- driven more than once.
+-- ... and convert them to output here.  Other nodes cannot be driven
+-- more than once.  Note: using fix, this error is avoided.
 driveSignal n c = do
   let f c (Input _) = c
       f _ old_c = error $ "Signal driven twice: " ++ show (n,old_c,c)
   modify $ appComb $ insertWith f n c
   
-
--- data Code ports signals deriving Show
-
-compile m = (map unpack ports, signals) where
-  (ports, (_, signals)) = runState (unM m) (0, empty)
+-- Compile to list of I/O ports and network map.
+compile m = (map unpack ports, nodes) where
+  (ports, (_, nodes)) = runState (unM m) (0, empty)
   unpack (R (Sig n)) = n
 
 
