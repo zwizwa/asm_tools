@@ -51,13 +51,13 @@ main = do
   printEmu $ counter (SInt (Just 2) 0)
 
   putStrLn "--- counter Emu.trace"
-  print $ take 10 $ Emu.trace test_counter
+  print $ take 10 $ test_counter
 
   putStrLn "--- edge Emu.trace"
-  print $ take 10 $ map head $ Emu.trace test_edge
+  print $ take 10 $ map head $ test_edge
 
-  putStrLn "--- test_myhdl"
-  let (ports, signals) = Net.compile test_myhdl
+  putStrLn "--- test_io"
+  let (ports, signals) = Net.compile test_io
   print ports
   printl $ mapToList $ signals
 
@@ -67,8 +67,8 @@ printEmu src = do
   let (r0, f) = Emu.compile src 
   putStrLn "init: "
   printl $ mapToList $ r0
-  putStrLn "post: "
-  printl $ mapToList $ f r0
+--  putStrLn "post: "
+--  printl $ mapToList $ f r0
 
 
 
@@ -82,26 +82,34 @@ square = do
   c <- counter $ SInt (Just 3) 0
   slr c n >>= bit
 
-test_counter = do
+test_counter = Emu.trace $ do
   c1 <- counter $ SInt (Just 1) 0
   c2 <- counter $ SInt (Just 3) 0
   -- [] is a meta-language construct needed for trace
   return [c1, c2]
 
 -- For testing, outputs need to be collected in lists.
-test_edge = do
+test_edge = Emu.trace $ do
   e <- square >>= edge
   return [e]
+
+-- Clock synchronizer
+-- test_sync = Emu.trace'
+--   (\[d] -> do
+--       c <- sync (SInt (Just 2) 0) d
+--            trace [c])
+--   (cycle [[1],[0],[1],[0],[0]])
 
 
 -- MyHDL export needs some wrapping to specify module I/O structure.
 -- Net has support for this.
-test_myhdl :: Net.M [Net.R S]
-test_myhdl = do
+test_io :: Net.M [Net.R S]
+test_io = do
   io@[i,o] <- Net.io 2
   o' <- delay i  -- inner code
-  connect o o'
+  connect o o'   -- allow direct output
   return io
+
 
 
 

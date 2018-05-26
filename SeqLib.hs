@@ -50,3 +50,4 @@ sync t i = do
   s0 <- constant t
   reg t $ sync' s0 i
 
+
