@@ -42,7 +42,7 @@ sync' :: forall m r. Seq m r => r S -> r S -> r S -> m (r S)
 sync' s0 i s = do
   e  <- edge i   -- edge detector on input
   s' <- inc s    -- free running counter
-  if' e s0 s     -- conditional reset
+  if' e s0 s'    -- conditional reset
   
 -- Bound to register
 sync :: Seq m r => SType -> r S -> m (r S)

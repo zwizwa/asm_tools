@@ -11,6 +11,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
 module SeqEmu where
 import Seq
 import Control.Monad.State
@@ -26,15 +27,15 @@ newtype M t = M { unM :: ReaderT RegIn (State CompState) t } deriving
   (Functor, Applicative, Monad,
    MonadReader RegIn,
    MonadState CompState)
-type Inits = [(RegNum, Size, Int)]
-type RegNum = Int
+type RegNum   = Int
 type ConstVal = Int
-type RegVal = Int
-type RegType = (Size, Int)
+type RegVal   = Int
+type RegType  = (Size, Int)
 -- Keep these two separate
 type RegVals  = Map RegNum RegVal
 type RegTypes = Map RegNum RegType
-type RegIn = RegNum -> RegVal  -- More abstract, allows probing
+-- More abstract, allows probing
+type RegIn = RegNum -> RegVal
 type CompState = (RegNum, RegTypes, RegVals)
 
 -- Primitive state manipulations
@@ -133,17 +134,18 @@ stateIn si r = si ! r
 
 -- Same, but require a signal list as monadic value.
 compileUpdate' :: M [R S] -> RegVals -> (RegVals, [Int])
-compileUpdate' m si = (so, o') where
-  (o, (_, _, so)) = runEmu m $ stateIn si
-  o' = map val o
+compileUpdate' m si = (so, o) where
+  (o', (_, _, so)) = runEmu m $ stateIn si
+  o = map val o'
   val (R (Val _ v)) = v
   val (R (Reg r)) = so ! r
 
 -- Initial values are recorded by the Writer so we can collect them.
 compileInit m = s0 where
-  fakeState _ = 0
-  (_, (_, ts, _)) = runEmu m fakeState
-  s0 = Map.map init ts
+  -- Ideally, this is a separate type.  But 0 works fine.
+  probe _ = 0
+  (_, (_, types, _)) = runEmu m probe
+  s0 = Map.map init types
   init (sz,r0) = r0
 
 
@@ -160,18 +162,22 @@ trace m = t s0 where
   (s0, f) = compile' m
   t s = o : t s' where (s', o) = f s 
 
--- -- Trace with inputs.
--- trace' :: ([R S] -> M [R S]) -> [Bus] -> [Bus]
--- trace' mf = t s0 where
---   s0 = compileInit (mi' >>= mf)
---   mi' = sequence $ cycle [constant (SInt Nothing 0)] -- FIXME: won't work
---   t s (i:is)  = o : t s' is where
---     (s', o) = f i s
---     f i = f' where
---       f' = compileUpdate' m'
---       m' = mi >>= mf
---       mi = sequence $ map input i
---       input v = constant (SInt Nothing v)
+-- Trace with inputs.  Inputs are abstract to allow probing.
+trace' :: ([R S] -> M [R S]) -> [Bus] -> [Bus]
+trace' mf is@(i0:_) = t s0 is where
+
+  -- Create a monadic output computation for each input.
+  mo i = mi >>= mf where
+    mi = sequence $ [constant (SInt Nothing v) | v <- i]
+    
+  -- To obtain the initial state, a dummy input probe is needed to
+  -- reduce the type.
+  s0 = compileInit (mo i0)
+
+  -- The remainder is similar to trace, with extra input threading.
+  t s (i:is)  = o : t s' is where
+    (s', o) = f s
+    f = compileUpdate' $ mo i
     
 
 

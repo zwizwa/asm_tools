@@ -61,6 +61,9 @@ main = do
   print ports
   printl $ mapToList $ signals
 
+  putStrLn "--- test_sync"
+  printl $ take 10 $ test_sync
+
 
 printEmu :: Emu.M (Emu.R S) -> IO ()
 printEmu src = do
@@ -94,11 +97,14 @@ test_edge = Emu.trace $ do
   return [e]
 
 -- Clock synchronizer
--- test_sync = Emu.trace'
---   (\[d] -> do
---       c <- sync (SInt (Just 2) 0) d
---            trace [c])
---   (cycle [[1],[0],[1],[0],[0]])
+test_sync = Emu.trace' f is where
+  is = cycle [[v] | v <- [1,0,0,0,0,1,0,0]]
+  f [i] = do
+    o <- sync (SInt (Just 2) 0) i
+    -- o <- counter (SInt (Just 2) 0)
+    -- o <- edge i
+    return [i,o]
+  
 
 
 -- MyHDL export needs some wrapping to specify module I/O structure.
