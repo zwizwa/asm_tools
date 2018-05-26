@@ -35,7 +35,8 @@ type CompState = (RegNum, RegMap)
 appRegNum f (n,c) = (f n, c) ; getRegNum = do (n,_) <- get ; return n
 appOut    f (n,c) = (n, f c) 
 
-data Signal = Reg Size Int | Val Size Int
+data Signal = Reg Size Int Int  -- intial, current
+            | Val Size Int
 type Size = Maybe Int
 
 -- Phantom representation wrapper
@@ -44,32 +45,44 @@ data R t = R { unR :: Signal }
 instance RTL M R where
 
   -- undriven signal
-  signal (SInt bits) = fmap (R . Reg bits) $ makeRegNum
-  stype (R a) = do sz <- bits a ;  return $ SInt sz
+  signal (SInt sz r0) = do
+    r <- makeRegNum
+    return $ R $ Reg sz r0 r
+
+  constant (SInt sz r0) = do
+    return $ R $ Val sz r0
+
+  stype (R r) = do
+    (sz, r0) <- styp r
+    return $ SInt sz r0
 
   -- driven signals
-  int (SInt sz) c =
-    return $ R $ Val sz c
   op1 o (R a) = do
-    (sza, va) <- ref' a
+    ((sza,_), va) <- val' a
     return $ R $ truncVal sza $ f1 o va
   op2 o (R a) (R b)= do
-    (sza,va) <- ref' a
-    (szb,vb) <- ref' b
+    ((sza,_),va) <- val' a
+    ((szb,_),vb) <- val' b
     return $ R $ truncVal (sz sza szb) $ f2 o va vb
 
   -- register drive
-  next (R (Reg sz a)) (R b) = do
-    vb <- ref b
+  next (R (Reg sz _ a)) (R b) = do
+    vb <- val b
     let ifConflict _ old = error $ "Register conflict: " ++ show (a,old,vb)
     modify $ appOut $ insertWith ifConflict a vb
     
     
--- Register
-ref' (Val b c) = return (b,c)
-ref' (Reg b c) = do v <- asks (! c) ; return (b, v)
-ref  = (fmap snd) . ref'
-bits = (fmap fst) . ref'
+-- Value dereference & meta information.
+val  = (fmap snd) . val'
+val' (Val sz v) = return ((sz, v), v) -- Set reset value to actual value
+val' (Reg sz r0 r) = do v <- asks (regval r) ; return ((sz, r0), v)
+styp = (fmap fst) . val'
+
+
+regval r rs = checkVal r rs $ Map.lookup r rs
+checkVal _ _ (Just v) = v
+checkVal r rs Nothing = error $ "Uninitialized Register: " ++ show (r,rs)
+
 
 sz Nothing a = a
 sz a Nothing = a
@@ -103,9 +116,9 @@ compileUpdate m si = so where
 compileUpdate' :: M [R S] -> RegMap -> (RegMap, [Int])
 compileUpdate' m si = (so, o) where
   (sigs, (_, so)) = runEmu m si
-  o = map deref sigs
-  deref (R (Val _ v)) = v
-  deref (R (Reg _ r)) = so ! r
+  o = map val sigs
+  val (R (Val _ v)) = v
+  val (R (Reg _ _ r)) = so ! r
 
 -- To compute initial value, run it once with register output tied to
 -- input.  This won't diverge because the output is never evaluated,

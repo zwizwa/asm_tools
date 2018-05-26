@@ -28,7 +28,7 @@ reg' r f = do
   return r
 
 inc :: RTL m r => r S -> m (r S)
-inc c = int' 1 >>= add c
+inc c = int 1 >>= add c
 
 counter :: RTL m r => SType -> m (r S)
 counter t = reg t inc
@@ -43,4 +43,9 @@ edge d = do
   d `bxor` d0
 
 bit b = do
-  int' 1 >>= band b
+  int 1 >>= band b
+
+
+int :: forall m r. RTL m r => Int -> m (r S)
+int v = constant (SInt Nothing v)
+

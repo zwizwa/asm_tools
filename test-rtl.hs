@@ -48,10 +48,10 @@ import Data.Map.Lazy (empty, foldrWithKey, insert)
   
 main = do
   putStrLn "--- counter Net.compile"
-  printNet $ counter (SInt $ Just 2)
+  printNet $ counter (SInt (Just 2) 0)
 
   putStrLn "--- counter Emu.compile"
-  printEmu $ counter (SInt $ Just 2)
+  printEmu $ counter (SInt (Just 2) 0)
 
   putStrLn "--- counter Emu.trace"
   print $ take 10 $ Emu.trace test_counter
@@ -97,13 +97,13 @@ mapToList = foldrWithKey f [] where f k v t = (k,v):t
 
 
 square = do
-  n <- int' 2
-  c <- counter $ SInt $ Just 3
+  n <- int 2
+  c <- counter $ SInt (Just 3) 0
   slr c n >>= bit
 
 test_counter = do
-  c1 <- counter $ SInt $ Just 1
-  c2 <- counter $ SInt $ Just 3
+  c1 <- counter $ SInt (Just 1) 0
+  c2 <- counter $ SInt (Just 3) 0
   -- [] is a meta-language construct needed for trace
   return [c1, c2]
 
