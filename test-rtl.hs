@@ -35,22 +35,85 @@
 -- very confusing.
 
 import RTL
-import qualified RTLGen as Gen
-import Data.Map.Strict (empty, foldrWithKey)
+import qualified RTLNet as Net
+import qualified RTLEmu as Emu
+import Data.Map.Lazy (empty, foldrWithKey, insert)
 
 
 
 -- Let's start with a counter
 
-inc :: forall m r. RTL m r => r Sig -> m (r Sig)
-inc c = int 1 >>= add c
 
-counter :: forall m r. RTL m r => r Sig -> m ()
-counter b = inc b >>= next b
   
 main = do
-  putStrLn " --- counter"
-  printl $ mapToList $ Gen.compile $ (signal :: Gen.M (Gen.R Sig)) >>= counter
+  putStrLn " --- counter Net"
+  printNet counter
+
+  putStrLn " --- counter Emu"
+  printEmu counter
+
+--  putStrLn " --- test_edge"
+--  printEmu $ test_edge
+
+printNet :: Net.M (Net.R S) -> IO ()
+printNet = printl . mapToList . Net.compile
+
+printEmu :: Emu.M (Emu.R S) -> IO ()
+printEmu src = do
+  printl $ mapToList $ Emu.compile src (insert 0 0 empty)
+  print $ Emu.init src
 
 printl es = sequence_ $ map print es
 mapToList = foldrWithKey f [] where f k v t = (k,v):t
+
+
+
+ 
+
+-- Examples
+
+inc :: RTL m r => r S -> m (r S)
+inc c = int 1 >>= add c
+
+-- counter :: RTL m r => r S -> m ()
+-- counter = regFix inc
+
+-- regFix :: RTL m r => (r S -> m (r S)) -> r S -> m ()
+-- regFix f r = f r >>= next r
+
+
+delay d = do
+  d0 <- signal -- create undriven signal
+  next d0 d    -- set up register input
+  return d0
+
+edge d = do
+  d0 <- delay d
+  d `xor` d0
+
+
+test_edge = square >>= edge
+
+square = do
+  n <- int 4
+  c <- counter
+  sll n c
+
+-- counter :: forall m r. RTL m r => m (r S)
+counter = do
+  c <- signal
+  c' <- inc c
+  next c c'
+  return c
+
+
+
+
+-- Next: render m (r S) as [Int]
+
+
+
+
+  
+  
+  

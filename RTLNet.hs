@@ -6,13 +6,13 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module RTLGen where
+module RTLNet where
 
 import RTL
 
 import Control.Monad.State
 import Control.Monad.Writer
-import Data.Map.Strict (Map, (!), lookup, empty, insert, fromList, adjust)
+import Data.Map.Strict (Map, (!), lookup, empty, insert, insertWith)
 import qualified Data.Map as Map
 
 -- For later extension
@@ -26,7 +26,7 @@ data Driver = Comb2 Op2 SigNum SigNum
             | Const ConstVal
   deriving Show
 
-newtype M t = M { unGen :: WriterT [W] (State CompState) t } deriving
+newtype M t = M { unNet :: WriterT [W] (State CompState) t } deriving
   (Functor, Applicative, Monad,
    MonadWriter [W],
    MonadState CompState)
@@ -40,7 +40,7 @@ type CompState = (SigNum, SignalMap)
 appSignal f (n,c) = (f n, c)
 appComb   f (n,c) = (n, f c) ; getSignal = do (n,_) <- get ; return n
 
-data Signal = S Int
+data Signal = Sig Int
 
 -- Phantom representation wrapper
 data R t = R { unR :: Signal }  
@@ -48,35 +48,35 @@ data R t = R { unR :: Signal }
 instance RTL M R where
 
   -- undriven signal
-  signal                    = fmap R makeSignal
+  signal                        = fmap R makeSignal
 
   -- driven signals
-  op1 o (R (S a))           = fmap R $ driven $ Comb1 o a
-  op2 o (R (S a)) (R (S b)) = fmap R $ driven $ Comb2 o a b
-  int c                     = fmap R $ driven $ Const c
+  op1 o (R (Sig a))             = fmap R $ driven $ Comb1 o a
+  op2 o (R (Sig a)) (R (Sig b)) = fmap R $ driven $ Comb2 o a b
+  int c                         = fmap R $ driven $ Const c
 
   -- combinatorial drive
-  connect (R (S dst)) (R (S src)) =
+  connect (R (Sig dst)) (R (Sig src)) =
     driveSignal dst $ Connect src
 
   -- register drive
-  next (R (S dst)) (R (S src)) =
+  next (R (Sig dst)) (R (Sig src)) =
     driveSignal dst $ Delay src
 
 makeSignal = do
   n <- getSignal
   modify $ appSignal (+ 1)
-  return $ S n
+  return $ Sig n
 
 driveSignal n c = do
-  -- FIXME: error when already driven
-  modify $ appComb $ insert n c
+  let f _ old_c = error $ "Signal driven twice: " ++ show (n,old_c,c)
+  modify $ appComb $ insertWith f n c
 
 driven c = do
-  s@(S n) <- makeSignal
+  s@(Sig n) <- makeSignal
   driveSignal n c
   return s
 
 compile m = dict where
-  ((v, w), s) = runState (runWriterT $ unGen m) (0, empty)
+  ((v, w), s) = runState (runWriterT $ unNet m) (0, empty)
   (_, dict) = s

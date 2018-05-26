@@ -22,8 +22,8 @@ default.nix: asm_tools.cabal
 NIX_SHELL := nix-shell --attr env release.nix
 shell: default.nix
 	$(NIX_SHELL)
-repl: default.nix
-	$(NIX_SHELL) --run "cabal repl"
+repl-test-rtl: default.nix
+	$(NIX_SHELL) --run "cabal repl test:test-rtl"
 
 # Cabal is smarter about recompiling only part of the project for
 # incremental development.
