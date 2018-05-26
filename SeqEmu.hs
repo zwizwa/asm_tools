@@ -126,58 +126,47 @@ makeRegNum = do
 runEmu m i = runState (runReaderT (unM m) i) (0, empty, empty)
 
 
--- Find update function.
-compileUpdate m si = so where
+-- Update function without outputs
+toTick' m si = so where
   (_, (_, _, so)) = runEmu m $ stateIn si
 
 stateIn si r = si ! r
 
--- Same, but require a signal list as monadic value.
-compileUpdate' :: M [R S] -> RegVals -> (RegVals, [Int])
-compileUpdate' m si = (so, o) where
+-- Update function, including outputs
+toTick :: M [R S] -> RegVals -> (RegVals, [Int])
+toTick m si = (so, o) where
   (o', (_, _, so)) = runEmu m $ stateIn si
   o = map val o'
   val (R (Val _ v)) = v
   val (R (Reg r)) = so ! r
 
--- Initial values are recorded by the Writer so we can collect them.
-compileInit m = s0 where
-  -- Ideally, this is a separate type.  But 0 works fine.
+
+-- Probe to obtain initial values.
+-- Ideally, probe is a separate type.  But 0 works fine.
+reset m = s0 where
   probe _ = 0
   (_, (_, types, _)) = runEmu m probe
   s0 = Map.map init types
   init (sz,r0) = r0
 
 
-
--- Final product gives enough information to produce an infinite sequence.
-compile  m = (compileInit m, compileUpdate  m)
-compile' m = (compileInit m, compileUpdate' m)
-
-
--- 'trace' computes signal waveforms from a monadic Seq.hs program
+-- Render signal waveforms from a monadic Seq.hs program
 type Bus = [Int]
 trace :: M [R S] -> [Bus]
 trace m = t s0 where
-  (s0, f) = compile' m
+  s0 = reset m
+  f = toTick m
   t s = o : t s' where (s', o) = f s 
 
--- Trace with inputs.  Inputs are abstract to allow probing.
+-- Same, but with input.
 trace' :: ([R S] -> M [R S]) -> [Bus] -> [Bus]
 trace' mf is@(i0:_) = t s0 is where
-
-  -- Create a monadic output computation for each input.
+  s0 = reset (mo i0) -- probe with first input
   mo i = mi >>= mf where
     mi = sequence $ [constant (SInt Nothing v) | v <- i]
-    
-  -- To obtain the initial state, a dummy input probe is needed to
-  -- reduce the type.
-  s0 = compileInit (mo i0)
-
-  -- The remainder is similar to trace, with extra input threading.
   t s (i:is)  = o : t s' is where
     (s', o) = f s
-    f = compileUpdate' $ mo i
+    f = toTick $ mo i
     
 
 

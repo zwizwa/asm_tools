@@ -107,3 +107,8 @@ reg' r f = do
   r' <- f r     -- create update equation with possible feedback
   next r r'     -- patch the register's input
   return r
+
+-- FIXME: make this a bit more general:
+--  - multiple registers
+--  - explicit return value
+
