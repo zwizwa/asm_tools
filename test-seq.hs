@@ -67,8 +67,8 @@ printEmu src = do
   let (r0, f) = Emu.compile src 
   putStrLn "init: "
   printl $ mapToList $ r0
---  putStrLn "post: "
---  printl $ mapToList $ f r0
+  putStrLn "post: "
+  printl $ mapToList $ f r0
 
 
 

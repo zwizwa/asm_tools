@@ -22,16 +22,15 @@ import Data.Bits
 
 
 -- Main interpretation monad for Seq
-newtype M t = M { unM :: WriterT Inits (ReaderT RegEnv (State CompState)) t } deriving
+newtype M t = M { unM :: ReaderT RegEnv (State CompState) t } deriving
   (Functor, Applicative, Monad,
-   MonadWriter Inits,
    MonadReader RegEnv,
    MonadState CompState)
 type Inits = [(RegNum, Size, Int)]
 type RegNum = Int
 type ConstVal = Int
-type RegVal = Int
-type RegEnv = RegNum -> Maybe RegVal
+type RegVal = (Size, Int, Maybe Int)
+type RegEnv = RegNum -> RegVal
 type RegMap = Map RegNum RegVal
 type CompState = (RegNum, RegMap)
 
@@ -40,7 +39,7 @@ appRegNum f (n,c) = (f n, c) ; getRegNum = do (n,_) <- get ; return n
 appOut    f (n,c) = (n, f c) 
 
 data R t = R { unR :: Signal } -- phantom wrapper
-data Signal = Reg Size Int Int
+data Signal = Reg Int
             | Val Size Int
 type Size = Maybe Int
 
@@ -51,8 +50,8 @@ instance Seq M R where
   -- undriven signal
   signal (SInt sz r0) = do
     r <- makeRegNum
-    tell $ [(r, sz, r0)]
-    return $ R $ Reg sz r0 r
+    modify $ appOut $ insert r (sz, r0, Nothing)
+    return $ R $ Reg  r
 
   constant (SInt sz r0) = do
     return $ R $ Val sz r0
@@ -76,22 +75,21 @@ instance Seq M R where
     return $ R $ truncVal (sz sza (sz szb szc)) $ f3 o va vb vc
 
   -- register drive
-  next (R (Reg _ _ a)) (R b) = do
+  next (R (Reg a)) (R b) = do
     b' <- val b
-    modify $ appOut $ insert a b'
-
+    let f (sz, r0, Nothing) = (sz, r0, Just b')
+    modify $ appOut $ Map.adjust f a
+    
   -- this is an artefact necessary for MyHDL non-registered outputs
   connect _ _ = error "SeqEmu does not support connect"
     
 -- Value dereference & meta information.
 val  = (fmap snd) . val'
 val' (Val sz v) = return ((sz, v), v) -- Set reset value to actual value
-val' (Reg sz r0 r) = do v <- asks (regval r) ; return ((sz, r0), v)
+val' (Reg r) = do (sz, r0, Just v) <- asks (regval r) ; return ((sz, r0), v)
 styp = (fmap fst) . val'
 
-regval r regs = checkVal r $ regs r
-checkVal _ (Just v) = v
-checkVal r Nothing = error $ "Uninitialized Register: " ++ show r
+regval r regs = regs r
 
 
 sz Nothing a = a
@@ -118,28 +116,29 @@ makeRegNum = do
   modify $ appRegNum (+ 1)
   return n
 
-runEmu m i = runState (runReaderT (runWriterT (unM m)) i) (0, empty)
+runEmu m i = runState (runReaderT (unM m) i) (0, empty)
 
 
 -- Find update function.
 compileUpdate m si = so where
   (_, (_, so)) = runEmu m $ stateIn si
 
-stateIn si r = Map.lookup r si
+stateIn si r = si ! r
 
 -- Same, but require a signal list as monadic value.
 compileUpdate' :: M [R S] -> RegMap -> (RegMap, [Int])
 compileUpdate' m si = (so, o') where
-  ((o, w), (_, so)) = runEmu m $ stateIn si
+  (o, (_, so)) = runEmu m $ stateIn si
   o' = map val o
   val (R (Val _ v)) = v
-  val (R (Reg _ _ r)) = so ! r
+  val (R (Reg r)) = v where (_,_,Just v) = so ! r
 
 -- Initial values are recorded by the Writer so we can collect them.
 compileInit m = s0 where
-  fakeRegs _ = Just 0
-  ((_, inits), (_, _)) = runEmu m fakeRegs
-  s0 = fromList $ [(r,r0) | (r,_,r0) <- inits]
+  fakeState _ = (Nothing, 0, Just 0)
+  (_, (_, s)) = runEmu m fakeState
+  s0 = Map.map kill s
+  kill (sz,r0,_) = (sz,r0, Just r0)
 
 
 
