@@ -9,7 +9,7 @@
 module SeqLib where
 import Seq
 
-
+-- Some simple building blocks
 
 inc :: Seq m r => r S -> m (r S)
 inc c = int 1 >>= add c
@@ -32,4 +32,5 @@ bit b = do
 
 int :: forall m r. Seq m r => Int -> m (r S)
 int v = constant (SInt Nothing v)
+
 

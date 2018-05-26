@@ -68,17 +68,24 @@ instance Seq M R where
   op1 o (R a) = do
     ((sza,_), va) <- val' a
     return $ R $ truncVal sza $ f1 o va
-  op2 o (R a) (R b)= do
+  op2 o (R a) (R b) = do
     ((sza,_),va) <- val' a
     ((szb,_),vb) <- val' b
     return $ R $ truncVal (sz sza szb) $ f2 o va vb
+  op3 o (R a) (R b) (R c) = do
+    ((sza,_),va) <- val' a
+    ((szb,_),vb) <- val' b
+    ((szc,_),vc) <- val' c
+    return $ R $ truncVal (sz sza (sz szb szc)) $ f3 o va vb vc
 
   -- register drive
   next (R (Reg sz _ a)) (R b) = do
     vb <- val b
     let ifConflict _ old = error $ "Register conflict: " ++ show (a,old,vb)
     modify $ appOut $ insertWith ifConflict a vb
-    
+
+  -- this is an artefact necessary for MyHDL non-registered outputs
+  connect _ _ = error "SeqEmu does not support connect"
     
 -- Value dereference & meta information.
 val  = (fmap snd) . val'
@@ -109,6 +116,8 @@ f2 XOR = xor
 f2 SLL = shiftL
 f2 SLR = shiftR
 
+f3 IF c a b = if c /= 0 then a else b
+  
 makeRegNum = do
   n <- getRegNum
   modify $ appRegNum (+ 1)

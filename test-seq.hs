@@ -47,9 +47,6 @@ import Data.Map.Lazy (empty, foldrWithKey, insert)
 
   
 main = do
-  putStrLn "--- counter Net.compile"
-  printNet $ counter (SInt (Just 2) 0)
-
   putStrLn "--- counter Emu.compile"
   printEmu $ counter (SInt (Just 2) 0)
 
@@ -59,11 +56,11 @@ main = do
   putStrLn "--- edge Emu.trace"
   print $ take 10 $ map head $ Emu.trace test_edge
 
---  putStrLn " --- test_edge"
---  printEmu $ test_edge
+  putStrLn "--- test_myhdl"
+  let (ports, signals) = Net.compile test_myhdl
+  print ports
+  printl $ mapToList $ signals
 
-printNet :: Net.M (Net.R S) -> IO ()
-printNet = printl . mapToList . Net.compile
 
 printEmu :: Emu.M (Emu.R S) -> IO ()
 printEmu src = do
@@ -77,22 +74,6 @@ printEmu src = do
 
 printl es = sequence_ $ map print es
 mapToList = foldrWithKey f [] where f k v t = (k,v):t
-
-
-
- 
-
--- Examples
-
-
-
--- counter :: Seq m r => r S -> m ()
--- counter = regFix inc
-
--- regFix :: Seq m r => (r S -> m (r S)) -> r S -> m ()
--- regFix f r = f r >>= next r
-
-
 
 
 
@@ -113,9 +94,14 @@ test_edge = do
   return [e]
 
 
-
--- Next: render m (r S) as [Int]
-
+-- MyHDL export needs some wrapping to specify module I/O structure.
+-- Net has support for this.
+test_myhdl :: Net.M [Net.R S]
+test_myhdl = do
+  io@[i,o] <- Net.io 2
+  o' <- delay i  -- inner code
+  connect o o'
+  return io
 
 
 

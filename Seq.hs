@@ -1,11 +1,16 @@
 -- An eDSL for sequential logic.
 
--- Note that this is not a typical HDL.
+-- Note that this is not a full HDL.
+-- Following wikipedia's definition, Seq implements an RTL language.
+-- https://en.wikipedia.org/wiki/Register-transfer_level
 
 -- It helps to think of HDLs as discrete event simulation languages,
--- with logic synthesis tagged on.  We don't have that limitation and
--- intentionally limit ourselves to description of sequential logic
--- circuits.
+-- with RTL embedded inside in the case synchronization points are
+-- only determined by clocks.
+
+-- Seq has implicit clock signals Only 'next' to relate the current
+-- clock cycle to the next.
+
 
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
@@ -37,26 +42,33 @@ class Monad m => Seq m r where
   -- Register operation
   signal   :: SType -> m (r S)    -- Undriven signal
   next     :: r S -> r S -> m ()  -- Drive a register input
+  connect  :: r S -> r S -> m ()  -- Combinatorial connect
 
   -- Note that 'signal' and 'next' are considered to be imperative
   -- low-level primitives.  They should not be used in library code.
   -- Instead, use the declarative 'reg' operator.
+  -- Combinatorial connect is necessary for HDL export.
   
   constant :: SType -> m (r S)
   stype    :: r S -> m SType
 
   -- Combinatorial operations all create driven intermediate signals
   -- to make them fit better in a monadic language.
-  op2 :: Op2 -> r S -> r S -> m (r S)
   op1 :: Op1 -> r S -> m (r S)
-
-
+  op2 :: Op2 -> r S -> r S -> m (r S)
+  op3 :: Op3 -> r S -> r S -> r S -> m (r S)
 
 
 -- Primitives
 
-data Op2 = ADD | AND | XOR | SLL | SLR deriving Show
-data Op1 = INV deriving Show
+data Op1 = INV
+  deriving Show
+
+inv :: forall m r. Seq m r => r S -> m (r S)
+inv = op1 INV
+
+data Op2 = ADD | AND | XOR | SLL | SLR
+  deriving Show
 
 add :: forall m r. Seq m r => r S -> r S -> m (r S)
 add = op2 ADD
@@ -73,9 +85,11 @@ sll = op2 SLL
 slr :: forall m r. Seq m r => r S -> r S -> m (r S)
 slr = op2 SLR
 
-inv :: forall m r. Seq m r => r S -> m (r S)
-inv = op1 INV
+data Op3 = IF
+  deriving Show
 
+if' :: forall m r. Seq m r => r S -> r S -> r S -> m (r S)
+if' = op3 IF  
 
 -- Declarative register feedback operator: 'signal' bundled with
 -- 'next' avoids the creation of non-driven signals, or multiple
