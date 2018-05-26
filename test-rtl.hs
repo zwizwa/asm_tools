@@ -57,7 +57,7 @@ main = do
   print $ take 10 $ Emu.trace test_counter
 
   putStrLn "--- edge Emu.trace"
-  print $ take 10 $ Emu.trace test_edge
+  print $ take 10 $ map head $ Emu.trace test_edge
 
 --  putStrLn " --- test_edge"
 --  printEmu $ test_edge
