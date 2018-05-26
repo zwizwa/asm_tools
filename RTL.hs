@@ -27,15 +27,13 @@ class Monad m => RTL m r where
   int     :: Int -> m (r S)      -- Driven by constant
 
   -- Drive
-  connect :: r S -> r S -> m ()  -- Combinatorial connect
   next    :: r S -> r S -> m ()  -- Register update equation
 
-  -- Combinatorial operations all create intermediate signals to make
-  -- them fit better in a monadic language.
+  -- Combinatorial operations all create driven intermediate signals
+  -- to make them fit better in a monadic language.
   op2 :: Op2 -> r S -> r S -> m (r S)
   op1 :: Op1 -> r S -> m (r S)
 
-  connect _ _ = error $ "connect not implemented"
 
 -- Note that combinatorial drive is a code smell.  It is typically a
 -- good idea to register the outputs of a module, meaing that all

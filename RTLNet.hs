@@ -52,10 +52,6 @@ instance RTL M R where
   op2 o (R (Sig a)) (R (Sig b)) = fmap R $ driven $ Comb2 o a b
   int c                         = fmap R $ driven $ Const c
 
-  -- combinatorial drive
-  connect (R (Sig dst)) (R (Sig src)) =
-    driveSignal dst $ Connect src
-
   -- register drive
   next (R (Sig dst)) (R (Sig src)) =
     driveSignal dst $ Delay src

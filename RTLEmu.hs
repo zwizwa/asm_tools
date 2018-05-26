@@ -60,8 +60,8 @@ instance RTL M R where
   -- register drive
   next (R (Reg a)) (R b) = do
     vb <- ref b
-    let f _ old = error $ "Register conflict: " ++ show (a,old,vb)
-    modify $ appOut $ insertWith f a vb
+    let ifConflict _ old = error $ "Register conflict: " ++ show (a,old,vb)
+    modify $ appOut $ insertWith ifConflict a vb
     
     
 -- Register
@@ -97,8 +97,8 @@ compileUpdate' m si = (so, o) where
 
 -- To compute initial value, run it once with register output tied to
 -- input.  This won't diverge because the output is never evaluated,
--- but does produce a register count, from which we create an initial
--- map.
+-- but does produce a register count. From that we can create an
+-- initial map.
 compileInit m = fromList $ [(r,0) | r <- [0..n-1]] where
   (_, (n, s)) = runEmu m s
 
