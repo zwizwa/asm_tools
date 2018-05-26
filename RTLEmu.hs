@@ -21,13 +21,10 @@ type RegNum = Int
 type ConstVal = Int
 type RegVal = Int
 
-newtype M t = M { unEmu :: ReaderT RegMap (WriterT [W] (State CompState)) t } deriving
+newtype M t = M { unEmu :: ReaderT RegMap (State CompState) t } deriving
   (Functor, Applicative, Monad,
-   MonadWriter [W],
    MonadReader RegMap,
    MonadState CompState)
-
-type W = Char -- not really needed?
 
 type RegMap = Map RegNum RegVal
 type CompState = (RegNum, RegMap)
@@ -44,17 +41,25 @@ data R t = R { unR :: Signal }
 instance RTL M R where
 
   -- undriven signal
-  signal            = fmap (R . Reg) makeRegNum
+  signal =
+    fmap (R . Reg) makeRegNum
 
   -- driven signals
-  op1 o (R a)       = fmap (R . Val) $ do ; va <- ref a ; return $ f1 o va
-  op2 o (R a) (R b) = fmap (R . Val) $ do ; va <- ref a ; vb <- ref b ; return $ f2 o va vb
-  int c             = return $ R $ Val c
+  int c =
+    return $ R $ Val c
+  op1 o (R a) = do
+    a' <- ref a
+    return $ R $ Val $ f1 o a'
+  op2 o (R a) (R b)= do
+    a' <- ref a
+    b' <- ref b
+    return $ R $ Val $ f2 o a' b'
 
   -- register drive
   next (R (Reg a)) (R b) = do
     vb <- ref b
-    modify $ appOut $ insert a vb
+    let f _ old = error $ "Register conflict: " ++ show (a,old,vb)
+    modify $ appOut $ insertWith f a vb
     
     
 -- Register
@@ -71,14 +76,19 @@ makeRegNum = do
   return  n
 
 -- Take map as input
-compile m = snd . f where
-  f i = s where
-    ((v, w), s) = runEmu m i
+compile m si = so where
+  (v, (_, so)) = runEmu m si
 
--- To compute initial value, run it once with output tied to input.
--- If no evaluation happens this can compute the register count, from
--- which we create an initial map.
+-- FIXME: How to allow compile to provide output apart from register
+-- state out?  Tried putting v out, but this has a ref wrapping.  Is
+-- there a generic way to unpack all refs?  Maybe this just needs to
+-- be done at the calling site?
+
+-- To compute initial value, run it once with register output tied to
+-- input.  If no evaluation happens this can compute the register
+-- count, from which we create an initial map.
 init m = fromList $ [(r,0) | r <- [0..n-1]] where
-  ((v, w), (n, o)) = runEmu m o
+  (_, (n, s)) = runEmu m s
 
-runEmu m i = runState (runWriterT (runReaderT (unEmu m) i)) (0, empty)
+runEmu m i = runState (runReaderT (unEmu m) i) (0, empty)
+

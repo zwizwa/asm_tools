@@ -60,8 +60,13 @@ printNet = printl . mapToList . Net.compile
 
 printEmu :: Emu.M (Emu.R S) -> IO ()
 printEmu src = do
-  printl $ mapToList $ Emu.compile src (insert 0 0 empty)
-  print $ Emu.init src
+  let r0 = Emu.init src
+  putStrLn "init: "
+  printl $ mapToList $ r0
+  putStrLn "post: "
+  let s = Emu.compile src r0
+  printl $ mapToList s
+
 
 printl es = sequence_ $ map print es
 mapToList = foldrWithKey f [] where f k v t = (k,v):t

@@ -26,12 +26,9 @@ data Driver = Comb2 Op2 SigNum SigNum
             | Const ConstVal
   deriving Show
 
-newtype M t = M { unNet :: WriterT [W] (State CompState) t } deriving
+newtype M t = M { unNet :: State CompState t } deriving
   (Functor, Applicative, Monad,
-   MonadWriter [W],
    MonadState CompState)
-
-type W = Char -- not really needed?
 
 type SignalMap = Map SigNum Driver
 type CompState = (SigNum, SignalMap)
@@ -77,6 +74,5 @@ driven c = do
   driveSignal n c
   return s
 
-compile m = dict where
-  ((v, w), s) = runState (runWriterT $ unNet m) (0, empty)
-  (_, dict) = s
+compile m = signals where
+  (_, (_, signals)) = runState (unNet m) (0, empty)
