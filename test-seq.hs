@@ -34,10 +34,10 @@
 -- cases it is possible that a signal is just a wire.  I find this
 -- very confusing.
 
-import RTL
-import RTLLib
-import qualified RTLNet as Net
-import qualified RTLEmu as Emu
+import Seq
+import SeqLib
+import qualified SeqNet as Net
+import qualified SeqEmu as Emu
 import Data.Map.Lazy (empty, foldrWithKey, insert)
 
 
@@ -86,10 +86,10 @@ mapToList = foldrWithKey f [] where f k v t = (k,v):t
 
 
 
--- counter :: RTL m r => r S -> m ()
+-- counter :: Seq m r => r S -> m ()
 -- counter = regFix inc
 
--- regFix :: RTL m r => (r S -> m (r S)) -> r S -> m ()
+-- regFix :: Seq m r => (r S -> m (r S)) -> r S -> m ()
 -- regFix f r = f r >>= next r
 
 

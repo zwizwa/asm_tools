@@ -14,8 +14,8 @@ Test-Suite test-pru
     main-is:    test-pru.hs
     build-depends: base
 
-Test-Suite test-rtl
+Test-Suite test-seq
     build-depends: base, containers, mtl
     type:       exitcode-stdio-1.0
-    main-is:    test-rtl.hs
+    main-is:    test-seq.hs
     build-depends: base

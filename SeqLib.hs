@@ -6,18 +6,18 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module RTLLib where
-import RTL
+module SeqLib where
+import Seq
 
 
 
-inc :: RTL m r => r S -> m (r S)
+inc :: Seq m r => r S -> m (r S)
 inc c = int 1 >>= add c
 
-counter :: RTL m r => SType -> m (r S)
+counter :: Seq m r => SType -> m (r S)
 counter t = reg t inc
 
-delay :: RTL m r => r S -> m (r S)
+delay :: Seq m r => r S -> m (r S)
 delay x = do
   t <- stype x
   reg t $ \_ -> return x
@@ -30,6 +30,6 @@ bit b = do
   int 1 >>= band b
 
 
-int :: forall m r. RTL m r => Int -> m (r S)
+int :: forall m r. Seq m r => Int -> m (r S)
 int v = constant (SInt Nothing v)
 

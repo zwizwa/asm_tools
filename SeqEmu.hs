@@ -1,3 +1,9 @@
+-- Emulation of sequential logic.
+
+-- Note that Seq.hs only provides composition of signals and
+-- operators, and uses Haskell as a macro language.  The main purpose
+-- of this module is to provide test benches through 'trace'.
+
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -5,11 +11,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-
-module RTLEmu where
-
-import RTL
-
+module SeqEmu where
+import Seq
 import Control.Monad.State
 import Control.Monad.Writer
 import Control.Monad.Reader
@@ -17,17 +20,22 @@ import Data.Map.Lazy (Map, (!), lookup, empty, insert, insertWith, fromList)
 import qualified Data.Map as Map
 import Data.Bits
 
+-- 'trace' computes signal waveforms from a monadic Seq.hs program
+type TraceChannels = [Int]
+trace :: M [R S] -> [TraceChannels]
+trace m = t s0 where
+  (s0, f) = compile' m
+  t s = o : t s' where (s', o) = f s
 
--- For later extension
-type RegNum = Int
-type ConstVal = Int
-type RegVal = Int
 
+-- Main interpretation monad for Seq
 newtype M t = M { unEmu :: ReaderT RegMap (State CompState) t } deriving
   (Functor, Applicative, Monad,
    MonadReader RegMap,
    MonadState CompState)
-
+type RegNum = Int
+type ConstVal = Int
+type RegVal = Int
 type RegMap = Map RegNum RegVal
 type CompState = (RegNum, RegMap)
 
@@ -35,14 +43,14 @@ type CompState = (RegNum, RegMap)
 appRegNum f (n,c) = (f n, c) ; getRegNum = do (n,_) <- get ; return n
 appOut    f (n,c) = (n, f c) 
 
+data R t = R { unR :: Signal }  -- phantom wrapper
 data Signal = Reg Size Int Int  -- intial, current
             | Val Size Int
 type Size = Maybe Int
 
--- Phantom representation wrapper
-data R t = R { unR :: Signal }  
 
-instance RTL M R where
+
+instance Seq M R where
 
   -- undriven signal
   signal (SInt sz r0) = do
@@ -131,8 +139,3 @@ compileInit m = fromList $ [(r,0) | r <- [0..n-1]] where
 compile  m = (compileInit m, compileUpdate  m)
 compile' m = (compileInit m, compileUpdate' m)
 
--- Traces will not expose state
-trace :: M [R S] -> [[Int]]
-trace m = t s0 where
-  (s0, f) = compile' m
-  t s = o : t s' where (s', o) = f s

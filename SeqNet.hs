@@ -6,9 +6,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module RTLNet where
+module SeqNet where
 
-import RTL
+import Seq
 
 import Control.Monad.State
 import Control.Monad.Writer
@@ -42,7 +42,7 @@ data Signal = Sig Int
 -- Phantom representation wrapper
 data R t = R { unR :: Signal }  
 
-instance RTL M R where
+instance Seq M R where
 
   -- undriven signal
   signal _  = fmap R makeSignal
