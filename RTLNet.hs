@@ -46,12 +46,12 @@ instance RTL M R where
 
   -- undriven signal
   signal _  = fmap R makeSignal
-  stype _   = return SInt'
+  stype _   = return $ SInt Nothing
 
   -- driven signals
   op1 o (R (Sig a))             = fmap R $ driven $ Comb1 o a
   op2 o (R (Sig a)) (R (Sig b)) = fmap R $ driven $ Comb2 o a b
-  int c                         = fmap R $ driven $ Const c
+  int _ c                       = fmap R $ driven $ Const c
 
   -- register drive
   next (R (Sig dst)) (R (Sig src)) =

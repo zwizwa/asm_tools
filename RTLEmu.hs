@@ -35,7 +35,8 @@ type CompState = (RegNum, RegMap)
 appRegNum f (n,c) = (f n, c) ; getRegNum = do (n,_) <- get ; return n
 appOut    f (n,c) = (n, f c) 
 
-data Signal = Reg Int | Val Int
+data Signal = Reg Size Int | Val Size Int
+type Size = Maybe Int
 
 -- Phantom representation wrapper
 data R t = R { unR :: Signal }  
@@ -43,30 +44,41 @@ data R t = R { unR :: Signal }
 instance RTL M R where
 
   -- undriven signal
-  signal _ = fmap (R . Reg) makeRegNum
-  stype _ = return $ SInt'
+  signal (SInt bits) = fmap (R . Reg bits) $ makeRegNum
+  stype (R a) = do sz <- bits a ;  return $ SInt sz
 
   -- driven signals
-  int c =
-    return $ R $ Val c
+  int (SInt sz) c =
+    return $ R $ Val sz c
   op1 o (R a) = do
-    a' <- ref a
-    return $ R $ Val $ f1 o a'
+    (sza, va) <- ref' a
+    return $ R $ truncVal sza $ f1 o va
   op2 o (R a) (R b)= do
-    a' <- ref a
-    b' <- ref b
-    return $ R $ Val $ f2 o a' b'
+    (sza,va) <- ref' a
+    (szb,vb) <- ref' b
+    return $ R $ truncVal (sz sza szb) $ f2 o va vb
 
   -- register drive
-  next (R (Reg a)) (R b) = do
+  next (R (Reg sz a)) (R b) = do
     vb <- ref b
     let ifConflict _ old = error $ "Register conflict: " ++ show (a,old,vb)
     modify $ appOut $ insertWith ifConflict a vb
     
     
 -- Register
-ref (Val c) = return c
-ref (Reg c) = asks $ (! c)
+ref' (Val b c) = return (b,c)
+ref' (Reg b c) = do v <- asks (! c) ; return (b, v)
+ref  = (fmap snd) . ref'
+bits = (fmap fst) . ref'
+
+sz Nothing a = a
+sz a Nothing = a
+sz (Just a) (Just b) = Just $ max a b
+
+truncVal Nothing v     = Val Nothing v
+truncVal sz@(Just b) v = Val sz $ v .&. mask b
+
+mask b = (shiftL 1 b) - 1
 
 f1 INV = complement
 
@@ -92,8 +104,8 @@ compileUpdate' :: M [R S] -> RegMap -> (RegMap, [Int])
 compileUpdate' m si = (so, o) where
   (sigs, (_, so)) = runEmu m si
   o = map deref sigs
-  deref (R (Val v)) = v
-  deref (R (Reg r)) = so ! r
+  deref (R (Val _ v)) = v
+  deref (R (Reg _ r)) = so ! r
 
 -- To compute initial value, run it once with register output tied to
 -- input.  This won't diverge because the output is never evaluated,
