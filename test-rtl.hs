@@ -52,6 +52,8 @@ main = do
   putStrLn " --- counter Emu"
   printEmu counter
 
+  print $ take 10 $ Emu.trace test_counter
+
 --  putStrLn " --- test_edge"
 --  printEmu $ test_edge
 
@@ -60,12 +62,12 @@ printNet = printl . mapToList . Net.compile
 
 printEmu :: Emu.M (Emu.R S) -> IO ()
 printEmu src = do
-  let r0 = Emu.init src
+  let (r0, f) = Emu.compile src 
   putStrLn "init: "
   printl $ mapToList $ r0
   putStrLn "post: "
-  let s = Emu.compile src r0
-  printl $ mapToList s
+  printl $ mapToList $ f r0
+
 
 
 printl es = sequence_ $ map print es
@@ -96,9 +98,6 @@ edge d = do
   d0 <- delay d
   d `xor` d0
 
-
-test_edge = square >>= edge
-
 square = do
   n <- int 4
   c <- counter
@@ -111,6 +110,15 @@ counter = do
   next c c'
   return c
 
+test_counter = do
+  c <- counter
+  -- Note that [] is a meta-language construct needed for trace
+  return [c]
+
+-- For testing, outputs need to be collected in lists.
+test_edge = do
+  e <- square >>= edge
+  return [e]
 
 
 

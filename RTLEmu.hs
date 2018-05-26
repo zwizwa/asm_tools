@@ -73,22 +73,35 @@ f2 o = error $ "not implemented: " ++ show o
 makeRegNum = do
   n <- getRegNum
   modify $ appRegNum (+ 1)
-  return  n
-
--- Take map as input
-compile m si = so where
-  (v, (_, so)) = runEmu m si
-
--- FIXME: How to allow compile to provide output apart from register
--- state out?  Tried putting v out, but this has a ref wrapping.  Is
--- there a generic way to unpack all refs?  Maybe this just needs to
--- be done at the calling site?
-
--- To compute initial value, run it once with register output tied to
--- input.  If no evaluation happens this can compute the register
--- count, from which we create an initial map.
-init m = fromList $ [(r,0) | r <- [0..n-1]] where
-  (_, (n, s)) = runEmu m s
+  return n
 
 runEmu m i = runState (runReaderT (unEmu m) i) (0, empty)
 
+-- Take map as input
+compileUpdate m si = so where
+  (_, (_, so)) = runEmu m si
+
+-- Same, but require a signal list as monadic value.
+compileUpdate' :: M [R S] -> RegMap -> (RegMap, [Int])
+compileUpdate' m si = (so, o) where
+  (sigs, (_, so)) = runEmu m si
+  o = map deref sigs
+  deref (R (Val v)) = v
+  deref (R (Reg r)) = so ! r
+
+-- To compute initial value, run it once with register output tied to
+-- input.  This won't diverge because the output is never evaluated,
+-- but does produce a register count, from which we create an initial
+-- map.
+compileInit m = fromList $ [(r,0) | r <- [0..n-1]] where
+  (_, (n, s)) = runEmu m s
+
+-- Final product gives enough information to produce an infinite sequence.
+compile  m = (compileInit m, compileUpdate  m)
+compile' m = (compileInit m, compileUpdate' m)
+
+-- Traces will not expose state
+trace :: M [R S] -> [[Int]]
+trace m = t s0 where
+  (s0, f) = compile' m
+  t s = o : t s' where (s', o) = f s
