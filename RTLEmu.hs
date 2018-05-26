@@ -15,6 +15,8 @@ import Control.Monad.Writer
 import Control.Monad.Reader
 import Data.Map.Lazy (Map, (!), lookup, empty, insert, insertWith, fromList)
 import qualified Data.Map as Map
+import Data.Bits
+
 
 -- For later extension
 type RegNum = Int
@@ -66,9 +68,13 @@ instance RTL M R where
 ref (Val c) = return c
 ref (Reg c) = asks $ (! c)
 
-f1 o = error $ "not implemented: " ++ show o
+f1 INV = complement
+
 f2 ADD = (+)
-f2 o = error $ "not implemented: " ++ show o
+f2 AND = (.&.)
+f2 XOR = xor
+f2 SLL = shiftL
+f2 SLR = shiftR
 
 makeRegNum = do
   n <- getRegNum

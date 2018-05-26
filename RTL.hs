@@ -41,17 +41,23 @@ class Monad m => RTL m r where
 -- good idea to register the outputs of a module, meaing that all
 -- combinatorial signals are generated implicitly through opx.
 
-data Op2 = ADD | XOR | SLL deriving Show
+data Op2 = ADD | AND | XOR | SLL | SLR deriving Show
 data Op1 = INV deriving Show
 
 add :: forall m r. RTL m r => r S -> r S -> m (r S)
 add = op2 ADD
 
-xor :: forall m r. RTL m r => r S -> r S -> m (r S)
-xor = op2 XOR
+band :: forall m r. RTL m r => r S -> r S -> m (r S)
+band = op2 AND
+
+bxor :: forall m r. RTL m r => r S -> r S -> m (r S)
+bxor = op2 XOR
 
 sll :: forall m r. RTL m r => r S -> r S -> m (r S)
 sll = op2 SLL
+
+slr :: forall m r. RTL m r => r S -> r S -> m (r S)
+slr = op2 SLR
 
 inv :: forall m r. RTL m r => r S -> m (r S)
 inv = op1 INV

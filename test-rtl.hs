@@ -46,13 +46,17 @@ import Data.Map.Lazy (empty, foldrWithKey, insert)
 
   
 main = do
-  putStrLn " --- counter Net"
+  putStrLn "--- counter Net.compile"
   printNet counter
 
-  putStrLn " --- counter Emu"
+  putStrLn "--- counter Emu.compile"
   printEmu counter
 
+  putStrLn "--- counter Emu.trace"
   print $ take 10 $ Emu.trace test_counter
+
+  putStrLn "--- edge Emu.trace"
+  print $ take 10 $ Emu.trace test_edge
 
 --  putStrLn " --- test_edge"
 --  printEmu $ test_edge
@@ -96,12 +100,15 @@ delay d = do
 
 edge d = do
   d0 <- delay d
-  d `xor` d0
+  d `bxor` d0
 
 square = do
-  n <- int 4
+  n <- int 2
   c <- counter
-  sll n c
+  slr c n >>= bit
+
+bit b = do
+  int 1 >>= band b
 
 -- counter :: forall m r. RTL m r => m (r S)
 counter = do
@@ -112,7 +119,7 @@ counter = do
 
 test_counter = do
   c <- counter
-  -- Note that [] is a meta-language construct needed for trace
+  -- [] is a meta-language construct needed for trace
   return [c]
 
 -- For testing, outputs need to be collected in lists.
