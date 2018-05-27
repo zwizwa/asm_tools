@@ -67,7 +67,9 @@ main = do
   putStrLn $ MyHDL.gen $ Net.compile test_hdl_sync
 
   putStrLn "--- Net.inlined test_hdl_sync"
-  printl $ Net.inlined $ Net.compile test_hdl_sync 
+  let (ports, bindings) = Net.compile test_hdl_sync
+  print ports
+  printl $ Net.inlined $ bindings
 
 printEmu :: Emu.M (Emu.R S) -> IO ()
 printEmu src = do

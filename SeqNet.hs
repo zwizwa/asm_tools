@@ -47,17 +47,6 @@ data Term t = Comb1 Seq.Op1 t
             | Input
             deriving (Show, Functor, Foldable)
 
-type Driver = Term Node
-type Exp t = Free Term t
-
--- data Exp t = Exp (Term (Exp t))
---  deriving (Show, Functor)
-
-
-
-
-
-
 type Node     = Int
 type PortNum  = Int
 type ConstVal = Int
@@ -66,12 +55,12 @@ type ConstVal = Int
 -- It's convenient if the Drivers preserve order in the way they are
 -- recorded to make sure definition dominates use.
 
-newtype M t = M { unM :: WriterT Bindings (State CompState) t } deriving
+newtype M t = M { unM :: WriterT (Bindings Node) (State CompState) t } deriving
   (Functor, Applicative, Monad,
-   MonadWriter Bindings,
+   MonadWriter (Bindings Node),
    MonadState CompState)
 
-type Bindings = [(Node,Driver)]
+type Bindings n = [(n, Term n)]
 type CompState = Node
 
 -- Primitive state manipulations
@@ -153,6 +142,9 @@ cleanPorts ports = ports' where
       False -> (n : f (p `Set.insert` s) ns)
 
 
+-- Inline flat term language to expression language.
+type Exp t = Free Term t
+
 -- Inlining: everything except:
 -- - Delay nodes
 -- - Nodes with more than one user
@@ -179,8 +171,8 @@ inlinable terms = pred where
              _ -> Set.member n singles
 
 -- Operates on List (,) to keep order for code gen.
-inlined :: Ord n => ([n], [(n, Term n)]) -> [(n, Exp n)]
-inlined (ports, bindings) = map outBinding keep where
+inlined :: Ord n => [(n, Term n)] -> [(n, Exp n)]
+inlined bindings = map outBinding keep where
 
   keep = filter (not . inlinable') nodes
   outBinding n = (n, Free $ fmap inline $ ref n)

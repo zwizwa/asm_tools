@@ -14,8 +14,8 @@ import qualified Data.Map.Strict as Map
 data Mode = None | Seq | Comb deriving Eq
 
 -- Switch context as needed
-setContextFor (Delay _) = need Seq
-setContextFor _         = need Comb
+setContextFor (Free (Delay _)) = need Seq
+setContextFor _                = need Comb
 need context = do
   (n, have) <- get
   case have == context of
@@ -32,17 +32,18 @@ render (n, Comb) = do
   tell $ "\tdef blk" ++ show n ++ "():\n"
 
 sig n = "s" ++ show n
-stmt (n,Input) = do
+
+assignment (n, Free Input) = do
   tell $ "\t" ++ "# input: " ++ sig n ++ "\n"
-stmt (n,c) = do
+assignment (n,c) = do
   setContextFor c
   tell $ "\t\t" ++ sig n ++ ".next = "
-  tell $ node c ++ "\n"
+  tell $ expr c ++ "\n"
 
-node (Connect n) = sig n
-node (Delay n) = sig n
-node (Const n) = show n
-node c = show c
+-- expr (Connect n) = sig n
+-- expr (Delay n) = sig n
+-- expr (Const n) = show n
+expr c = show c
 
 -- FIXME:
 -- instantiate local signals
@@ -54,9 +55,10 @@ signal n = do
 
 blk n = "blk" ++ show n
 
-gen :: ([Int], Bindings) -> String
-gen (ports, nodes) = w where
-  internalNodes = filter isInternal $ map fst nodes
+gen :: ([Node], Bindings Node) -> String
+gen (ports, terms) = w where
+  exprs = inlined terms
+  internalNodes = filter isInternal $ map fst exprs
   isInternal n = not $ elem n ports
   name = "module"
   m = do
@@ -64,7 +66,7 @@ gen (ports, nodes) = w where
     tell $ intercalate "," $ map sig ports
     tell "):\n"
     sequence_ $ map signal internalNodes
-    sequence_ $ [ stmt n | n <- nodes ]
+    sequence_ $ [ assignment e | e <- exprs ]
     (n,_) <- get
     tell "\treturn ["
     tell $ intercalate "," $ map blk [1..n]
