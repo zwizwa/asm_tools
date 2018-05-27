@@ -129,10 +129,3 @@ test_hdl_sync = do
   return io
   
 
-
-
-
-
-  
-  
-  

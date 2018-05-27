@@ -20,6 +20,7 @@ import Data.List
 import Data.Maybe
 import Data.Map.Strict (Map, (!))
 import qualified Data.Map as Map
+import Data.Set (Set)
 import qualified Data.Set as Set
 
 -- Seq does not provide a way to create modules with abstract I/O.
@@ -55,7 +56,6 @@ type Exp t = Free Term t
 
 
 
-newtype Terms t = Terms [Term t] deriving Foldable
 
 
 type Node     = Int
@@ -157,18 +157,29 @@ cleanPorts ports = ports' where
 -- - Delay nodes
 -- - Nodes with more than one user
 
-nodeRCs nodes = refs where
-  refs = foldr f Map.empty $ Terms $ map snd nodes
+-- nodeRCs :: [(Node, Term Node)] -> Map Node Int
+
+-- Wrapper makes foldr descend
+newtype Terms n = Terms [Term n] deriving Foldable
+
+nodeRCs :: Ord n => [Term n] -> Map n Int
+nodeRCs terms = refs where
+  refs = foldr f Map.empty $ Terms $ terms
   f n = Map.insertWith (+) n 1
 
+singleRefs :: Map n Int -> Set n
 singleRefs = Map.keysSet . (Map.mapMaybeWithKey single) where
   single k 1 = Just k
   single _ _ = Nothing
 
 -- Single use nodes and non-delay nodes can be inlined.
-inlinable nodes = p where
-  p (Delay _) = False
-  p term = Set.member term $ singleRefs $ nodeRCs nodes
+inlinable :: Ord n => Map n (Term n) -> n -> Bool
+inlinable terms = p where
+  singles = singleRefs $ nodeRCs $ Map.elems terms
+  p n =
+    case terms ! n of
+      (Delay _) -> False
+      _ -> Set.member n singles
 
 --nodeRefs nodes = 
 --  foldr (:) [] $ Terms $ map snd nodes
@@ -190,25 +201,33 @@ inlinable nodes = p where
 
 -- test (ports, nodes) = foldr (:) [] $ Terms $ map snd nodes
 printl es = sequence_ $ map print es
-test (ports, nodes) = do
-  let nodeNums = map fst nodes
-      nodeMap = Map.fromList nodes
-      tag f n = (n, f n)
-      -- canInline = inlinable nodes
-  print ports
-  printl nodes
-  printl $ map (tag $ inline (nodeMap !)) nodeNums
+test :: ([Node], [(Node, Term Node)]) -> IO ()
+test (ports, nodes) = dbg where
+  nodeNums  = map fst nodes
+  nodeTerms = map snd nodes
+  nodeMap = Map.fromList nodes
+  tag f n = (n, f n)
+  singles = singleRefs $ nodeRCs $ Map.elems nodeMap
+  inlinable' = inlinable nodeMap
+  keep = filter (not . inlinable') nodeNums
+  ref = (nodeMap !)
+  inline = inline' inlinable' ref
+  dbg =
+    do print ("singles", singles)
+       print ("keep",keep)
+       print ("ports",ports)
+       putStrLn "nodes:"
+       printl nodes
+       putStrLn "inlined:"
+       printl $ map (tag $ \n -> fmap inline $ ref n ) keep
 
 
 -- Inlining, terminated on Delay to avoid cycles.
-inline' :: (Term t -> Bool) -> (t -> Term t) -> t -> Exp t
+inline' :: (t -> Bool) -> (t -> Term t) -> t -> Exp t
 inline' p ref = inl where
-  inl n = f $ ref n where
-    f term = if' (p term) (Free $ fmap inl term) (Pure n)
-
-inline = inline' p where
-  p (Delay _) = False
-  p _ = True
+  inl n = case (p n) of
+    True  -> Free $ fmap inl  $ ref n
+    False -> Pure n
 
 
 if' c a b = if c then a else b
