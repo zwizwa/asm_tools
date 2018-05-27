@@ -157,8 +157,6 @@ cleanPorts ports = ports' where
 -- - Delay nodes
 -- - Nodes with more than one user
 
--- nodeRCs :: [(Node, Term Node)] -> Map Node Int
-
 -- Wrapper makes foldr descend
 newtype Terms n = Terms [Term n] deriving Foldable
 
@@ -174,61 +172,31 @@ singleRefs = Map.keysSet . (Map.mapMaybeWithKey single) where
 
 -- Single use nodes and non-delay nodes can be inlined.
 inlinable :: Ord n => Map n (Term n) -> n -> Bool
-inlinable terms = p where
+inlinable terms = pred where
   singles = singleRefs $ nodeRCs $ Map.elems terms
-  p n =
-    case terms ! n of
-      (Delay _) -> False
-      _ -> Set.member n singles
+  pred n = case terms ! n of
+             (Delay _) -> False
+             _ -> Set.member n singles
 
---nodeRefs nodes = 
---  foldr (:) [] $ Terms $ map snd nodes
+-- Operates on List (,) to keep order for code gen.
+inlined :: Ord n => ([n], [(n, Term n)]) -> [(n, Exp n)]
+inlined (ports, bindings) = map outBinding keep where
 
-
-
--- First, a test.  Inline everything for a given node.
-
-
--- inline :: (Int -> Driver) -> Int -> Exp
--- inline ref = inl where
---   ref' = Pure . ref
---   inl n = fmap inl (ref' n)
+  keep = filter (not . inlinable') nodes
+  outBinding n = (n, Free $ fmap inline $ ref n)
   
-
--- test (ports, nodes) = map (inline (nodeMap !)) ports where
---   nodeMap = Map.fromList nodes
-  
-
--- test (ports, nodes) = foldr (:) [] $ Terms $ map snd nodes
-printl es = sequence_ $ map print es
-test :: ([Node], [(Node, Term Node)]) -> IO ()
-test (ports, nodes) = dbg where
-  nodeNums  = map fst nodes
-  nodeTerms = map snd nodes
-  nodeMap = Map.fromList nodes
-  tag f n = (n, f n)
-  singles = singleRefs $ nodeRCs $ Map.elems nodeMap
-  inlinable' = inlinable nodeMap
-  keep = filter (not . inlinable') nodeNums
-  ref = (nodeMap !)
-  inline = inline' inlinable' ref
-  dbg =
-    do print ("singles", singles)
-       print ("keep",keep)
-       print ("ports",ports)
-       putStrLn "nodes:"
-       printl nodes
-       putStrLn "inlined:"
-       printl $ map (tag $ \n -> fmap inline $ ref n ) keep
+  inline = inlineP inlinable' ref
+  inlinable' = inlinable bindings'
+  ref = (bindings' !)
+  bindings' = Map.fromList bindings
+  nodes = map fst bindings
 
 
--- Inlining, terminated on Delay to avoid cycles.
-inline' :: (t -> Bool) -> (t -> Term t) -> t -> Exp t
-inline' p ref = inl where
+-- Inline node based on predicate.
+inlineP :: (n -> Bool) -> (n -> Term n) -> n -> Exp n
+inlineP p ref = inl where
   inl n = case (p n) of
     True  -> Free $ fmap inl  $ ref n
     False -> Pure n
 
-
-if' c a b = if c then a else b
 
