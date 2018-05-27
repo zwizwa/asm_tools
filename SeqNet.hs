@@ -121,10 +121,6 @@ io n = sequence $ [fmap R $ driven $ Input | _ <- [0..n-1]]
 -- ... and convert them to output here.  Other nodes cannot be driven
 -- more than once.  Note: using fix, this error is avoided.
 driveSignal n c = do
-  -- FIXME: move this functionality to postproc
-  -- Other bits need to
-  -- let f c (Input _) = c
-  --     f _ old_c = error $ "Signal driven twice: " ++ show (n,old_c,c)
   tell [(n, c)]
   
 -- Compile to list of I/O ports and network map.
@@ -146,22 +142,14 @@ cleanPorts ports = ports' where
 
 -- Expression language.
 
--- MyHDL doesn't need to be in A-normal form, so provide a mechanism
--- to partially restore to an expression language.
+-- MyHDL doesn't need to be in ANF, so provide a mechanism to
+-- partially restore to an expression language.
 type Exp t = Free Term t
 
 -- We can inline everything except:
 -- a) Delay nodes would create cycles
--- b) Nodes with Fanout>1 would create duplicate code
-
-
--- Wrapper makes foldr descend
-newtype Terms n = Terms [Term n] deriving Foldable
-
-refcount :: Ord n => [Term n] -> (n -> Int)
-refcount terms n = Map.findWithDefault 0 n map where
-  map = foldr count Map.empty $ Terms $ terms
-  count n = Map.insertWith (+) n 1
+-- b) Input nodes are external
+-- c) Nodes with Fanout>1 would create duplicate code
 
 inlinable :: Ord n => Map n (Term n) -> n -> Bool
 inlinable terms = pred where
@@ -170,6 +158,21 @@ inlinable terms = pred where
              (Delay _) -> False
              Input     -> False
              _         -> 1 == rc n
+
+-- Folds over all nodes in a list of terms.
+newtype Terms n = Terms [Term n] deriving Foldable
+
+refcount :: Ord n => [Term n] -> (n -> Int)
+refcount terms n = Map.findWithDefault 0 n map where
+  map = foldr count Map.empty $ Terms $ terms
+  count n = Map.insertWith (+) n 1
+
+-- Inline node based on predicate.
+inlineP :: (n -> Bool) -> (n -> Term n) -> n -> Exp n
+inlineP p ref = inl where
+  inl n = case (p n) of
+    True  -> Free $ fmap inl $ ref n
+    False -> Pure n
 
 -- Bindings as list, to keep order for code gen.
 inlined :: Ord n => [(n, Term n)] -> [(n, Exp n)]
@@ -185,11 +188,5 @@ inlined bindings = map outBinding keep where
   nodes = map fst bindings
 
 
--- Inline node based on predicate.
-inlineP :: (n -> Bool) -> (n -> Term n) -> n -> Exp n
-inlineP p ref = inl where
-  inl n = case (p n) of
-    True  -> Free $ fmap inl $ ref n
-    False -> Pure n
 
 
