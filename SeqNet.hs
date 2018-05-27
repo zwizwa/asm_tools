@@ -142,35 +142,36 @@ cleanPorts ports = ports' where
       False -> (n : f (p `Set.insert` s) ns)
 
 
--- Inline flat term language to expression language.
+
+
+-- Expression language.
+
+-- MyHDL doesn't need to be in A-normal form, so provide a mechanism
+-- to partially restore to an expression language.
 type Exp t = Free Term t
 
--- Inlining: everything except:
--- - Delay nodes
--- - Nodes with more than one user
+-- We can inline everything except:
+-- a) Delay nodes would create cycles
+-- b) Nodes with Fanout>1 would create duplicate code
+
 
 -- Wrapper makes foldr descend
 newtype Terms n = Terms [Term n] deriving Foldable
 
-nodeRCs :: Ord n => [Term n] -> Map n Int
-nodeRCs terms = refs where
-  refs = foldr f Map.empty $ Terms $ terms
-  f n = Map.insertWith (+) n 1
+refcount :: Ord n => [Term n] -> (n -> Int)
+refcount terms n = Map.findWithDefault 0 n map where
+  map = foldr count Map.empty $ Terms $ terms
+  count n = Map.insertWith (+) n 1
 
-singleRefs :: Map n Int -> Set n
-singleRefs = Map.keysSet . (Map.mapMaybeWithKey single) where
-  single k 1 = Just k
-  single _ _ = Nothing
-
--- Single use nodes and non-delay nodes can be inlined.
 inlinable :: Ord n => Map n (Term n) -> n -> Bool
 inlinable terms = pred where
-  singles = singleRefs $ nodeRCs $ Map.elems terms
+  rc = refcount $ Map.elems terms
   pred n = case terms ! n of
              (Delay _) -> False
-             _ -> Set.member n singles
+             Input     -> False
+             _         -> 1 == rc n
 
--- Operates on List (,) to keep order for code gen.
+-- Bindings as list, to keep order for code gen.
 inlined :: Ord n => [(n, Term n)] -> [(n, Exp n)]
 inlined bindings = map outBinding keep where
 
@@ -188,7 +189,7 @@ inlined bindings = map outBinding keep where
 inlineP :: (n -> Bool) -> (n -> Term n) -> n -> Exp n
 inlineP p ref = inl where
   inl n = case (p n) of
-    True  -> Free $ fmap inl  $ ref n
+    True  -> Free $ fmap inl $ ref n
     False -> Pure n
 
 

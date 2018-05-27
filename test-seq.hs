@@ -61,15 +61,22 @@ main = do
   printl $ take 10 $ test_sync
 
   putStrLn "--- test_hdl"
-  putStrLn $ MyHDL.gen $ Net.compile test_hdl
+  print_hdl test_hdl
 
   putStrLn "--- test_hdl_sync"
-  putStrLn $ MyHDL.gen $ Net.compile test_hdl_sync
+  print_hdl test_hdl_sync
 
-  putStrLn "--- Net.inlined test_hdl_sync"
-  let (ports, bindings) = Net.compile test_hdl_sync
+
+print_hdl src = do
+  let (ports, bindings) = Net.compile src
+  putStrLn "-- ports: "
   print ports
+  putStrLn "-- bindings: "
+  printl $ bindings
   printl $ Net.inlined $ bindings
+  putStrLn "-- MyHDL: "
+  putStr $ MyHDL.gen (ports, bindings)
+
 
 printEmu :: Emu.M (Emu.R S) -> IO ()
 printEmu src = do
