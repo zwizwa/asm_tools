@@ -67,7 +67,7 @@ main = do
   putStrLn $ MyHDL.gen $ Net.compile test_hdl_sync
 
   putStrLn "--- Net.test"
-  Net.test $ Net.compile test_hdl_sync
+  Net.test $ Net.compile test_hdl_sync 
 
 printEmu :: Emu.M (Emu.R S) -> IO ()
 printEmu src = do

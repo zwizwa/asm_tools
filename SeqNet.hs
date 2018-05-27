@@ -12,12 +12,13 @@
 {-# LANGUAGE DeriveFunctor #-}
 
 module SeqNet where
-import Seq
+import qualified Seq as Seq
 import Control.Monad.State
 import Control.Monad.Writer
 import Control.Monad.Free
 import Data.List
-import Data.Map.Strict (Map, (!), empty, insert, insertWith, foldrWithKey)
+import Data.Maybe
+import Data.Map.Strict (Map, (!))
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
@@ -36,9 +37,9 @@ import qualified Data.Set as Set
 -- 2) Use MyHDL to perform simulation and HDL export
 -- 3) Use Verilog/VHDL compiler to synthesize logic
 
-data Term t = Comb1 Op1 t
-            | Comb2 Op2 t t
-            | Comb3 Op3 t t t
+data Term t = Comb1 Seq.Op1 t
+            | Comb2 Seq.Op2 t t
+            | Comb3 Seq.Op3 t t t
             | Delay t
             | Connect t
             | Const ConstVal
@@ -82,14 +83,14 @@ data Signal = Sig Int deriving Show
 -- Phantom representation wrapper
 data R t = R { unR :: Signal }  
 
-instance Seq M R where
+instance Seq.Seq M R where
 
   -- undriven signal
   signal _  = fmap R makeSignal
-  stype _   = return $ SInt Nothing 0
+  stype _   = return $ Seq.SInt Nothing 0
 
   -- driven nodes
-  constant (SInt _ v) =
+  constant (Seq.SInt _ v) =
     fmap R $ driven $ Const v
 
   op1 o (R (Sig a)) =
@@ -125,7 +126,7 @@ driven c = do
 
 -- I/O ports direction is not known until it is driven, so start them
 -- out as Input nodes ...
-io :: Int -> M [R S]
+io :: Int -> M [R Seq.S]
 io n = sequence $ [fmap R $ driven $ Input | _ <- [0..n-1]] 
 
 -- ... and convert them to output here.  Other nodes cannot be driven
@@ -156,9 +157,18 @@ cleanPorts ports = ports' where
 -- - Delay nodes
 -- - Nodes with more than one user
 
-nodeRefs nodes = refs where
+nodeRCs nodes = refs where
   refs = foldr f Map.empty $ Terms $ map snd nodes
   f n = Map.insertWith (+) n 1
+
+singleRefs = Map.keysSet . (Map.mapMaybeWithKey single) where
+  single k 1 = Just k
+  single _ _ = Nothing
+
+-- Single use nodes and non-delay nodes can be inlined.
+inlinable nodes = p where
+  p (Delay _) = False
+  p term = Set.member term $ singleRefs $ nodeRCs nodes
 
 --nodeRefs nodes = 
 --  foldr (:) [] $ Terms $ map snd nodes
@@ -182,20 +192,24 @@ nodeRefs nodes = refs where
 printl es = sequence_ $ map print es
 test (ports, nodes) = do
   let nodeNums = map fst nodes
+      nodeMap = Map.fromList nodes
+      tag f n = (n, f n)
+      -- canInline = inlinable nodes
   print ports
   printl nodes
-  let nodeMap = Map.fromList nodes
-  printl $ map (inline (nodeMap !)) nodeNums
+  printl $ map (tag $ inline (nodeMap !)) nodeNums
 
 
 -- Inlining, terminated on Delay to avoid cycles.
 inline' :: (Term t -> Bool) -> (t -> Term t) -> t -> Exp t
 inline' p ref = inl where
   inl n = f $ ref n where
-    f term = case p term of
-      False -> Pure n
-      True  -> Free $ fmap inl term
+    f term = if' (p term) (Free $ fmap inl term) (Pure n)
 
 inline = inline' p where
   p (Delay _) = False
   p _ = True
+
+
+if' c a b = if c then a else b
+

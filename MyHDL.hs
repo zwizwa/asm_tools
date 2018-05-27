@@ -69,7 +69,7 @@ gen (ports, nodes) = w where
     tell "\treturn ["
     tell $ intercalate "," $ map blk [1..n]
     tell "]\n"
-    tell $ "# " ++ show (nodeRefs nodes) ++ "\n"
+    -- tell $ "# " ++ show (nodeRefcounts nodes) ++ "\n"
 
   (((), w), _) = runState (runWriterT m) (0, None)
 
