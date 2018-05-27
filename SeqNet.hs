@@ -8,6 +8,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveFoldable #-}
 
 module SeqNet where
 import Seq
@@ -34,14 +35,16 @@ import qualified Data.Set as Set
 -- 3) Use Verilog/VHDL compiler to synthesize logic
 
 -- FIXME: It's probably OK to use an expression language.
-data Driver = Comb1 Op1 Node
-            | Comb2 Op2 Node Node
-            | Comb3 Op3 Node Node Node
-            | Delay Node
-            | Connect Node
+data Term t = Comb1 Op1 t
+            | Comb2 Op2 t t
+            | Comb3 Op3 t t t
+            | Delay t
+            | Connect t
             | Const ConstVal
             | Input
-  deriving Show
+  deriving (Show, Foldable)
+
+type Driver = Term Node
 
 type Node     = Int
 type PortNum  = Int
@@ -137,3 +140,20 @@ cleanPorts ports = ports' where
       True -> f s ns
       False -> (n : f (p `Set.insert` s) ns)
 
+
+-- fanout bindings = _ where
+--   foldr f Map.empty bindings
+--   f (n, 
+
+-- To compute fanout, first make an iterator over all references.  I
+-- only need Foldable.
+
+-- instance Foldable Term where
+--   foldr f s (Comb1 _ a)     = f a s
+--   foldr f s (Comb2 _ a b)   = f a $ f b s
+--   foldr f s (Comb3 _ a b c) = f a $ f b $ f c s
+--   foldr f s (Connect a)     = f a s
+--   foldr f s _ = s
+
+newtype Terms t = Terms [Term t] deriving Foldable
+  

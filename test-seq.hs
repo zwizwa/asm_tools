@@ -57,16 +57,14 @@ main = do
   putStrLn "--- edge Emu.trace"
   print $ take 10 $ map head $ test_edge
 
-  putStrLn "--- test_io"
-  let (ports, signals) = Net.compile test_io
-  print ports
-  printl $ signals
-
   putStrLn "--- test_sync"
   printl $ take 10 $ test_sync
 
-  putStrLn "--- test_io hdl"
-  putStrLn $ MyHDL.gen $ Net.compile test_io
+  putStrLn "--- test_hdl"
+  putStrLn $ MyHDL.gen $ Net.compile test_hdl
+
+  putStrLn "--- test_hdl_sync"
+  putStrLn $ MyHDL.gen $ Net.compile test_hdl_sync
 
 printEmu :: Emu.M (Emu.R S) -> IO ()
 printEmu src = do
@@ -113,13 +111,20 @@ test_sync = Emu.trace' f is where
 
 -- MyHDL export needs some wrapping to specify module I/O structure.
 -- Net has support for this.
-test_io :: Net.M [Net.R S]
-test_io = do
+test_hdl :: Net.M [Net.R S]
+test_hdl = do
   io@[i,o] <- Net.io 2
   j <- delay i
   o' <- delay j  
   connect o o'   -- allow direct output
   return io
+
+test_hdl_sync = do
+  io@[i,o] <- Net.io 2
+  o <- sync (SInt (Just 2) 0) i
+  return io
+  
+
 
 
 

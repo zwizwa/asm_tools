@@ -6,12 +6,15 @@ import Control.Monad.State
 import Control.Monad.Writer
 import Data.List
 import qualified Data.Set as Set
+import qualified Data.Map.Strict as Map
 
 -- Simple print to MyHDL
 
+data Mode = None | Seq | Comb deriving Eq
+
 -- Switch context as needed
-setContextFor (Delay _) = need "seq"
-setContextFor _         = need "comb"
+setContextFor (Delay _) = need Seq
+setContextFor _         = need Comb
 need context = do
   (n, have) <- get
   case have == context of
@@ -20,15 +23,16 @@ need context = do
       let state = (n+1, context)
       put state
       render state
-render (n, "seq") = do
+render (n, Seq) = do
   tell $ "\t@always_seq(CLK.posedge, reset=RST)\n"
   tell $ "\tdef blk" ++ show n ++ "():\n"
-render (n, "comb") = do
-  tell $ "\t@always_seq(CLK.posedge, reset=RST)\n"
+render (n, Comb) = do
+  tell $ "\t@always_comb\n"
   tell $ "\tdef blk" ++ show n ++ "():\n"
 
 sig n = "s" ++ show n
-stmt (_,Input) = return()  -- No statement, already driven
+stmt (n,Input) = do
+  tell $ "\t" ++ "# input: " ++ sig n ++ "\n"
 stmt (n,c) = do
   setContextFor c
   tell $ "\t\t" ++ sig n ++ ".next = "
@@ -36,26 +40,42 @@ stmt (n,c) = do
 
 node (Connect n) = sig n
 node (Delay n) = sig n
+node (Const n) = show n
 node c = show c
 
 -- FIXME:
 -- instantiate local signals
 
-type MyHDL = WriterT String (State (Int, String))
+type MyHDL = WriterT String (State (Int, Mode))
 
 comb :: [(Int, Driver)] -> MyHDL ()
 comb ns = do
   sequence_ $ [ stmt n | n <- ns ]
-    
+
+signal n = do
+  tell $ "\t" ++ sig n ++ " = Signal()\n"
+
+blk n = "blk" ++ show n
 
 gen :: ([Int], Bindings) -> String
 gen (ports, nodes) = w where
-    
+  internalNodes = filter isInternal $ map fst nodes
+  isInternal n = not $ elem n ports
+  name = "module"
   m = do
-    tell "def module(CLK,RST,"
+    tell $ "def " ++ name ++ "(CLK,RST,"
     tell $ intercalate "," $ map sig ports
     tell "):\n"
+    sequence $ map signal internalNodes
     comb nodes
+    (n,_) <- get
+    tell "\treturn ["
+    tell $ intercalate "," $ map blk [1..n]
+    tell "]\n"
 
-  (((), w), _) = runState (runWriterT m) (0, "")
+  (((), w), _) = runState (runWriterT m) (0, None)
 
+
+-- nodeRefs bindings = refs where
+--   refs = foldr f Map.empty $ Terms $ map snd nodes
+  
