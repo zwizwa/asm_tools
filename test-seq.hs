@@ -67,7 +67,7 @@ main = do
   putStrLn $ MyHDL.gen $ Net.compile test_hdl_sync
 
   putStrLn "--- Net.test"
-  printl $ Net.test $ Net.compile test_hdl_sync
+  Net.test $ Net.compile test_hdl_sync
 
 printEmu :: Emu.M (Emu.R S) -> IO ()
 printEmu src = do
@@ -124,7 +124,8 @@ test_hdl = do
 
 test_hdl_sync = do
   io@[i,o] <- Net.io 2
-  o <- sync (SInt (Just 2) 0) i
+  o' <- sync (SInt (Just 2) 0) i
+  connect o o'
   return io
   
 

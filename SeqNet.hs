@@ -9,6 +9,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DeriveFunctor #-}
 
 module SeqNet where
 import Seq
@@ -35,7 +36,6 @@ import qualified Data.Set as Set
 -- 2) Use MyHDL to perform simulation and HDL export
 -- 3) Use Verilog/VHDL compiler to synthesize logic
 
--- FIXME: It's probably OK to use an expression language.
 data Term t = Comb1 Op1 t
             | Comb2 Op2 t t
             | Comb3 Op3 t t t
@@ -43,13 +43,19 @@ data Term t = Comb1 Op1 t
             | Connect t
             | Const ConstVal
             | Input
-  deriving (Show, Foldable)
+            deriving (Show, Functor, Foldable)
 
-type Exp = Free Term Node
+type Driver = Term Node
+type Exp t = Free Term t
+
+-- data Exp t = Exp (Term (Exp t))
+--  deriving (Show, Functor)
+
+
+
 
 newtype Terms t = Terms [Term t] deriving Foldable
 
-type Driver = Term Node
 
 type Node     = Int
 type PortNum  = Int
@@ -172,5 +178,24 @@ nodeRefs nodes = refs where
 --   nodeMap = Map.fromList nodes
   
 
-test (ports, nodes) = foldr (:) [] $ Terms $ map snd nodes
+-- test (ports, nodes) = foldr (:) [] $ Terms $ map snd nodes
+printl es = sequence_ $ map print es
+test (ports, nodes) = do
+  let nodeNums = map fst nodes
+  print ports
+  printl nodes
+  let nodeMap = Map.fromList nodes
+  printl $ map (inline (nodeMap !)) nodeNums
 
+
+-- Inlining, terminated on Delay to avoid cycles.
+inline' :: (Term t -> Bool) -> (t -> Term t) -> t -> Exp t
+inline' p ref = inl where
+  inl n = f $ ref n where
+    f term = case p term of
+      False -> Pure n
+      True  -> Free $ fmap inl term
+
+inline = inline' p where
+  p (Delay _) = False
+  p _ = True
