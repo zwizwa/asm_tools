@@ -144,7 +144,10 @@ cleanPorts ports = ports' where
 
 -- MyHDL doesn't need to be in ANF, so provide a mechanism to
 -- partially restore to an expression language.
-type Exp t = Free Term t
+
+-- Converting from "basic template" to "recursive type" is exactly
+-- what the Free monad does:
+type Exp n = Free Term n
 
 -- We can inline everything except:
 -- a) Delay nodes would create cycles
@@ -159,7 +162,7 @@ inlinable terms = pred where
              Input     -> False
              _         -> 1 == rc n
 
--- Folds over all nodes in a list of terms.
+-- Utility wrapper: folds over all nodes in a list of terms.
 newtype Terms n = Terms [Term n] deriving Foldable
 
 refcount :: Ord n => [Term n] -> (n -> Int)
@@ -171,8 +174,9 @@ refcount terms n = Map.findWithDefault 0 n map where
 inlineP :: (n -> Bool) -> (n -> Term n) -> n -> Exp n
 inlineP p ref = inl where
   inl n = case (p n) of
-    True  -> Free $ fmap inl $ ref n
-    False -> Pure n
+    -- liftM :: Term n -> Exp n
+    True  -> liftF (ref n) >>= inl
+    False -> return n
 
 -- Bindings as list, to keep order for code gen.
 inlined :: Ord n => [(n, Term n)] -> [(n, Exp n)]

@@ -91,24 +91,3 @@ data Op3 = IF
 if' :: forall m r. Seq m r => r S -> r S -> r S -> m (r S)
 if' = op3 IF  
 
--- Declarative register feedback operator: 'signal' bundled with
--- 'next' avoids the creation of non-driven signals, or multiple
--- bindings through next.
-reg :: Seq m r => SType -> (r S -> m (r S)) -> m (r S)
-reg t f = do
-  r <- signal t -- create undriven signal
-  reg' r f
-
--- The non-declarative variant expecting an unbound signal.  This does
--- not have guarantees of reg, but might be convenient as a building
--- block.
-reg' :: Seq m r => (r S) -> (r S -> m (r S)) -> m (r S)
-reg' r f = do
-  r' <- f r     -- create update equation with possible feedback
-  next r r'     -- patch the register's input
-  return r
-
--- FIXME: make this a bit more general:
---  - multiple registers
---  - explicit return value
-
