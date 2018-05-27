@@ -4,6 +4,7 @@ module MyHDL where
 import SeqNet
 import Control.Monad.State
 import Control.Monad.Writer
+import Control.Monad.Free
 import Data.List
 import qualified Data.Set as Set
 import qualified Data.Map.Strict as Map
@@ -48,10 +49,6 @@ node c = show c
 
 type MyHDL = WriterT String (State (Int, Mode))
 
-comb :: [(Int, Driver)] -> MyHDL ()
-comb ns = do
-  sequence_ $ [ stmt n | n <- ns ]
-
 signal n = do
   tell $ "\t" ++ sig n ++ " = Signal()\n"
 
@@ -66,16 +63,13 @@ gen (ports, nodes) = w where
     tell $ "def " ++ name ++ "(CLK,RST,"
     tell $ intercalate "," $ map sig ports
     tell "):\n"
-    sequence $ map signal internalNodes
-    comb nodes
+    sequence_ $ map signal internalNodes
+    sequence_ $ [ stmt n | n <- nodes ]
     (n,_) <- get
     tell "\treturn ["
     tell $ intercalate "," $ map blk [1..n]
     tell "]\n"
+    tell $ "# " ++ show (nodeRefs nodes) ++ "\n"
 
   (((), w), _) = runState (runWriterT m) (0, None)
 
-
--- nodeRefs bindings = refs where
---   refs = foldr f Map.empty $ Terms $ map snd nodes
-  

@@ -14,6 +14,7 @@ module SeqNet where
 import Seq
 import Control.Monad.State
 import Control.Monad.Writer
+import Control.Monad.Free
 import Data.List
 import Data.Map.Strict (Map, (!), empty, insert, insertWith, foldrWithKey)
 import qualified Data.Map as Map
@@ -44,6 +45,10 @@ data Term t = Comb1 Op1 t
             | Input
   deriving (Show, Foldable)
 
+type Exp = Free Term Node
+
+newtype Terms t = Terms [Term t] deriving Foldable
+
 type Driver = Term Node
 
 type Node     = Int
@@ -52,7 +57,7 @@ type ConstVal = Int
 
 
 -- It's convenient if the Drivers preserve order in the way they are
--- recorded to make sure control dominates use.
+-- recorded to make sure definition dominates use.
 
 newtype M t = M { unM :: WriterT Bindings (State CompState) t } deriving
   (Functor, Applicative, Monad,
@@ -141,19 +146,31 @@ cleanPorts ports = ports' where
       False -> (n : f (p `Set.insert` s) ns)
 
 
--- fanout bindings = _ where
---   foldr f Map.empty bindings
---   f (n, 
+-- Inlining: everything except:
+-- - Delay nodes
+-- - Nodes with more than one user
 
--- To compute fanout, first make an iterator over all references.  I
--- only need Foldable.
+nodeRefs nodes = refs where
+  refs = foldr f Map.empty $ Terms $ map snd nodes
+  f n = Map.insertWith (+) n 1
 
--- instance Foldable Term where
---   foldr f s (Comb1 _ a)     = f a s
---   foldr f s (Comb2 _ a b)   = f a $ f b s
---   foldr f s (Comb3 _ a b c) = f a $ f b $ f c s
---   foldr f s (Connect a)     = f a s
---   foldr f s _ = s
+--nodeRefs nodes = 
+--  foldr (:) [] $ Terms $ map snd nodes
 
-newtype Terms t = Terms [Term t] deriving Foldable
+
+
+-- First, a test.  Inline everything for a given node.
+
+
+-- inline :: (Int -> Driver) -> Int -> Exp
+-- inline ref = inl where
+--   ref' = Pure . ref
+--   inl n = fmap inl (ref' n)
   
+
+-- test (ports, nodes) = map (inline (nodeMap !)) ports where
+--   nodeMap = Map.fromList nodes
+  
+
+test (ports, nodes) = foldr (:) [] $ Terms $ map snd nodes
+

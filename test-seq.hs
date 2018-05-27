@@ -66,6 +66,9 @@ main = do
   putStrLn "--- test_hdl_sync"
   putStrLn $ MyHDL.gen $ Net.compile test_hdl_sync
 
+  putStrLn "--- Net.test"
+  printl $ Net.test $ Net.compile test_hdl_sync
+
 printEmu :: Emu.M (Emu.R S) -> IO ()
 printEmu src = do
   let r0 = Emu.reset src
