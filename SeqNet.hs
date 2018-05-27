@@ -13,8 +13,10 @@ module SeqNet where
 import Seq
 import Control.Monad.State
 import Control.Monad.Writer
-import Data.Map.Strict (Map, (!), lookup, empty, insert, insertWith)
+import Data.List
+import Data.Map.Strict (Map, (!), empty, insert, insertWith, foldrWithKey)
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 
 -- Seq does not provide a way to create modules with abstract I/O.
 -- Specific constructs in this module are used to compose basic Seq
@@ -38,7 +40,7 @@ data Driver = Comb1 Op1 Node
             | Delay Node
             | Connect Node
             | Const ConstVal
-            | Input PortNum
+            | Input
   deriving Show
 
 type Node     = Int
@@ -46,16 +48,20 @@ type PortNum  = Int
 type ConstVal = Int
 
 
-newtype M t = M { unM :: State CompState t } deriving
+-- It's convenient if the Drivers preserve order in the way they are
+-- recorded to make sure control dominates use.
+
+newtype M t = M { unM :: WriterT Bindings (State CompState) t } deriving
   (Functor, Applicative, Monad,
+   MonadWriter Bindings,
    MonadState CompState)
 
-type SignalMap = Map Node Driver
-type CompState = (Node, SignalMap)
+type Bindings = [(Node,Driver)]
+type CompState = Node
 
 -- Primitive state manipulations
-appSignal f (n,c) = (f n, c)
-appComb   f (n,c) = (n, f c) ; getSignal = do (n,_) <- get ; return n
+appSignal = id
+getSignal = get
 
 data Signal = Sig Int deriving Show
 
@@ -106,18 +112,28 @@ driven c = do
 -- I/O ports direction is not known until it is driven, so start them
 -- out as Input nodes ...
 io :: Int -> M [R S]
-io n = sequence $ [fmap R $ driven $ Input i | i <- [0..n-1]] 
+io n = sequence $ [fmap R $ driven $ Input | _ <- [0..n-1]] 
 
 -- ... and convert them to output here.  Other nodes cannot be driven
 -- more than once.  Note: using fix, this error is avoided.
 driveSignal n c = do
-  let f c (Input _) = c
-      f _ old_c = error $ "Signal driven twice: " ++ show (n,old_c,c)
-  modify $ appComb $ insertWith f n c
+  -- FIXME: move this functionality to postproc
+  -- Other bits need to
+  -- let f c (Input _) = c
+  --     f _ old_c = error $ "Signal driven twice: " ++ show (n,old_c,c)
+  tell [(n, c)]
   
 -- Compile to list of I/O ports and network map.
-compile m = (map unpack ports, nodes) where
-  (ports, (_, nodes)) = runState (unM m) (0, empty)
+compile m = (map unpack ports, cleanPorts nodes) where
+  ((ports, nodes), _) = runState (runWriterT (unM m)) 0
   unpack (R (Sig n)) = n
 
+-- Remove duplicates, keeping last, preserving order.
+cleanPorts ports = ports' where
+  ports' = reverse $ f Set.empty $ reverse ports
+  f _ [] = []
+  f s (n@(p,_):ns) =
+    case p `Set.member` s of
+      True -> f s ns
+      False -> (n : f (p `Set.insert` s) ns)
 

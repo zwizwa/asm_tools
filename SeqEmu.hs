@@ -68,10 +68,12 @@ instance Seq M R where
   op1 o (R a) = do
     ((sza,_), va) <- val' a
     return $ R $ truncVal sza $ f1 o va
+
   op2 o (R a) (R b) = do
     ((sza,_),va) <- val' a
     ((szb,_),vb) <- val' b
     return $ R $ truncVal (sz sza szb) $ f2 o va vb
+
   op3 o (R a) (R b) (R c) = do
     ((sza,_),va) <- val' a
     ((szb,_),vb) <- val' b

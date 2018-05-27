@@ -38,6 +38,7 @@ import Seq
 import SeqLib
 import qualified SeqNet as Net
 import qualified SeqEmu as Emu
+import qualified MyHDL as MyHDL
 import Data.Map.Lazy (empty, foldrWithKey, insert)
 
 
@@ -59,11 +60,13 @@ main = do
   putStrLn "--- test_io"
   let (ports, signals) = Net.compile test_io
   print ports
-  printl $ mapToList $ signals
+  printl $ signals
 
   putStrLn "--- test_sync"
   printl $ take 10 $ test_sync
 
+  putStrLn "--- test_io hdl"
+  putStrLn $ MyHDL.gen $ Net.compile test_io
 
 printEmu :: Emu.M (Emu.R S) -> IO ()
 printEmu src = do
@@ -113,7 +116,8 @@ test_sync = Emu.trace' f is where
 test_io :: Net.M [Net.R S]
 test_io = do
   io@[i,o] <- Net.io 2
-  o' <- delay i  -- inner code
+  j <- delay i
+  o' <- delay j  
   connect o o'   -- allow direct output
   return io
 
