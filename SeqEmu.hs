@@ -12,8 +12,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE DeriveAnyClass #-}
+--{-# LANGUAGE DeriveTraversable #-}
+--{-# LANGUAGE DeriveAnyClass #-}
 
 module SeqEmu where
 import Seq
@@ -131,7 +131,7 @@ makeRegNum = do
   return n
 
 runEmu m i = (v, ts, so) where
-  (v, (_, ts, so)) = runState (runReaderT (unM m) i) (0, empty, empty)
+  (v, (_, ts, so)) = runState (runReaderT (unM m) i) (0, Map.empty, Map.empty)
 
 -- While output register state is a map to allow post-processing,
 -- input register state is represented more abstractly as a function
@@ -208,6 +208,30 @@ mem memState (R (Reg rAddr), R (Reg wAddr), wData) = do
   
   return (memState', rData)
 
+
+-- Memory interfaces contained in a functor.  Make this a little less bulky...
+fixMem' ::
+  (Applicative f, Traversable f) =>
+  f (SType, SType) ->
+  (f (R S) -> M (f (R S, R S, R S), o)) ->
+  f MemState -> M (f MemState, o)
+fixMem' ftypes memUser fs = regFix types comb where
+  -- Pack/unpack for memory input, output.
+  -- List, to allow Compose to flatten the functor for regFix.
+  memRegs (a,b,c) d = [a,b,c,d]
+  memInput [a,b,c,d] = (a,b,c)
+  memOutput [a,b,c,d] = d
+  
+  types = Compose $ fmap (\(ta, td) -> memRegs (ta, ta, td) td) ftypes
+  comb (Compose fRegs) = do
+    (fMemInput', o) <- memUser $ fmap memOutput fRegs
+    f <- sequence $ liftA2 mem fs $ fmap memInput fRegs
+    let fs'         = fmap fst f
+        fUserInput' = fmap snd f 
+    let fRegs' = liftA2 memRegs fMemInput' fUserInput'
+    return (Compose fRegs', (fs', o))
+
+
 -- Similar to regFix: Patch the complement of the memory interface,
 -- creating the registers.  Allow a collection (Applicative,
 -- Traversable functor) of interfaces.
@@ -221,27 +245,4 @@ fixMem t@(ta, td) memUser s = regFix types comb where
     ((ra', wa', wd'), o) <- memUser rd
     (s', rd')            <- mem s (ra, wa, wd)
     return ([ra', rd', wa', wd'], (s',o))
-
-
--- Memory interfaces contained in a functor.  Make this a little less bulky...
-fixMem' ::
-  (Applicative f, Traversable f) =>
-  f (SType, SType) ->
-  (f (R S) -> M (f (R S, R S, R S), o)) ->
-  f MemState -> M (f MemState, o)
-
--- Intermediate type to make code below a bit more readable.
-data MemRegs t = MemRegs (t, t, t) t
-  deriving (Functor, Applicative, Foldable, Traversable)
-memInput  (MemRegs i o) = i
-memOutput (MemRegs i o) = o
-  
-fixMem' ftypes memUser fs = regFix types comb where
-  types = Compose $ fmap (\(ta, td) -> MemRegs (ta, ta, td) td) ftypes
-  comb (Compose fRegs) = do
-    (fMemInput', o)    <- memUser       $ fmap memOutput fRegs
-    (fs', fUserInput') <- liftA2 mem fs $ fmap memInput  fRegs
-    let fRegs' = liftA2 MemRegs fMemInputs' fUserInputs'
-    return (Compose fRegs', (fs', o))
-
 
