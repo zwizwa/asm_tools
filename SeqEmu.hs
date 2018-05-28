@@ -125,27 +125,33 @@ makeRegNum = do
   modify $ appRegNum (+ 1)
   return n
 
-runEmu m i = runState (runReaderT (unM m) i) (0, empty, empty)
+runEmu m i = (v, ts, so) where
+  (v, (_, ts, so)) = runState (runReaderT (unM m) i) (0, empty, empty)
 
-
-
+-- While output register state is a map to allow post-processing,
+-- input register state is represented more abstractly as a function
+-- to allow probing.
 stateIn si r = si ! r
 
--- Update function, including outputs
-toTick :: M [R S] -> RegVals -> (RegVals, [Int])
-toTick m si = (so, o) where
-  (o', (_, _, so)) = runEmu m $ stateIn si
-  o = map val o'
-  val (R (Val _ v)) = v
-  val (R (Reg r)) = so ! r
+-- The convention is that Seq programs we want to emulate will have
+-- the type (M [R S]), which is rendered to [Int] when interpreted.
+-- We call this Bus.
+type Bus = [Int]
+toBus rs = sequence $ map (val . unR) rs
 
--- Same, but pass through additional output
-toTick' :: M (t, [R S]) -> RegVals -> (RegVals, (t, [Int]))
+
+-- Update function, including outputs
+toTick :: M [R S] -> RegVals -> (RegVals, Bus)
+toTick m si = (so, o) where
+  (o, _, so) = runEmu (m >>= toBus) $ stateIn si
+
+-- Same, but pass through an additional abstract output.
+toTick' :: M (t, [R S]) -> RegVals -> (RegVals, (t, Bus))
 toTick' m si = (so, (t, o)) where
-  ((t, o'), (_, _, so)) = runEmu m $ stateIn si
-  o = map val o'
-  val (R (Val _ v)) = v
-  val (R (Reg r)) = so ! r
+  toOut (t, rs) = do is <- toBus rs; return (t, is)
+  ((t, o), _, so) = runEmu (m >>= toOut) $ stateIn si
+
+
 
 
 -- Without initial values encoding in types, we need to probe the
@@ -155,14 +161,13 @@ toTick' m si = (so, (t, o)) where
 probe _ = 0
 
 reset m = s0 where
-  (_, (_, types, _)) = runEmu m probe
+  (_, types, _) = runEmu m probe
   s0 = Map.map init types
   init (sz,r0) = r0
 
 
 -- Render signal waveforms from a monadic Seq.hs program
 -- A simple example, but not general enough.  So name it with tick.
-type Bus = [Int]
 trace' :: M [R S] -> [Bus]
 trace' m = t s0 where
   s0 = reset m
