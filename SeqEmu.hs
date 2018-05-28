@@ -128,9 +128,6 @@ makeRegNum = do
 runEmu m i = runState (runReaderT (unM m) i) (0, empty, empty)
 
 
--- Update function without outputs
-toTick' m si = so where
-  (_, (_, _, so)) = runEmu m $ stateIn si
 
 stateIn si r = si ! r
 
@@ -142,11 +139,22 @@ toTick m si = (so, o) where
   val (R (Val _ v)) = v
   val (R (Reg r)) = so ! r
 
+-- Same, but pass through additional output
+toTick' :: M (t, [R S]) -> RegVals -> (RegVals, (t, [Int]))
+toTick' m si = (so, (t, o)) where
+  ((t, o'), (_, _, so)) = runEmu m $ stateIn si
+  o = map val o'
+  val (R (Val _ v)) = v
+  val (R (Reg r)) = so ! r
 
--- Probe to obtain initial values.
--- Ideally, probe is a separate type.  But 0 works fine.
+
+-- Without initial values encoding in types, we need to probe the
+-- program to obtain them.  Ideally, initial state probing would be a
+-- separate interpretation instance of Seq, but probing with 0 inputs
+-- is adequate until it becomes a problem in future refactoring.
+probe _ = 0
+
 reset m = s0 where
-  probe _ = 0
   (_, (_, types, _)) = runEmu m probe
   s0 = Map.map init types
   init (sz,r0) = r0
@@ -170,8 +178,18 @@ trace mf is@(i0:_) = t s0 is where
   t s (i:is)  = o : t s' is where
     (s', o) = f s
     f = toTick $ mo i
-    
-  
+
+
+--- Same, but with abstract stateful external influence.
+traceIO :: io -> (io -> M (io, [R S])) -> [Bus]
+traceIO io0 mf = t io0 s0 where
+  s0 = reset (mf io0) -- probe with first state input
+  t io s  = o : t io' s' where
+    (s', (io', o)) = f s
+    f = toTick' $ mf io
+
+
+
 
 -- Memory.  It seems best to do this as a sort of coroutine that sits
 -- in between two state updates.  For each memory:
