@@ -95,14 +95,21 @@ if' :: forall m r. Seq m r => r S -> r S -> r S -> m (r S)
 if' = op3 IF  
 
 
--- High level register feedback operator.  Bundling 'signal' with
--- 'next' avoids the creation of undriven or multiply-driven signals.
--- This is preferred over using the low-level primitives directly.
+-- Convert register update equation to to monadic output value,
+-- "tucking away" the registers.  This effectively computes the fixed
+-- point with register decoupling, defining a sequence.
 
+-- Noe that using 'singal' and 'next' in the same function will avoid
+-- the creation of undriven or multiply-driven signals.  This is
+-- preferred over using the low-level primitives directly.
 
--- A meta-level applicative functor is used to bundle registers.
-regs :: (Applicative f, Traversable f, Seq m r) => f SType -> (f (r S) -> m (f (r S), o)) -> m o
-regs ts f = do
+-- A meta-level applicative functor is used to bundle registers since
+-- it doesn't cost anything to make this generic.  Typically, a List
+-- will do.
+regFix ::
+  (Applicative f, Traversable f, Seq m r) =>
+  f SType -> (f (r S) -> m (f (r S), o)) -> m o
+regFix ts f = do
   rs <- traverse signal ts
   (rs', o) <- f rs
   sequence_ $ liftA2 next rs rs'
@@ -110,7 +117,7 @@ regs ts f = do
 
 -- Special case: single register, register output
 reg :: Seq m r => SType -> (r S -> m (r S)) -> m (r S)
-reg t f = do regs [t] $ \[r] -> do r' <- f r ; return ([r'], r)
+reg t f = do regFix [t] $ \[r] -> do r' <- f r ; return ([r'], r)
 
 
 

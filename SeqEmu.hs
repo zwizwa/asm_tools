@@ -201,18 +201,18 @@ mem memState (R (Reg rAddr), R (Reg wAddr), wData) = do
   
   return (memState', rData)
 
--- -- Patch the complement of the memory interface, creating the registers.
--- patchMem :: (SType, SType) -> Mem -> (M (R S) -> M (R S, R S, R S)) -> MemState -> M MemState
--- patchMem (tAddr, tData) mem mUser memState = m where
+-- Patch the complement of the memory interface, creating the registers.
+patchMem ::
+  (SType, SType) -> Mem ->
+  (R S -> M (R S, R S, R S)) ->
+  MemState -> M MemState
+patchMem (ta, td) mem memUser s = regFix types comb where
+  types = [ta, td, ta, td]
+  comb [ra, rd, wa, wd] = do
+    (ra', wa', wd') <- memUser rd
+    (s', rd')       <- mem s (ra, wa, wd)
+    return ([ra', rd', wa', wd'], s')
 
---   comb [rAddr, rData, wAddr, wData] = do
---     (rAddr', wAddr', wData') <- mUser rData
---     (memState', rData') <- mem memState (rAddr, wAddr, wData)
---     return ([rAddr', rData', wAddr', wData'], memState)
-  
-  
---   (memState', wData) <- mem memState
---   return memState'
                                
 
   
