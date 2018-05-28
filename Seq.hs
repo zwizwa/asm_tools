@@ -22,6 +22,9 @@
 
 module Seq where
 
+import Control.Applicative
+import Data.Traversable
+
 -- Abstract tag for signal representation.
 data S = S
 data SType = SInt (Maybe NbBits) InitVal
@@ -90,4 +93,25 @@ data Op3 = IF
 
 if' :: forall m r. Seq m r => r S -> r S -> r S -> m (r S)
 if' = op3 IF  
+
+
+-- High level register feedback operator.  Bundling 'signal' with
+-- 'next' avoids the creation of undriven or multiply-driven signals.
+-- This is preferred over using the low-level primitives directly.
+
+
+-- A meta-level applicative functor is used to bundle registers.
+regs :: (Applicative f, Traversable f, Seq m r) => f SType -> (f (r S) -> m (f (r S), o)) -> m o
+regs ts f = do
+  rs <- traverse signal ts
+  (rs', o) <- f rs
+  sequence_ $ liftA2 next rs rs'
+  return o
+
+-- Special case: single register, register output
+reg :: Seq m r => SType -> (r S -> m (r S)) -> m (r S)
+reg t f = do regs [t] $ \[r] -> do r' <- f r ; return ([r'], r)
+
+
+
 

@@ -184,12 +184,12 @@ trace mf is0 = traceIO is0 mf' where
 trace' :: M [R S] -> [Bus]
 trace' m = traceIO () (\() -> do o <- m; return ((), o))
 
--- Implement memory as a threaded computation providing
--- a) read:  addr -> val
--- b) write: val -> addr -> ()
+
+-- Implement memory as a threaded computation.
 
 type MemState = Map RegNum RegVal
-mem :: MemState -> (R S, R S, R S) -> M (MemState, R S)
+type Mem = MemState -> (R S, R S, R S) -> M (MemState, R S)
+mem :: Mem
 mem memState (R (Reg rAddr), R (Reg wAddr), wData) = do
   -- Read
   let rData' = memState ! rAddr
@@ -201,20 +201,26 @@ mem memState (R (Reg rAddr), R (Reg wAddr), wData) = do
   
   return (memState', rData)
 
+-- -- Patch the complement of the memory interface, creating the registers.
+-- patchMem :: (SType, SType) -> Mem -> (M (R S) -> M (R S, R S, R S)) -> MemState -> M MemState
+-- patchMem (tAddr, tData) mem mUser memState = m where
+
+--   comb [rAddr, rData, wAddr, wData] = do
+--     (rAddr', wAddr', wData') <- mUser rData
+--     (memState', rData') <- mem memState (rAddr, wAddr, wData)
+--     return ([rAddr', rData', wAddr', wData'], memState)
+  
+  
+--   (memState', wData) <- mem memState
+--   return memState'
+                               
+
+  
 
 
 
--- Memory.  It seems best to do this as a sort of coroutine that sits
--- in between two state updates.  For each memory:
--- a) reading registers read_addr, write_addr, write_data
--- b) send read_data as an input
-
--- Implement this by parameterizing trace'?  It seems simpler to use a
--- monadic operation concatenated to mf.  No.  Currently only works
--- with state extension in trace' loop + custom update.
-
--- When going that route, it seems that inputs can also be handled as
--- some kind of register interface.  I.e. do it in one place, not two.
+-- Now, how to split this into two parts, a threaded function to feed
+-- to trace, and the register interface to feed to a program?
 
 
 

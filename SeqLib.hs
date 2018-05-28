@@ -11,31 +11,6 @@ import Seq
 import Control.Monad
 
 
--- High level register feedback operator.  Bundling 'signal' with
--- 'next' avoids the creation of undriven or multiply-driven signals.
--- This is preferred over using the low-level primitives directly.
-
--- Close register loop, return register output and input.
-reg' :: Seq m r => SType -> (r S -> m (r S)) -> m (r S, r S)
-reg' t f = do
-  r <- signal t
-  r' <- f r
-  next r r'
-  return (r, r')
-
--- Same for multiple registers contained in meta-level lists.
--- Generalize list to functor?  List might be enough.
-regs' :: Seq m r => [SType] -> ([r S] -> m [r S]) -> m ([r S], [r S])
-regs' ts f = do
-  rs <- sequence $ map signal ts
-  rs' <- f rs
-  sequence_ $ zipWith next rs rs'
-  return (rs, rs')
-
--- Same, return just the outputs.
-reg  t  f = fmap fst $ reg'  t  f
-regs ts f = fmap fst $ regs' ts f
-
 
 
 -- Some simple building blocks
