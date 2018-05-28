@@ -66,8 +66,8 @@ main = do
   putStrLn "--- test_mem2"
   print $ take 10 $ test_mem2
 
-  putStrLn "--- test_mem3"
-  print $ take 10 $ test_mem3
+--  putStrLn "--- test_mem3"
+--  print $ take 10 $ test_mem3
 
   putStrLn "--- test_hdl"
   print_hdl test_hdl
@@ -158,7 +158,7 @@ test_mem2 = SeqEmu.traceIO empty m where
 dummy_mem3 [rd1,rd2] = do
   m1 <- dummy_mem rd1
   m2 <- dummy_mem rd2
-  return $ [m1', m2']
+  return $ [m1, m2]
 
 -- FIXME: memFix needs to be changed first to accomodate this.  
 

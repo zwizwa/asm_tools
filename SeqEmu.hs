@@ -11,15 +11,20 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE DeriveAnyClass #-}
 
 module SeqEmu where
 import Seq
 import Control.Monad.State
 import Control.Monad.Writer
 import Control.Monad.Reader
+import Control.Applicative
 import Data.Map.Lazy (Map, (!), lookup, empty, insert, insertWith, fromList)
 import qualified Data.Map as Map
 import Data.Bits
+import Data.Functor.Compose
 
 
 -- Main interpretation monad for Seq
@@ -203,18 +208,40 @@ mem memState (R (Reg rAddr), R (Reg wAddr), wData) = do
   
   return (memState', rData)
 
--- Similar to refFix: Patch the complement of the memory interface,
--- creating the registers.
+-- Similar to regFix: Patch the complement of the memory interface,
+-- creating the registers.  Allow a collection (Applicative,
+-- Traversable functor) of interfaces.
 fixMem ::
   (SType, SType) ->
   (R S -> M ((R S, R S, R S), o)) ->
   MemState -> M (MemState, o)
-fixMem (ta, td) memUser s = regFix types comb where
+fixMem t@(ta, td) memUser s = regFix types comb where
   types = [ta, td, ta, td]
   comb [ra, rd, wa, wd] = do
     ((ra', wa', wd'), o) <- memUser rd
     (s', rd')            <- mem s (ra, wa, wd)
     return ([ra', rd', wa', wd'], (s',o))
 
-                               
+
+-- Memory interfaces contained in a functor.  Make this a little less bulky...
+fixMem' ::
+  (Applicative f, Traversable f) =>
+  f (SType, SType) ->
+  (f (R S) -> M (f (R S, R S, R S), o)) ->
+  f MemState -> M (f MemState, o)
+
+-- Intermediate type to make code below a bit more readable.
+data MemRegs t = MemRegs (t, t, t) t
+  deriving (Functor, Applicative, Foldable, Traversable)
+memInput  (MemRegs i o) = i
+memOutput (MemRegs i o) = o
+  
+fixMem' ftypes memUser fs = regFix types comb where
+  types = Compose $ fmap (\(ta, td) -> MemRegs (ta, ta, td) td) ftypes
+  comb (Compose fRegs) = do
+    (fMemInput', o)    <- memUser       $ fmap memOutput fRegs
+    (fs', fUserInput') <- liftA2 mem fs $ fmap memInput  fRegs
+    let fRegs' = liftA2 MemRegs fMemInputs' fUserInputs'
+    return (Compose fRegs', (fs', o))
+
 
