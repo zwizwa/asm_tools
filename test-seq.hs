@@ -61,7 +61,10 @@ main = do
   printl $ take 10 $ test_sync
 
   putStrLn "--- test_mem"
-  printl $ take 10 $ test_mem
+  print $ take 10 $ test_mem
+
+  putStrLn "--- test_mem2"
+  print $ take 10 $ test_mem2
 
   putStrLn "--- test_hdl"
   print_hdl test_hdl
@@ -124,19 +127,25 @@ test_sync = SeqEmu.trace f is where
     return [i,o]
   
 
--- Dummy memory-using operation.  For testing memFix.
+-- Bare bones memFix test.
 dummy_mem rd = do     -- mem reg in
   z <- int 0
   return ((z, z, z),  -- mem regs out
           [z])        -- test program output
-
 test_mem :: [[Int]]
-test_mem = do
+test_mem = SeqEmu.traceIO empty m where
+  t = SInt Nothing 0
+  m = SeqEmu.fixMem (t,t) dummy_mem
+
+-- Typically, you want to create multiple memories inside a program.
+-- How to do that?  Let's start with just one.
+dummy_mem2 memFix = do
   let t = SInt Nothing 0
-      m = SeqEmu.fixMem (t,t) dummy_mem
-  SeqEmu.traceIO empty m
+  memFix (t, t) dummy_mem
+test_mem2 :: [[Int]]
+test_mem2 = SeqEmu.traceIO empty $ dummy_mem2 SeqEmu.fixMem
 
-
+-- Then generalize it to a functor of memories?
 
 
 -- MyHDL export needs some wrapping to specify module I/O structure.
