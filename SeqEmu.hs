@@ -209,13 +209,13 @@ mem memState (R (Reg rAddr), R (Reg wAddr), wData) = do
   return (memState', rData)
 
 
--- Memory interfaces contained in a functor.  Make this a little less bulky...
-fixMem' ::
+-- Memory interfaces contained in a functor.
+fixMem ::
   (Applicative f, Traversable f) =>
   f (SType, SType) ->
   (f (R S) -> M (f (R S, R S, R S), o)) ->
   f MemState -> M (f MemState, o)
-fixMem' types memUser s = regFix types' comb where
+fixMem types memUser s = regFix types' comb where
   -- Pack/unpack for memory input, output.
   -- List, to allow Compose to flatten the functor for regFix.
   memRegs (a,b,c) d = [a,b,c,d]
@@ -241,17 +241,18 @@ fixMem' types memUser s = regFix types' comb where
     return (Compose regs', (s', x))
 
 
+-- ARCHIVE: Unary version used to derive the version above.
 -- Similar to regFix: Patch the complement of the memory interface,
 -- creating the registers.  Allow a collection (Applicative,
 -- Traversable functor) of interfaces.
-fixMem ::
-  (SType, SType) ->
-  (R S -> M ((R S, R S, R S), o)) ->
-  MemState -> M (MemState, o)
-fixMem t@(ta, td) memUser s = regFix types comb where
-  types = [ta, td, ta, td]
-  comb [ra, rd, wa, wd] = do
-    ((ra', wa', wd'), o) <- memUser rd
-    (s', rd')            <- mem s (ra, wa, wd)
-    return ([ra', rd', wa', wd'], (s',o))
+-- fixMem ::
+--   (SType, SType) ->
+--   (R S -> M ((R S, R S, R S), o)) ->
+--   MemState -> M (MemState, o)
+-- fixMem t@(ta, td) memUser s = regFix types comb where
+--   types = [ta, td, ta, td]
+--   comb [ra, rd, wa, wd] = do
+--     ((ra', wa', wd'), o) <- memUser rd
+--     (s', rd')            <- mem s (ra, wa, wd)
+--     return ([ra', rd', wa', wd'], (s',o))
 

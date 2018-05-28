@@ -131,23 +131,15 @@ test_sync = SeqEmu.trace f is where
   
 
 -- Bare bones memFix test.
-dummy_mem rd = do     -- mem reg in
+dummy_mem [_] = do      -- memory's output registers
   z <- int 0
-  return ((z, z, z),  -- mem regs out
-          [z])        -- test program output
+  return ([(z, z, z)],  -- memory's input registers
+          [])           -- test program empty output bus
 test_mem :: [[Int]]
-test_mem = SeqEmu.traceIO empty m where
+test_mem = SeqEmu.traceIO [empty] m where
   t = SInt Nothing 0
-  m = SeqEmu.fixMem (t,t) dummy_mem
+  m = SeqEmu.fixMem [(t,t)] dummy_mem
 
--- Typically, you want to create multiple memories inside a program.
--- How to do that?  Let's start with just one.
-dummy_mem2 memFix = do
-  let t = SInt Nothing 0
-  memFix (t, t) dummy_mem
-test_mem2 :: [[Int]]
-test_mem2 = SeqEmu.traceIO empty m where
-  m = dummy_mem2 SeqEmu.fixMem
 
 -- After thinking a bit, I want this interface:
 
@@ -155,12 +147,17 @@ test_mem2 = SeqEmu.traceIO empty m where
 --    thing, so keep them as abstract as possible.
 --
 -- b) Below uses a list, but allow a generic functor
-dummy_mem3 [rd1,rd2] = do
-  m1 <- dummy_mem rd1
-  m2 <- dummy_mem rd2
-  return $ [m1, m2]
+  
+dummy_mem2 [mo1, mo2] = do
+  ([mi1],_) <- dummy_mem [mo1]
+  ([mi2],_) <- dummy_mem [mo2]
+  return $ ([mi1, mi2],[])
 
--- FIXME: memFix needs to be changed first to accomodate this.  
+test_mem2 = SeqEmu.traceIO [empty, empty] m where
+  t = SInt Nothing 0
+  m = SeqEmu.fixMem [(t,t),(t,t)] dummy_mem2
+
+
 
 -- MyHDL export needs some wrapping to specify module I/O structure.
 -- SeqNet has support for this.
