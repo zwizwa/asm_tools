@@ -174,18 +174,9 @@ trace' m = t s0 where
   f = toTick m
   t s = o : t s' where (s', o) = f s 
 
---- Same, but with input.
-trace :: ([R S] -> M [R S]) -> [Bus] -> [Bus]
-trace mf is@(i0:_) = t s0 is where
-  s0 = reset (mo i0) -- probe with first input
-  mo i = mi >>= mf where
-     mi = sequence $ [constant (SInt Nothing v) | v <- i]
-  t s (i:is)  = o : t s' is where
-    (s', o) = f s
-    f = toTick $ mo i
-
-
---- Same, but with abstract stateful external influence.
+--- Same, but with abstract stateful external influence.  It's easier
+--- to thread io manually here, as compared to extending the M state
+--- to contain the extra type parameter.
 traceIO :: io -> (io -> M (io, [R S])) -> [Bus]
 traceIO io0 mf = t io0 s0 where
   s0 = reset (mf io0) -- probe with first state input
@@ -193,7 +184,15 @@ traceIO io0 mf = t io0 s0 where
     (s', (io', o)) = f s
     f = toTick' $ mf io
 
-
+-- Implement input via traceIO by using io to contain the list.
+trace :: ([R S] -> M [R S]) -> [Bus] -> [Bus]
+trace mf is0 = traceIO is0 mf' where
+  mf' (i:is) = do
+    ri <- sequence [constant (SInt Nothing v) | v <- i]
+    ro <- mf ri
+    return (is, ro)
+  
+  
 
 
 -- Memory.  It seems best to do this as a sort of coroutine that sits
