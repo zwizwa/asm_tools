@@ -145,6 +145,8 @@ toBus rs = sequence $ map (val . unR) rs
 toOut (t, rs) = do is <- toBus rs; return (t, is)
 
 -- Generic render function.  Produces concrete update function.
+-- Here t is some other type threaded through the Monad.
+-- FIXME: This can be further collapsed by exposing toOut.
 toTick :: M (t, [R S]) -> RegVals -> (RegVals, (t, Bus))
 toTick m si = (so, (t, o)) where
   ((t, o), _, so) = runEmu (m >>= toOut) $ stateIn si
@@ -201,7 +203,8 @@ mem memState (R (Reg rAddr), R (Reg wAddr), wData) = do
   
   return (memState', rData)
 
--- Patch the complement of the memory interface, creating the registers.
+-- Similar to refFix: Patch the complement of the memory interface,
+-- creating the registers.
 fixMem ::
   (SType, SType) ->
   (R S -> M ((R S, R S, R S), o)) ->
@@ -209,8 +212,8 @@ fixMem ::
 fixMem (ta, td) memUser s = regFix types comb where
   types = [ta, td, ta, td]
   comb [ra, rd, wa, wd] = do
-    ((ra', wa', wd'),o) <- memUser rd
-    (s', rd')           <- mem s (ra, wa, wd)
+    ((ra', wa', wd'), o) <- memUser rd
+    (s', rd')            <- mem s (ra, wa, wd)
     return ([ra', rd', wa', wd'], (s',o))
 
                                

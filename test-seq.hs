@@ -66,6 +66,9 @@ main = do
   putStrLn "--- test_mem2"
   print $ take 10 $ test_mem2
 
+  putStrLn "--- test_mem3"
+  print $ take 10 $ test_mem3
+
   putStrLn "--- test_hdl"
   print_hdl test_hdl
 
@@ -143,10 +146,21 @@ dummy_mem2 memFix = do
   let t = SInt Nothing 0
   memFix (t, t) dummy_mem
 test_mem2 :: [[Int]]
-test_mem2 = SeqEmu.traceIO empty $ dummy_mem2 SeqEmu.fixMem
+test_mem2 = SeqEmu.traceIO empty m where
+  m = dummy_mem2 SeqEmu.fixMem
 
--- Then generalize it to a functor of memories?
+-- After thinking a bit, I want this interface:
 
+-- a) Do not put the memFix inside the code.  Memories are an external
+--    thing, so keep them as abstract as possible.
+--
+-- b) Below uses a list, but allow a generic functor
+dummy_mem3 [rd1,rd2] = do
+  m1 <- dummy_mem rd1
+  m2 <- dummy_mem rd2
+  return $ [m1', m2']
+
+-- FIXME: memFix needs to be changed first to accomodate this.  
 
 -- MyHDL export needs some wrapping to specify module I/O structure.
 -- SeqNet has support for this.
