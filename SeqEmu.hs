@@ -215,21 +215,30 @@ fixMem' ::
   f (SType, SType) ->
   (f (R S) -> M (f (R S, R S, R S), o)) ->
   f MemState -> M (f MemState, o)
-fixMem' ftypes memUser fs = regFix types comb where
+fixMem' types memUser s = regFix types' comb where
   -- Pack/unpack for memory input, output.
   -- List, to allow Compose to flatten the functor for regFix.
   memRegs (a,b,c) d = [a,b,c,d]
   memInput [a,b,c,d] = (a,b,c)
   memOutput [a,b,c,d] = d
-  
-  types = Compose $ fmap (\(ta, td) -> memRegs (ta, ta, td) td) ftypes
-  comb (Compose fRegs) = do
-    (fMemInput', o) <- memUser $ fmap memOutput fRegs
-    f <- sequence $ liftA2 mem fs $ fmap memInput fRegs
-    let fs'         = fmap fst f
-        fUserInput' = fmap snd f 
-    let fRegs' = liftA2 memRegs fMemInput' fUserInput'
-    return (Compose fRegs', (fs', o))
+
+  -- Type spec needs the same shape as the registers.
+  types' = Compose $ fmap (\(a, d) -> memRegs (a, a, d) d) types
+
+  comb (Compose regs) = do
+    -- Input/Output named from memory's perspecitive
+    let i = fmap memInput  regs
+        o = fmap memOutput regs
+    -- Apply each memory's combinatorial network (i->o)
+    so' <- sequence $ liftA2 mem s i
+    let s' = fmap fst so'
+        o' = fmap snd so'
+    -- Apply user combinatorial network (o->i)
+    -- x is just an output we pass along.
+    (i', x) <- memUser o
+    -- Pack
+    let regs' = liftA2 memRegs i' o'
+    return (Compose regs', (s', x))
 
 
 -- Similar to regFix: Patch the complement of the memory interface,
