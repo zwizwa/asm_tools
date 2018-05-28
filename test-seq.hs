@@ -80,7 +80,7 @@ print_hdl src = do
 
 printEmu :: Emu.M (Emu.R S) -> IO ()
 printEmu src = do
-  let src' = src >> return [] -- dummy api fix
+  let src' = src >> return ((),[]) -- API stub
       r0 = Emu.reset src'
       f  = Emu.toTick src'
   putStrLn "init: "

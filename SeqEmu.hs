@@ -134,24 +134,20 @@ runEmu m i = (v, ts, so) where
 stateIn si r = si ! r
 
 -- The convention is that Seq programs we want to emulate will have
--- the type (M [R S]), which is rendered to [Int] when interpreted.
--- We call this Bus.
+-- the type (M (t, [R S])), which is rendered to (t, [Int]) when
+-- interpreted.
 type Bus = [Int]
+
+-- The user-defined type t is there mostly to provide abstract
+-- external state threading in traceIO, but might be useful for other
+-- things.
 toBus rs = sequence $ map (val . unR) rs
+toOut (t, rs) = do is <- toBus rs; return (t, is)
 
-
--- Update function, including outputs
-toTick :: M [R S] -> RegVals -> (RegVals, Bus)
-toTick m si = (so, o) where
-  (o, _, so) = runEmu (m >>= toBus) $ stateIn si
-
--- Same, but pass through an additional abstract output.
-toTick' :: M (t, [R S]) -> RegVals -> (RegVals, (t, Bus))
-toTick' m si = (so, (t, o)) where
-  toOut (t, rs) = do is <- toBus rs; return (t, is)
+-- Generic render function.  Produces concrete update function.
+toTick :: M (t, [R S]) -> RegVals -> (RegVals, (t, Bus))
+toTick m si = (so, (t, o)) where
   ((t, o), _, so) = runEmu (m >>= toOut) $ stateIn si
-
-
 
 
 -- Without initial values encoding in types, we need to probe the
@@ -165,34 +161,47 @@ reset m = s0 where
   s0 = Map.map init types
   init (sz,r0) = r0
 
-
--- Render signal waveforms from a monadic Seq.hs program
--- A simple example, but not general enough.  So name it with tick.
-trace' :: M [R S] -> [Bus]
-trace' m = t s0 where
-  s0 = reset m
-  f = toTick m
-  t s = o : t s' where (s', o) = f s 
-
---- Same, but with abstract stateful external influence.  It's easier
---- to thread io manually here, as compared to extending the M state
---- to contain the extra type parameter.
+-- Render signal sequence produced by a state-parameterized Seq.hs
+-- program. Abstract user state is threaded explicitly in this
+-- function, which is simpler than extending the M state to contain
+-- the extra type parameter.
 traceIO :: io -> (io -> M (io, [R S])) -> [Bus]
 traceIO io0 mf = t io0 s0 where
   s0 = reset (mf io0) -- probe with first state input
   t io s  = o : t io' s' where
     (s', (io', o)) = f s
-    f = toTick' $ mf io
+    f = toTick $ mf io
 
 -- Implement input via traceIO by using io to contain the list.
 trace :: ([R S] -> M [R S]) -> [Bus] -> [Bus]
 trace mf is0 = traceIO is0 mf' where
   mf' (i:is) = do
-    ri <- sequence [constant (SInt Nothing v) | v <- i]
-    ro <- mf ri
-    return (is, ro)
+    i' <- sequence [constant (SInt Nothing v) | v <- i]
+    o <- mf i'
+    return (is, o)
+
+-- Version without external state
+trace' :: M [R S] -> [Bus]
+trace' m = traceIO () (\() -> do o <- m; return ((), o))
+
+-- Implement memory as a threaded computation providing
+-- a) read:  addr -> val
+-- b) write: val -> addr -> ()
+
+type MemState = Map RegNum RegVal
+mem :: MemState -> (R S, R S, R S) -> M (MemState, R S)
+mem memState (R (Reg rAddr), R (Reg wAddr), wData) = do
+  -- Read
+  let rData' = memState ! rAddr
+  (SInt data_s _) <- stype wData
+  rData <- constant $ SInt data_s rData'
+  -- Write
+  wData' <- val $ unR wData
+  let memState' = insert wAddr wData' memState
   
-  
+  return (memState', rData)
+
+
 
 
 -- Memory.  It seems best to do this as a sort of coroutine that sits
