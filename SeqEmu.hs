@@ -153,23 +153,39 @@ reset m = s0 where
 
 
 -- Render signal waveforms from a monadic Seq.hs program
+-- A simple example, but not general enough.  So name it with tick.
 type Bus = [Int]
-trace :: M [R S] -> [Bus]
-trace m = t s0 where
+trace' :: M [R S] -> [Bus]
+trace' m = t s0 where
   s0 = reset m
   f = toTick m
   t s = o : t s' where (s', o) = f s 
 
--- Same, but with input.
-trace' :: ([R S] -> M [R S]) -> [Bus] -> [Bus]
-trace' mf is@(i0:_) = t s0 is where
+--- Same, but with input.
+trace :: ([R S] -> M [R S]) -> [Bus] -> [Bus]
+trace mf is@(i0:_) = t s0 is where
   s0 = reset (mo i0) -- probe with first input
   mo i = mi >>= mf where
-    mi = sequence $ [constant (SInt Nothing v) | v <- i]
+     mi = sequence $ [constant (SInt Nothing v) | v <- i]
   t s (i:is)  = o : t s' is where
     (s', o) = f s
     f = toTick $ mo i
     
+  
+
+-- Memory.  It seems best to do this as a sort of coroutine that sits
+-- in between two state updates.  For each memory:
+-- a) reading registers read_addr, write_addr, write_data
+-- b) send read_data as an input
+
+-- Implement this by parameterizing trace'?  It seems simpler to use a
+-- monadic operation concatenated to mf.  No.  Currently only works
+-- with state extension in trace' loop + custom update.
+
+-- When going that route, it seems that inputs can also be handled as
+-- some kind of register interface.  I.e. do it in one place, not two.
 
 
-    
+
+
+

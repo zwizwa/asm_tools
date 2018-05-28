@@ -99,19 +99,19 @@ square = do
   c <- counter $ SInt (Just 3) 0
   slr c n >>= bit
 
-test_counter = Emu.trace $ do
+test_counter = Emu.trace' $ do
   c1 <- counter $ SInt (Just 1) 0
   c2 <- counter $ SInt (Just 3) 0
   -- [] is a meta-language construct needed for trace
   return [c1, c2]
 
 -- For testing, outputs need to be collected in lists.
-test_edge = Emu.trace $ do
+test_edge = Emu.trace' $ do
   e <- square >>= edge
   return [e]
 
 -- Clock synchronizer
-test_sync = Emu.trace' f is where
+test_sync = Emu.trace f is where
   is = cycle [[v] | v <- [1,0,0,0,0,1,0,0]]
   f [i] = do
     o <- sync (SInt (Just 2) 0) i

@@ -33,9 +33,8 @@ regs' ts f = do
   return (rs, rs')
 
 -- Same, return just the outputs.
-reg  t  f = reg'  t  f >>= return . snd
-regs ts f = regs' ts f >>= return . snd
-
+reg  t  f = fmap fst $ reg'  t  f
+regs ts f = fmap fst $ regs' ts f
 
 
 
@@ -71,8 +70,8 @@ int v = constant (SInt Nothing v)
 sync' :: forall m r. Seq m r => r S -> r S -> r S -> m (r S)
 sync' s0 i s = do
   e  <- edge i   -- edge detector on input
-  s' <- inc s    -- free running counter
-  if' e s0 s'    -- conditional reset
+  s' <- inc s    -- default is free running counter
+  if' e s0 s'    -- conditional reset on edge
   
 -- Bound to register
 sync :: Seq m r => SType -> r S -> m (r S)
