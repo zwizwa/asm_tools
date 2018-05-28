@@ -172,7 +172,8 @@ traceIO io0 mf = t io0 s0 where
     (s', (io', o)) = f s
     f = toTick $ mf io
 
--- Implement input via traceIO by using io to contain the list.
+-- Special case: Implement input via traceIO by using io to contain
+-- the input list.
 trace :: ([R S] -> M [R S]) -> [Bus] -> [Bus]
 trace mf is0 = traceIO is0 mf' where
   mf' (i:is) = do
@@ -186,7 +187,6 @@ trace' m = traceIO () (\() -> do o <- m; return ((), o))
 
 
 -- Implement memory as a threaded computation.
-
 type MemState = Map RegNum RegVal
 type Mem = MemState -> (R S, R S, R S) -> M (MemState, R S)
 mem :: Mem
@@ -202,27 +202,16 @@ mem memState (R (Reg rAddr), R (Reg wAddr), wData) = do
   return (memState', rData)
 
 -- Patch the complement of the memory interface, creating the registers.
-patchMem ::
-  (SType, SType) -> Mem ->
-  (R S -> M (R S, R S, R S)) ->
-  MemState -> M MemState
-patchMem (ta, td) mem memUser s = regFix types comb where
+fixMem ::
+  (SType, SType) ->
+  (R S -> M ((R S, R S, R S), o)) ->
+  MemState -> M (MemState, o)
+fixMem (ta, td) memUser s = regFix types comb where
   types = [ta, td, ta, td]
   comb [ra, rd, wa, wd] = do
-    (ra', wa', wd') <- memUser rd
-    (s', rd')       <- mem s (ra, wa, wd)
-    return ([ra', rd', wa', wd'], s')
+    ((ra', wa', wd'),o) <- memUser rd
+    (s', rd')           <- mem s (ra, wa, wd)
+    return ([ra', rd', wa', wd'], (s',o))
 
                                
-
-  
-
-
-
--- Now, how to split this into two parts, a threaded function to feed
--- to trace, and the register interface to feed to a program?
-
-
-
-
 

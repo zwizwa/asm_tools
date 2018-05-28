@@ -31,14 +31,48 @@ data SType = SInt (Maybe NbBits) InitVal
 type NbBits = Int
 type InitVal = Int
 
--- Typical HDL semantics of signals:
+-- Signals
+--
+-- A note on Signals.  Typical HDL semantics of signals:
 -- 1) have exactly one driver
 -- 2) is a wire if driven in combinatorial context
 -- 3) is a register if driven in sequential context
+--
+-- We distinguish between combinatorial and register signals in the
+-- following way:
+--
+-- a) The default is combinatorial.  This is abstracted as ordinary
+--    functions taking value inputs and returning values.
+--
+-- b) Registers are created using 'signal' and bound using 'next'.
+--    For the library, a higher level 'regFix' is exposed which avoids
+--    creating unbound or multiply-bound signals.
 
--- We do not use contexts as is typical in HDLs.  Instead, 'next'
--- creates a sequential signal (i.e. a register).  Anything else is
--- combinatorial.
+
+-- Signal types.
+--
+-- It would be possible to encode target type information at the
+-- Haskell type level.  However, I find that really awkward to do
+-- without dependent types, so it is encoded as an SType value.  This
+-- creates some awkwardness, i.e. probing with dummy values is
+-- necessary at some points.
+--
+-- In practice, the Haskell run time is a compile time for the target
+-- language, so target type errors can still be caught as Haskell run
+-- time errors.  In the end, encoding SType as a Haskell type doesn't
+-- really add much value for a target language that just has sized bit
+-- vectors.
+
+
+-- Signal containers.
+--
+-- The final output is a flat configuration of wires, logic gates and
+-- registers. There isn't much to contain.  It makes sense not to put
+-- containers at the target level as part of the Seq class.  Instead
+-- they are introduced at the meta level, allowing standard Haskell
+-- types to be used.  E.g. 'regs' assumes a Traversable Applicative.
+
+
 
 class Monad m => Seq m r where
 
@@ -103,9 +137,8 @@ if' = op3 IF
 -- the creation of undriven or multiply-driven signals.  This is
 -- preferred over using the low-level primitives directly.
 
--- A meta-level applicative functor is used to bundle registers since
--- it doesn't cost anything to make this generic.  Typically, a List
--- will do.
+-- A meta-level applicative functor is used to bundle registers.
+-- Typically, a List will do.
 regFix ::
   (Applicative f, Traversable f, Seq m r) =>
   f SType -> (f (r S) -> m (f (r S), o)) -> m o
@@ -115,9 +148,14 @@ regFix ts f = do
   sequence_ $ liftA2 next rs rs'
   return o
 
--- Special case: single register, register output
-reg :: Seq m r => SType -> (r S -> m (r S)) -> m (r S)
-reg t f = do regFix [t] $ \[r] -> do r' <- f r ; return ([r'], r)
+-- Note: it might be possible to avoid 'signal' and 'next' in Seq, and
+-- replace it with regFix.  Currently, the MyHDL uses it to bind
+-- outputs, but that can probably be solved differently.
+
+
+
+
+
 
 
 

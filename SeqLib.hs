@@ -11,6 +11,9 @@ import Seq
 import Control.Monad
 
 
+-- Special regFix case: single register, with register as output
+reg :: Seq m r => SType -> (r S -> m (r S)) -> m (r S)
+reg t f = do regFix [t] $ \[r] -> do r' <- f r ; return ([r'], r)
 
 
 -- Some simple building blocks

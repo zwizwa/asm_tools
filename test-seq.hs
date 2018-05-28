@@ -36,8 +36,8 @@
 
 import Seq
 import SeqLib
-import qualified SeqNet as Net
-import qualified SeqEmu as Emu
+import qualified SeqNet as SeqNet
+import qualified SeqEmu as SeqEmu
 import qualified MyHDL as MyHDL
 import Data.Map.Lazy (empty, foldrWithKey, insert)
 
@@ -48,17 +48,20 @@ import Data.Map.Lazy (empty, foldrWithKey, insert)
 
   
 main = do
-  putStrLn "--- counter Emu.compile"
-  printEmu $ counter (SInt (Just 2) 0)
+  putStrLn "--- counter SeqEmu.compile"
+  printSeqEmu $ counter (SInt (Just 2) 0)
 
-  putStrLn "--- counter Emu.trace"
+  putStrLn "--- counter SeqEmu.trace"
   print $ take 10 $ test_counter
 
-  putStrLn "--- edge Emu.trace"
+  putStrLn "--- edge SeqEmu.trace"
   print $ take 10 $ map head $ test_edge
 
   putStrLn "--- test_sync"
   printl $ take 10 $ test_sync
+
+  putStrLn "--- test_mem"
+  printl $ take 10 $ test_mem
 
   putStrLn "--- test_hdl"
   print_hdl test_hdl
@@ -68,21 +71,21 @@ main = do
 
 
 print_hdl src = do
-  let (ports, bindings) = Net.compile src
+  let (ports, bindings) = SeqNet.compile src
   putStrLn "-- ports: "
   print ports
   putStrLn "-- bindings: "
   printl $ bindings
-  printl $ Net.inlined $ bindings
+  printl $ SeqNet.inlined $ bindings
   putStrLn "-- MyHDL: "
   putStr $ MyHDL.gen (ports, bindings)
 
 
-printEmu :: Emu.M (Emu.R S) -> IO ()
-printEmu src = do
+printSeqEmu :: SeqEmu.M (SeqEmu.R S) -> IO ()
+printSeqEmu src = do
   let src' = src >> return ((),[]) -- API stub
-      r0 = Emu.reset src'
-      f  = Emu.toTick src'
+      r0 = SeqEmu.reset src'
+      f  = SeqEmu.toTick src'
   putStrLn "init: "
   printl $ mapToList $ r0
   putStrLn "post: "
@@ -100,19 +103,19 @@ square = do
   c <- counter $ SInt (Just 3) 0
   slr c n >>= bit
 
-test_counter = Emu.trace' $ do
+test_counter = SeqEmu.trace' $ do
   c1 <- counter $ SInt (Just 1) 0
   c2 <- counter $ SInt (Just 3) 0
   -- [] is a meta-language construct needed for trace
   return [c1, c2]
 
 -- For testing, outputs need to be collected in lists.
-test_edge = Emu.trace' $ do
+test_edge = SeqEmu.trace' $ do
   e <- square >>= edge
   return [e]
 
 -- Clock synchronizer
-test_sync = Emu.trace f is where
+test_sync = SeqEmu.trace f is where
   is = cycle [[v] | v <- [1,0,0,0,0,1,0,0]]
   f [i] = do
     o <- sync (SInt (Just 2) 0) i
@@ -121,20 +124,34 @@ test_sync = Emu.trace f is where
     return [i,o]
   
 
+-- Dummy memory-using operation.  For testing memFix.
+dummy_mem rd = do     -- mem reg in
+  z <- int 0
+  return ((z, z, z),  -- mem regs out
+          [z])        -- test program output
+
+test_mem :: [[Int]]
+test_mem = do
+  let t = SInt Nothing 0
+      m = SeqEmu.fixMem (t,t) dummy_mem
+  SeqEmu.traceIO empty m
+
+
+
 
 -- MyHDL export needs some wrapping to specify module I/O structure.
--- Net has support for this.
-test_hdl :: Net.M [Net.R S]
+-- SeqNet has support for this.
+test_hdl :: SeqNet.M [SeqNet.R S]
 test_hdl = do
-  io@[i,o] <- Net.io 2
-  j <- delay i
+  io@[i,o] <- SeqNet.io 2
+  j  <- delay i
   o' <- delay j  
   connect o o'   -- allow direct output
   return io
 
-test_hdl_sync :: Net.M [Net.R S]
+test_hdl_sync :: SeqNet.M [SeqNet.R S]
 test_hdl_sync = do
-  io@[i,o] <- Net.io 2
+  io@[i,o] <- SeqNet.io 2
   o' <- sync (SInt (Just 2) 0) i
   connect o o'
   return io
