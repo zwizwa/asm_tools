@@ -73,9 +73,21 @@ main = do
   -- putStrLn "--- test_hdl_sync"
   -- print_hdl test_hdl_sync
 
-  putStrLn "--- test_cpu"
-  print $ take 10 $ test_cpu
+  putStrLn "--- test_cpu_net"
+  printSeqNet $ test_cpu_net
+  putStrLn "--- test_cpu_emu"
+  print $ take 10 $ test_cpu_emu
 
+
+
+-- printSeqNet :: Functor f => SeqNet.M (f (SeqNet.R S)) -> IO ()
+printSeqNet :: SeqNet.M [SeqNet.R S] -> IO ()
+printSeqNet src = do
+  let (output, bindings) = SeqNet.compile src
+  putStrLn "-- bindings: "
+  printl $ bindings
+  putStrLn "-- output: "
+  print output
 
 
 printSeqEmu :: SeqEmu.M (SeqEmu.R S) -> IO ()
@@ -147,10 +159,15 @@ test_mem2 = SeqEmu.traceIO [empty, empty] m where
   t = SInt Nothing 0
   m = SeqEmu.fixMem [(t,t),(t,t)] dummy_mem2
 
-
-test_cpu = SeqEmu.traceIO [empty] m where
-  t = SInt Nothing 0
-  m = SeqEmu.fixMem [(t,t)] CPU.cpu
+-- Stub out what doesn't fit.  The idea is to find a way to gracefully
+-- have these two interpretations produce something useful: MyHDL code
+-- and an emulation test.
+test_cpu_net = do
+  ([(a,b,c,d)], o) <- CPU.cpu [0]
+  return $ o ++ [a,b,c,d]
+test_cpu_emu =  SeqEmu.traceIO [empty] m where
+  typ = SInt Nothing 0
+  m = SeqEmu.fixMem [(typ,typ)] CPU.cpu
 
 
 -- -- MyHDL export needs some wrapping to specify module I/O structure.

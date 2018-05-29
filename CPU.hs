@@ -35,10 +35,12 @@ import Control.Monad
 -- not necessarily general purpose CPUs.  This can then be gradually
 -- extended to more abstract operations.
 
+
+cpu :: Seq m r => [r S] -> m ([(r S, r S, r S, r S)], [r S])
 cpu [i] = do
   -- Constants.
   let z = int 0
       ip = int 0 -- Instruction pointer.
   -- Instruction memory input registers.  Write is disabled.
-  let iregs = (z,z,z,ip)
+  let iregs = (0,z,z,ip)
   return $ ([iregs],[])

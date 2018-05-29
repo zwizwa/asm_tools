@@ -262,3 +262,19 @@ fixMem types memUser s = regFix types' comb where
 --     (s', rd')            <- mem s (ra, wa, wd)
 --     return ([ra', rd', wa', wd'], (s',o))
 
+
+-- For constants.
+instance Num (R S) where
+  fromInteger i = R $ Val Nothing $ fromInteger i
+  -- Implement the rest just for constants.
+  (+) = num2 (+)
+  (*) = num2 (*)
+  abs = num1 abs
+  signum = num1 signum
+  negate = num1 negate
+
+-- Use Applicative?   Nope. not general enough.
+num1 f (R (Val sza a)) =
+  R $ Val sza $ f a
+num2 f (R (Val sza a)) (R (Val szb b)) =
+  R $ Val (sz sza szb) $ f a b

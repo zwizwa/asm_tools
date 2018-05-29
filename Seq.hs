@@ -74,8 +74,18 @@ type InitVal = Int
 -- types to be used.  E.g. 'regs' assumes a Traversable Applicative.
 
 
+-- Constants
+--
+-- Note that constant is non-monadic.  This emposes some constraints
+-- on the implementation in how to represent them, which is a fair
+-- price for the convenience of using them in-line.  Num is there
+-- mostly to support fromInteger, but the additional methods could be
+-- useful.  Note that consts have the same type as other nodes, which
+-- possibly leads to run-time error when applying Num methods to
+-- register nodes.  The implementation should raise an error in that
+-- case.
 
-class Monad m => Seq m r | r -> m where
+class (Monad m, Num (r S)) => Seq m r | r -> m where
 
   -- Register operation
   signal   :: SType -> m (r S)    -- Undriven signal
@@ -153,10 +163,7 @@ regFix ts f = do
 -- replace it with regFix.  Currently, the MyHDL uses it to bind
 -- outputs, but that can probably be solved differently.
 
-
-
-
-
+-- Can Num be implemented generically?
 
 
 

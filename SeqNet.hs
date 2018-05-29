@@ -132,9 +132,10 @@ driveNode n c = do
   
 -- Compile to list of I/O ports and network map.
 compile m = (map unR ports, cleanPorts nodes) where
-  ((ports, nodes), _) = runState (runWriterT (unM m)) 0
+  ((ports, nodes), nbNodes) = runState (runWriterT (unM m)) 0
 
 -- Remove duplicates, keeping last, preserving order.
+-- FIXME: generalize to functor output?
 cleanPorts ports = ports' where
   ports' = reverse $ f Set.empty $ reverse ports
   f _ [] = []
@@ -200,3 +201,20 @@ inlined bindings = map outBinding keep where
 
 
 
+
+
+-- For constants.
+instance Num (R Seq.S) where
+  fromInteger i = R $ Const $ fromInteger i
+  -- Implement the rest just for constants.
+  (+) = num2 (+)
+  (*) = num2 (*)
+  abs = num1 abs
+  signum = num1 signum
+  negate = num1 negate
+
+-- Use Applicative?   Nope. not general enough.
+num1 f (R (Const a)) =
+  R $ Const $ f a
+num2 f (R (Const a)) (R (Const b)) =
+  R $ Const $ f a b
