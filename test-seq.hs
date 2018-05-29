@@ -79,6 +79,10 @@ main = do
   print $ take 10 $ test_cpu_emu
 
 
+  putStrLn "--- counter SeqNet.sexp'"
+  printSeqNet $ do c <- counter $ SInt Nothing 2 ; return [c]
+
+
 
 -- printSeqNet :: Functor f => SeqNet.M (f (SeqNet.R S)) -> IO ()
 printSeqNet :: SeqNet.M [SeqNet.R S] -> IO ()
@@ -88,6 +92,15 @@ printSeqNet src = do
   printl $ bindings
   putStrLn "-- output: "
   print output
+  let inl = SeqNet.inlined bindings
+  putStrLn "-- inlined: "
+  putStr $ SeqNet.sexp' inl
+
+  -- let inlined = SeqNet.inlined bindings
+  -- putStrLn "-- inlined: "
+  -- printl $ inlined
+  -- putStrLn "-- sexp: "
+  -- putStrLn $ SeqNet.sexp' $ inlined
 
 
 printSeqEmu :: SeqEmu.M (SeqEmu.R S) -> IO ()

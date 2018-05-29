@@ -1,8 +1,9 @@
 {-# LANGUAGE FlexibleContexts #-}
 
-module MyHDL where
+module MyHDL(gen) where
 import Seq
-import SeqNet
+import qualified SeqNet
+import SeqNet(Op(..),Term(..),NodeNum,Expr,Bindings)
 import Control.Monad.State
 import Control.Monad.Writer
 import Control.Monad.Free
@@ -30,24 +31,24 @@ render (n, Seq) = do
   tell $ "\tdef blk" ++ show n ++ "():\n"
 render (n, Comb) = do
   tell $ "\t@always_comb\n"
-  tell $ "\tdef blk" ++ show n ++ "():\n"
+  tell $ "\tdef blk" ++ show n ++ "():\n" 
 
 sig n = "s" ++ show n
 
 -- Unpack the levels:
--- a) assignment statments
+
+assignment :: (NodeNum, Expr (Op NodeNum)) -> M ()
 assignment (n, Free (Node Input)) = do
   tell $ "\t# " ++ sig n ++ " is an input\n"
-assignment (n,c) = do
+assignment (n, c) = do
   setContextFor c
   tell $ "\t\t" ++ sig n ++ ".next = "
   tell $ expr c ++ "\n"
--- b) expressions
+
 expr (Pure (Node  n)) = sig n
-expr (Free (Const ...
+expr (Free (Const c)) = show c
 expr (Free (Node  e)) = op e
--- 
-op (Const c) = show c
+
 op (Comb2 f a b)   = f2 f a b
 op (Comb3 f a b c) = f3 f a b c
 op (Delay a) = expr a -- Delay is implemented by seq context
@@ -72,7 +73,8 @@ f3 IF c a b = expr a ++ " if " ++ expr c ++ " else " ++ expr b
 -- FIXME:
 -- instantiate local signals
 
-type MyHDL = WriterT String (State (Int, Mode))
+-- It's private, so this is "the" monad.
+type M = WriterT String (State (Int, Mode))
 
 defSignal n = do
   tell $ "\t" ++ sig n ++ " = Signal()\n"
