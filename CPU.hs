@@ -36,11 +36,9 @@ import Control.Monad
 -- extended to more abstract operations.
 
 cpu [i] = do
-  -- Constants.  Would be nice to allow inline?  Maybe fix that first
-  -- because this is going to annoy me quite a bit..
-  z  <- int 0
-  -- Instruction pointer.
-  ip <- int 0
+  -- Constants.
+  let z = int 0
+      ip = int 0 -- Instruction pointer.
   -- Instruction memory input registers.  Write is disabled.
   let iregs = (z,z,z,ip)
   return $ ([iregs],[])

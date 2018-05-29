@@ -96,9 +96,8 @@ mapToList = foldrWithKey f [] where f k v t = (k,v):t
 
 
 square = do
-  n <- int 2
   c <- counter $ SInt (Just 3) 0
-  slr c n >>= bit
+  slr c (int 2) >>= bit
 
 test_counter = SeqEmu.trace' $ do
   c1 <- counter $ SInt (Just 1) 0
@@ -123,7 +122,7 @@ test_sync = SeqEmu.trace f is where
 
 -- Bare bones memFix test.
 dummy_mem [_] = do         -- memory's output registers
-  z <- int 0
+  let z = int 0
   return ([(z, z, z, z)],  -- memory's input registers
           [])              -- test program empty output bus
 test_mem :: [[Int]]
