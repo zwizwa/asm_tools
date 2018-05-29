@@ -37,6 +37,7 @@
 import Seq
 import SeqLib
 import qualified SeqNet
+import qualified SeqExpr
 import qualified SeqEmu
 -- import qualified MyHDL
 import qualified CPU
@@ -92,9 +93,9 @@ printSeqNet src = do
   printl $ bindings
   putStrLn "-- output: "
   print output
-  let inl = SeqNet.inlined bindings
+  let inl = SeqExpr.inlined bindings
   putStrLn "-- inlined: "
-  putStr $ SeqNet.sexp' inl
+  putStr $ SeqExpr.sexp' inl
 
   -- let inlined = SeqNet.inlined bindings
   -- putStrLn "-- inlined: "
