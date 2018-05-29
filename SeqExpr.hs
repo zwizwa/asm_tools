@@ -17,7 +17,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 
 module SeqExpr where
-import SeqNet
+import SeqTerm
 import qualified Seq as Seq
 --import Control.Monad.State
 import Control.Monad.Writer
@@ -61,7 +61,7 @@ inlinedNode ref n = Expr $ unfold inl n where
   
 
 -- There was an error about Show1 I didn't understand:
--- No instance for (Data.Functor.Classes.Show1 SeqNet.Term)
+-- No instance for (Data.Functor.Classes.Show1 SeqTerm.Term)
 
 -- So I'm taking the detour to implement a printer explicitly.
 
@@ -99,7 +99,17 @@ mSexp' (Expr e) = mSexp e
 mSexp (Pure n) = tell $ node n
 mSexp (Free (Compose e)) = mTerm e
 
-mTerm (Delay _) = tell $ "<<delay>>"
+mTerm Input           = do tell $ "<Input>"
+mTerm (Delay a)       = do tell $ "<Delay>"   ; mOp a
+mTerm (Connect a)     = do tell $ "<Connect>" ; mOp a
+mTerm (Comb1 _ a)     = do tell $ "<Comb1>"   ; mOp a
+mTerm (Comb2 _ a b)   = do tell $ "<Comb2>"   ; mOp a ; mOp b
+mTerm (Comb3 _ a b c) = do tell $ "<Comb3>"   ; mOp a ; mOp b ; mOp c
+
+mOp (Const v) = tell $ "<const>"
+mOp (Node n)  = do tell $ "<node>" ; mSexp n
+
+
 
 
 line str = do

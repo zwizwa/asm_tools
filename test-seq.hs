@@ -36,7 +36,7 @@
 
 import Seq
 import SeqLib
-import qualified SeqNet
+import qualified SeqTerm
 import qualified SeqExpr
 import qualified SeqEmu
 -- import qualified MyHDL
@@ -75,20 +75,20 @@ main = do
   -- print_hdl test_hdl_sync
 
   putStrLn "--- test_cpu_net"
-  printSeqNet $ test_cpu_net
+  printSeqTerm $ test_cpu_net
   putStrLn "--- test_cpu_emu"
   print $ take 10 $ test_cpu_emu
 
 
-  putStrLn "--- counter SeqNet.sexp'"
-  printSeqNet $ do c <- counter $ SInt Nothing 2 ; return [c]
+  putStrLn "--- counter SeqTerm.sexp'"
+  printSeqTerm $ do c <- counter $ SInt Nothing 2 ; return [c]
 
 
 
--- printSeqNet :: Functor f => SeqNet.M (f (SeqNet.R S)) -> IO ()
-printSeqNet :: SeqNet.M [SeqNet.R S] -> IO ()
-printSeqNet src = do
-  let (output, bindings) = SeqNet.compile src
+-- printSeqTerm :: Functor f => SeqTerm.M (f (SeqTerm.R S)) -> IO ()
+printSeqTerm :: SeqTerm.M [SeqTerm.R S] -> IO ()
+printSeqTerm src = do
+  let (output, bindings) = SeqTerm.compile src
   putStrLn "-- bindings: "
   printl $ bindings
   putStrLn "-- output: "
@@ -97,11 +97,11 @@ printSeqNet src = do
   putStrLn "-- inlined: "
   putStr $ SeqExpr.sexp' inl
 
-  -- let inlined = SeqNet.inlined bindings
+  -- let inlined = SeqTerm.inlined bindings
   -- putStrLn "-- inlined: "
   -- printl $ inlined
   -- putStrLn "-- sexp: "
-  -- putStrLn $ SeqNet.sexp' $ inlined
+  -- putStrLn $ SeqTerm.sexp' $ inlined
 
 
 printSeqEmu :: SeqEmu.M (SeqEmu.R S) -> IO ()
@@ -185,29 +185,29 @@ test_cpu_emu =  SeqEmu.traceIO [empty] m where
 
 
 -- -- MyHDL export needs some wrapping to specify module I/O structure.
--- -- SeqNet has support for this.
--- test_hdl :: SeqNet.M [SeqNet.R S]
+-- -- SeqTerm has support for this.
+-- test_hdl :: SeqTerm.M [SeqTerm.R S]
 -- test_hdl = do
---   io@[i,o] <- SeqNet.io 2
+--   io@[i,o] <- SeqTerm.io 2
 --   j  <- delay i
 --   o' <- delay j  
 --   connect o o'   -- allow direct output
 --   return io
 
--- test_hdl_sync :: SeqNet.M [SeqNet.R S]
+-- test_hdl_sync :: SeqTerm.M [SeqTerm.R S]
 -- test_hdl_sync = do
---   io@[i,o] <- SeqNet.io 2
+--   io@[i,o] <- SeqTerm.io 2
 --   o' <- sync (SInt (Just 2) 0) i
 --   connect o o'
 --   return io
 
 -- print_hdl src = do
---   let (ports, bindings) = SeqNet.compile src
+--   let (ports, bindings) = SeqTerm.compile src
 --   putStrLn "-- ports: "
 --   print ports
 --   putStrLn "-- bindings: "
 --   printl $ bindings
---   printl $ SeqNet.inlined $ bindings
+--   printl $ SeqTerm.inlined $ bindings
 --   putStrLn "-- MyHDL: "
 --   putStr $ MyHDL.gen (ports, bindings)
 

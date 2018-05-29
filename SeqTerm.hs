@@ -11,7 +11,7 @@
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 
-module SeqNet where
+module SeqTerm where
 import qualified Seq as Seq
 import Control.Monad.State
 import Control.Monad.Writer
