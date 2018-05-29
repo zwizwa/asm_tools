@@ -199,8 +199,9 @@ inlined termBindings = exprBindings where
   exprBindings = [(n, inlinedNode ref n) | n <- keep]
 
 inlinedNode :: (n -> Term' n) -> n -> Expr n
-inlinedNode ref n = expr where
-  expr = return n
+inlinedNode ref n = Expr $ unfold inl n where
+  inl n = Left n
+  
   
 
 -- There was an error about Show1 I didn't understand:
@@ -231,13 +232,23 @@ type IndentLevel = Int
 -- the final solution is only obvious in retrospect.
 sexp :: Show n => Expr n -> String
 sexp e = str where
-  m :: M' ()
-  m = mSexp e 
+  m = mSexp e :: M' ()
   Expr (Pure ((), str)) = runReaderT (runWriterT (unM' m)) 0
 
-mSexp :: Expr n -> M' ()
-mSexp e = do
-  tell $ show "<dummy>"
+node n = "n" ++ show n
+
+mSexp :: Show n => Expr n -> M' ()
+mSexp (Expr (Pure n)) = tell $ node n
+-- mSexp (Expr (Free e)) = do
+--   e :: ()
+--   line $ show v -- "<dummy>"
+
+line str = do
+  n <- ask
+  sequence_ $ [tell "\t" | _ <- [1..n]]
+  tell $ str ++ "\n"
+
+  
 -- mSexp v = do
 --   -- tell "<dummy>"
 --   tell $ show v
