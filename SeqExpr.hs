@@ -70,11 +70,7 @@ inlinedNode ref n = Expr $ unfold inl n where
 
 sexp' :: Show n => [(n, Expr n)] -> String
 sexp' bindings =
-  concat [(list [show n, sexp e]) ++ "\n" | (n, e) <- bindings]
-
-parens s = "(" ++ s ++ ")"
-spaced = intercalate " "
-list l = parens $ spaced l
+  concat [concat [show n, "<-", sexp e, "\n"] | (n, e) <- bindings]
 
 -- This is "the other" monad.  Clean this up.
 -- It tags some formatting machinery to the Free monad.
@@ -90,13 +86,12 @@ sexp :: Show n => Expr n -> String
 sexp e = str where
   Expr (Pure ((), str)) = runReaderT (runWriterT (unM' $ mSexp' e)) 0
 
-node n = "n" ++ show n
 
 -- Keep this wrapper: easier to express the types.
 mSexp' :: Show n => Expr n -> M' ()
 mSexp' (Expr e) = mSexp e
 
-mSexp (Pure n) = tell $ node n
+mSexp (Pure n) = list "node" [tell $ show n]
 mSexp (Free (Compose e)) = mTerm e
 
 mTerm Input           = do tell $ "<Input>"
@@ -106,8 +101,14 @@ mTerm (Comb1 _ a)     = do tell $ "<Comb1>"   ; mOp a
 mTerm (Comb2 _ a b)   = do tell $ "<Comb2>"   ; mOp a ; mOp b
 mTerm (Comb3 _ a b c) = do tell $ "<Comb3>"   ; mOp a ; mOp b ; mOp c
 
-mOp (Const v) = tell $ "<const>"
+mOp (Const v) = tell "<const>" -- list ["const", show v]
 mOp (Node n)  = do tell $ "<node>" ; mSexp n
+
+list tag ms = do
+  tell "("
+  tell tag
+  sequence_ $ map ((tell " ") >>) ms
+  tell ")"
 
 
 
