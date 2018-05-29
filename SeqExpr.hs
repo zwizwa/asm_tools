@@ -88,14 +88,19 @@ type IndentLevel = Int
 -- the final solution is only obvious in retrospect.
 sexp :: Show n => Expr n -> String
 sexp e = str where
-  m = mSexp e
-  Expr (Pure ((), str)) = runReaderT (runWriterT (unM' m)) 0
+  Expr (Pure ((), str)) = runReaderT (runWriterT (unM' $ mSexp' e)) 0
 
 node n = "n" ++ show n
 
-mSexp :: Show n => Expr n -> M' ()
-mSexp (Expr (Pure n)) = tell $ node n
-mSexp (Expr (Free e)) = tell $ "<<dummy>>"
+-- Keep this wrapper: easier to express the types.
+mSexp' :: Show n => Expr n -> M' ()
+mSexp' (Expr e) = mSexp e
+
+mSexp (Pure n) = tell $ node n
+mSexp (Free (Compose e)) = mTerm e
+
+mTerm (Delay _) = tell $ "<<delay>>"
+
 
 line str = do
   n <- ask
