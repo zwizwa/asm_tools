@@ -38,16 +38,24 @@ import qualified Data.Set as Set
 -- 2) Use MyHDL to perform simulation and HDL export
 -- 3) Use Verilog/VHDL compiler to synthesize logic
 
-data Term t = Comb1 Seq.Op1 t
-            | Comb2 Seq.Op2 t t
-            | Comb3 Seq.Op3 t t t
-            | Delay t
-            | Connect t
-            | Const ConstVal
-            | Input
-            deriving (Show, Functor, Foldable)
+data Term t
+  = Comb1 Seq.Op1 t
+  | Comb2 Seq.Op2 t t
+  | Comb3 Seq.Op3 t t t
+  | Delay t
+  | Connect t
+  | Input -- Externally driven node
+  deriving (Show, Functor, Foldable)
 
-type Node     = Int
+-- Constants are not monadic values in Seq (tried that, and decided
+-- it's too annoying), so the operand type Op has two clauses:
+data Op t
+  = Node t          -- reference to output node: combinatorial or register (Delay)
+  | Const ConstVal  -- inlined constants
+  deriving (Show, Functor, Foldable)
+
+
+type NodeNum  = Int
 type PortNum  = Int
 type ConstVal = Int
 
@@ -55,61 +63,60 @@ type ConstVal = Int
 -- It's convenient if the Drivers preserve order in the way they are
 -- recorded to make sure definition dominates use.
 
-newtype M t = M { unM :: WriterT (Bindings Node) (State CompState) t } deriving
+newtype M t = M { unM :: WriterT (Bindings NodeNum) (State CompState) t } deriving
   (Functor, Applicative, Monad,
-   MonadWriter (Bindings Node),
+   MonadWriter (Bindings NodeNum),
    MonadState CompState)
 
-type Bindings n = [(n, Term n)]
-type CompState = Node
+type Bindings n = [(n, Term (Op n))]
+type CompState = NodeNum
 
 -- Primitive state manipulations
-appSignal = id
-getSignal = get
+modifyNodeNum :: (NodeNum -> NodeNum) -> M ()
+modifyNodeNum = modify
+getNodeNum :: M NodeNum
+getNodeNum = get
 
-data Signal = Sig Int deriving Show
 
 -- Phantom representation wrapper
-data R t = R { unR :: Signal }  
+data R t = R { unR :: Op NodeNum }  
 
 instance Seq.Seq M R where
 
   -- undriven signal
-  signal _  = fmap R makeSignal
+  signal _  = fmap R makeNode
   stype _   = return $ Seq.SInt Nothing 0
 
   -- driven nodes
-  constant (Seq.SInt _ v) =
-    fmap R $ driven $ Const v
+  constant (Seq.SInt _ v) = R $ Const v
 
-  op1 o (R (Sig a)) =
+  op1 o (R a) =
     fmap R $ driven $ Comb1 o a
 
-  op2 o (R (Sig a)) (R (Sig b)) =
+  op2 o (R a) (R b) =
     fmap R $ driven $ Comb2 o a b
 
-  op3 o (R (Sig a)) (R (Sig b)) (R (Sig c)) =
+  op3 o (R a) (R b) (R c) =
     fmap R $ driven $ Comb3 o a b c
 
   -- register drive
-  next (R (Sig dst)) (R (Sig src)) =
-    driveSignal dst $ Delay src
+  next (R (Node dst)) (R src) =
+    driveNode dst $ Delay src
 
   -- Combinatorial drive is needed to support combinatorial module
   -- outputs, but otherwise not used in Seq.hs code.
-  connect (R (Sig dst)) (R (Sig src)) =
-    driveSignal dst $ Connect src
+  connect (R (Node dst)) (R src) =
+    driveNode dst $ Connect src
 
-    
-
-makeSignal = do
-  n <- getSignal
-  modify $ appSignal (+ 1)
-  return $ Sig n
+makeNode :: M (Op NodeNum)
+makeNode = do
+  n <- getNodeNum
+  modifyNodeNum (+ 1)
+  return $ Node n
 
 driven c = do
-  s@(Sig n) <- makeSignal
-  driveSignal n c
+  s@(Node n) <- makeNode
+  driveNode n c
   return s
 
 
@@ -120,13 +127,12 @@ io n = sequence $ [fmap R $ driven $ Input | _ <- [0..n-1]]
 
 -- ... and convert them to output here.  Other nodes cannot be driven
 -- more than once.  Note: using fix, this error is avoided.
-driveSignal n c = do
+driveNode n c = do
   tell [(n, c)]
   
 -- Compile to list of I/O ports and network map.
-compile m = (map unpack ports, cleanPorts nodes) where
+compile m = (map unR ports, cleanPorts nodes) where
   ((ports, nodes), _) = runState (runWriterT (unM m)) 0
-  unpack (R (Sig n)) = n
 
 -- Remove duplicates, keeping last, preserving order.
 cleanPorts ports = ports' where
@@ -136,6 +142,7 @@ cleanPorts ports = ports' where
     case p `Set.member` s of
       True -> f s ns
       False -> (n : f (p `Set.insert` s) ns)
+
 
 
 
@@ -190,7 +197,6 @@ inlined bindings = map outBinding keep where
   ref = (bindings' !)
   bindings' = Map.fromList bindings
   nodes = map fst bindings
-
 
 
 

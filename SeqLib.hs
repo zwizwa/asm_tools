@@ -19,7 +19,7 @@ reg t f = do regFix [t] $ \[r] -> do r' <- f r ; return ([r'], r)
 -- Some simple building blocks
 
 inc :: Seq m r => r S -> m (r S)
-inc c = int 1 >>= add c
+inc c = add c (int 1)
 
 counter :: Seq m r => SType -> m (r S)
 counter t = reg t inc
@@ -34,10 +34,10 @@ edge d = do
   d `bxor` d0
 
 bit b = do
-  int 1 >>= band b
+  band b (int 1)
 
 
-int :: forall m r. Seq m r => Int -> m (r S)
+int :: forall m r. Seq m r => Int -> r S
 int v = constant (SInt Nothing v)
 
 
@@ -54,7 +54,6 @@ sync' s0 i s = do
 -- Bound to register
 sync :: Seq m r => SType -> r S -> m (r S)
 sync t i = do
-  s0 <- constant t
-  reg t $ sync' s0 i
+  reg t $ sync' (constant t) i
 
 

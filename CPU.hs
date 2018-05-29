@@ -1,5 +1,8 @@
 -- A CPU?
 
+-- It is the natural progression from Seq and Pru.  Factor out some
+-- Pru code to make a generic assembler, and implement the CPU in Seq.
+
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -10,6 +13,7 @@
 
 module CPU where
 import Seq
+import SeqLib
 import Control.Monad
 
 -- How to begin?  Memory seems to be the most important component.
@@ -27,35 +31,16 @@ import Control.Monad
 -- muxes.
 
 -- It seems that reading out instructions is the most useful thing to
--- start with.  This could be used for other kinds of sequencers that
--- are not necessarily general purpose CPUs.
+-- start with.  This could be used for specialized sequencers that are
+-- not necessarily general purpose CPUs.  This can then be gradually
+-- extended to more abstract operations.
 
-
--- Start with emulating the memory.  Below is the MyHDL model for the
--- iCE40.  I can't emulate this inside the Seq language, so start with
--- making an emulator extension.
---
--- from myhdl import *
---
--- def ram(write_clock, write_addr, write_data, write_enable,
---         read_clock,   read_addr,  read_data):
---     """ 
---     Random access memory (RAM) with single read 
---     and single write port
---     """
---     assert len(write_data) == len(read_data)
---     assert len(write_addr) == len(read_addr)
---     dw = len(write_data)
---     na = 2**len(write_addr)
---     memory = [Signal(intbv(0)[len(write_data):]) for _ in range(na)]
---   
---     @always(write_clock.posedge)
---     def rtlwr():
---         if write_enable:
---             memory[write_addr].next = write_data
---
---     @always(read_clock.posedge)
---     def rtlrd():
---         read_data.next = memory[read_addr]
---            
---     return instances()
+cpu [i] = do
+  -- Constants.  Would be nice to allow inline?  Maybe fix that first
+  -- because this is going to annoy me quite a bit..
+  z  <- int 0
+  -- Instruction pointer.
+  ip <- int 0
+  -- Instruction memory input registers.  Write is disabled.
+  let iregs = (z,z,z,ip)
+  return $ ([iregs],[])

@@ -36,9 +36,10 @@
 
 import Seq
 import SeqLib
-import qualified SeqNet as SeqNet
-import qualified SeqEmu as SeqEmu
-import qualified MyHDL as MyHDL
+import qualified SeqNet
+import qualified SeqEmu
+-- import qualified MyHDL
+import qualified CPU
 import Data.Map.Lazy (empty, foldrWithKey, insert)
 
 
@@ -66,25 +67,15 @@ main = do
   putStrLn "--- test_mem2"
   print $ take 10 $ test_mem2
 
---  putStrLn "--- test_mem3"
---  print $ take 10 $ test_mem3
+  -- putStrLn "--- test_hdl"
+  -- print_hdl test_hdl
 
-  putStrLn "--- test_hdl"
-  print_hdl test_hdl
+  -- putStrLn "--- test_hdl_sync"
+  -- print_hdl test_hdl_sync
 
-  putStrLn "--- test_hdl_sync"
-  print_hdl test_hdl_sync
+  putStrLn "--- test_cpu"
+  print $ take 10 $ test_cpu
 
-
-print_hdl src = do
-  let (ports, bindings) = SeqNet.compile src
-  putStrLn "-- ports: "
-  print ports
-  putStrLn "-- bindings: "
-  printl $ bindings
-  printl $ SeqNet.inlined $ bindings
-  putStrLn "-- MyHDL: "
-  putStr $ MyHDL.gen (ports, bindings)
 
 
 printSeqEmu :: SeqEmu.M (SeqEmu.R S) -> IO ()
@@ -131,10 +122,10 @@ test_sync = SeqEmu.trace f is where
   
 
 -- Bare bones memFix test.
-dummy_mem [_] = do      -- memory's output registers
+dummy_mem [_] = do         -- memory's output registers
   z <- int 0
-  return ([(z, z, z)],  -- memory's input registers
-          [])           -- test program empty output bus
+  return ([(z, z, z, z)],  -- memory's input registers
+          [])              -- test program empty output bus
 test_mem :: [[Int]]
 test_mem = SeqEmu.traceIO [empty] m where
   t = SInt Nothing 0
@@ -158,22 +149,37 @@ test_mem2 = SeqEmu.traceIO [empty, empty] m where
   m = SeqEmu.fixMem [(t,t),(t,t)] dummy_mem2
 
 
+test_cpu = SeqEmu.traceIO [empty] m where
+  t = SInt Nothing 0
+  m = SeqEmu.fixMem [(t,t)] CPU.cpu
 
--- MyHDL export needs some wrapping to specify module I/O structure.
--- SeqNet has support for this.
-test_hdl :: SeqNet.M [SeqNet.R S]
-test_hdl = do
-  io@[i,o] <- SeqNet.io 2
-  j  <- delay i
-  o' <- delay j  
-  connect o o'   -- allow direct output
-  return io
 
-test_hdl_sync :: SeqNet.M [SeqNet.R S]
-test_hdl_sync = do
-  io@[i,o] <- SeqNet.io 2
-  o' <- sync (SInt (Just 2) 0) i
-  connect o o'
-  return io
+-- -- MyHDL export needs some wrapping to specify module I/O structure.
+-- -- SeqNet has support for this.
+-- test_hdl :: SeqNet.M [SeqNet.R S]
+-- test_hdl = do
+--   io@[i,o] <- SeqNet.io 2
+--   j  <- delay i
+--   o' <- delay j  
+--   connect o o'   -- allow direct output
+--   return io
+
+-- test_hdl_sync :: SeqNet.M [SeqNet.R S]
+-- test_hdl_sync = do
+--   io@[i,o] <- SeqNet.io 2
+--   o' <- sync (SInt (Just 2) 0) i
+--   connect o o'
+--   return io
+
+-- print_hdl src = do
+--   let (ports, bindings) = SeqNet.compile src
+--   putStrLn "-- ports: "
+--   print ports
+--   putStrLn "-- bindings: "
+--   printl $ bindings
+--   printl $ SeqNet.inlined $ bindings
+--   putStrLn "-- MyHDL: "
+--   putStr $ MyHDL.gen (ports, bindings)
+
   
 

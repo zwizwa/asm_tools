@@ -62,8 +62,8 @@ instance Seq M R where
     modify $ appTypes $ insert r (sz, r0)
     return $ R $ Reg  r
 
-  constant (SInt sz r0) = do
-    return $ R $ Val sz r0
+  constant (SInt sz r0) =
+    R $ Val sz r0
 
   stype (R r) = do
     (sz, r0) <- styp r
@@ -184,8 +184,7 @@ traceIO io0 mf = t io0 s0 where
 trace :: ([R S] -> M [R S]) -> [Bus] -> [Bus]
 trace mf is0 = traceIO is0 mf' where
   mf' (i:is) = do
-    i' <- sequence [constant (SInt Nothing v) | v <- i]
-    o <- mf i'
+    o <- mf [constant (SInt Nothing v) | v <- i]
     return (is, o)
 
 -- Version without external state
@@ -195,17 +194,23 @@ trace' m = traceIO () (\() -> do o <- m; return ((), o))
 
 -- Implement memory as a threaded computation.
 type MemState = Map RegNum RegVal
-type Mem = MemState -> (R S, R S, R S) -> M (MemState, R S)
+type Mem = MemState -> (R S, R S, R S, R S) -> M (MemState, R S)
 mem :: Mem
-mem memState (R (Reg rAddr), R (Reg wAddr), wData) = do
+mem memState (wEn, R (Reg wAddr), wData, R (Reg rAddr)) = do
+               
   -- Read
   let rData' = memState ! rAddr
   (SInt data_s _) <- stype wData
-  rData <- constant $ SInt data_s rData'
+  let rData = constant $ SInt data_s rData'
   -- Write
   wData' <- val $ unR wData
-  let memState' = insert wAddr wData' memState
-  
+  wEn'   <- val $ unR wEn
+  let memState' =
+        if wEn' /= 0 then
+          insert wAddr wData' memState
+        else
+          memState
+          
   return (memState', rData)
 
 
@@ -213,22 +218,23 @@ mem memState (R (Reg rAddr), R (Reg wAddr), wData) = do
 fixMem ::
   (Applicative f, Traversable f) =>
   f (SType, SType) ->
-  (f (R S) -> M (f (R S, R S, R S), o)) ->
+  (f (R S) -> M (f (R S, R S, R S, R S), o)) ->
   f MemState -> M (f MemState, o)
 fixMem types memUser s = regFix types' comb where
-  -- Pack/unpack for memory input, output.
-  -- List, to allow Compose to flatten the functor for regFix.
-  memRegs (a,b,c) d = [a,b,c,d]
-  memInput [a,b,c,d] = (a,b,c)
-  memOutput [a,b,c,d] = d
+  -- Pack/unpack for memory input, output.  Represented as List, a way
+  -- to allow Compose to flatten the functor for regFix.
+  -- w: write, r:read, a: address, d: data
+  memIO (we,wa,wd,ra) rd = [we,wa,wd,ra,rd]
+  memI  [we,wa,wd,ra,rd] = (we,wa,wd,ra)
+  memO  [we,wa,wd,ra,rd] = rd
 
-  -- Type spec needs the same shape as the registers.
-  types' = Compose $ fmap (\(a, d) -> memRegs (a, a, d) d) types
+  -- Register type spec has same shape as comb argument.
+  types' = Compose $ fmap (\(a, d) -> memIO (SInt (Just 1) 0, a, d, a) d) types
 
   comb (Compose regs) = do
     -- Input/Output named from memory's perspecitive
-    let i = fmap memInput  regs
-        o = fmap memOutput regs
+    let i = fmap memI regs
+        o = fmap memO regs
     -- Apply each memory's combinatorial network (i->o)
     so' <- sequence $ liftA2 mem s i
     let s' = fmap fst so'
@@ -237,7 +243,7 @@ fixMem types memUser s = regFix types' comb where
     -- x is just an output we pass along.
     (i', x) <- memUser o
     -- Pack
-    let regs' = liftA2 memRegs i' o'
+    let regs' = liftA2 memIO i' o'
     return (Compose regs', (s', x))
 
 

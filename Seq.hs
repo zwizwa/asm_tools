@@ -19,6 +19,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE FunctionalDependencies #-}
 
 module Seq where
 
@@ -74,7 +75,7 @@ type InitVal = Int
 
 
 
-class Monad m => Seq m r where
+class Monad m => Seq m r | r -> m where
 
   -- Register operation
   signal   :: SType -> m (r S)    -- Undriven signal
@@ -86,7 +87,7 @@ class Monad m => Seq m r where
   -- Instead, use the declarative 'reg' operator.
   -- Combinatorial connect is necessary for HDL export.
   
-  constant :: SType -> m (r S)
+  constant :: SType -> r S
   stype    :: r S -> m SType
 
   -- Combinatorial operations all create driven intermediate signals
@@ -143,7 +144,7 @@ regFix ::
   (Applicative f, Traversable f, Seq m r) =>
   f SType -> (f (r S) -> m (f (r S), o)) -> m o
 regFix ts f = do
-  rs <- traverse signal ts
+  rs <- sequence $ fmap signal ts
   (rs', o) <- f rs
   sequence_ $ liftA2 next rs rs'
   return o

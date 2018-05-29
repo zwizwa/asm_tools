@@ -15,8 +15,8 @@ import qualified Data.Map.Strict as Map
 data Mode = None | Seq | Comb deriving Eq
 
 -- Switch context as needed
-setContextFor (Free (Delay _)) = need Seq
-setContextFor _                = need Comb
+setContextFor (Free (Node (Delay _))) = need Seq
+setContextFor _                       = need Comb
 need context = do
   (n, have) <- get
   case have == context of
@@ -34,14 +34,27 @@ render (n, Comb) = do
 
 sig n = "s" ++ show n
 
-assignment (n, Free Input) = do
+-- Unpack the levels:
+-- a) assignment statments
+assignment (n, Free (Node Input)) = do
   tell $ "\t# " ++ sig n ++ " is an input\n"
 assignment (n,c) = do
   setContextFor c
   tell $ "\t\t" ++ sig n ++ ".next = "
   tell $ expr c ++ "\n"
+-- b) expressions
+expr (Pure (Node  n)) = sig n
+expr (Free (Const ...
+expr (Free (Node  e)) = op e
+-- 
+op (Const c) = show c
+op (Comb2 f a b)   = f2 f a b
+op (Comb3 f a b c) = f3 f a b c
+op (Delay a) = expr a -- Delay is implemented by seq context
+op (Connect e) = expr e
+op e = show e
 
-ifx op a b = expr a ++ " " ++ op ++ " " ++ expr b
+ifx f a b = expr a ++ " " ++ f ++ " " ++ expr b
   
 f2 ADD = ifx "+"
 f2 SLL = ifx "<<"
@@ -53,14 +66,7 @@ f2 AND = ifx "&"
 -- FIXME: if is different.  does MyHDL support ternery if?  Seems so..  Check this.
 -- f3 IF c a b = "if " ++ expr c ++ " then " ++ expr a ++ " else " ++ expr b
 f3 IF c a b = expr a ++ " if " ++ expr c ++ " else " ++ expr b
-expr' (Comb2 op a b)   = f2 op a b
-expr' (Comb3 op a b c) = f3 op a b c
-expr' (Delay a) = expr a -- Delay is implemented by seq context
-expr' (Const c) = show c
-expr' (Connect e) = expr e
-expr' e = show e
-expr (Pure n) = sig n
-expr (Free e) = expr' e
+
 
 
 -- FIXME:
@@ -73,7 +79,7 @@ defSignal n = do
 
 blk n = "blk" ++ show n
 
-gen :: ([Node], Bindings Node) -> String
+gen :: ([NodeNum], Bindings NodeNum) -> String
 gen (ports, terms) = w where
   exprs = inlined terms
   internalNodes = filter isInternal $ map fst exprs
