@@ -25,6 +25,8 @@ import Data.Map.Lazy (Map, (!), lookup, empty, insert, fromList)
 import qualified Data.Map as Map
 import Data.Bits
 import Data.Functor.Compose
+import Data.Functor.Apply
+-- import Data.Functor.Rep
 
 
 -- Main interpretation monad for Seq
@@ -198,9 +200,9 @@ trace' m = traceState () (\() -> do o <- m; return ((), o))
 
 -- Implement memory as a threaded computation.
 type MemState = Map RegNum RegVal
-type Mem = MemState -> (R S, R S, R S, R S) -> M (MemState, R S)
+type Mem = (R S, R S, R S, R S) -> MemState -> M (MemState, R S)
 mem :: Mem
-mem memState (wEn, wAddr, wData, rAddr) = do
+mem (wEn, wAddr, wData, rAddr) memState = do
 
   -- Read
   rAddr' <- val $ unR rAddr 
@@ -224,7 +226,7 @@ mem memState (wEn, wAddr, wData, rAddr) = do
 -- Couple memory access code to memory implementation.
 -- Multiple memories are contained in a functor, similar to fixReg.
 fixMem :: 
-  (Applicative f, Traversable f) =>
+  (Apply f, Traversable f) =>
   f SType ->
   (f (R S) -> M (f (R S, R S, R S, R S), o)) ->
   f MemState -> M (f MemState, o)
@@ -241,7 +243,7 @@ fixMem t user s = fixReg t comb where
     (i', x) <- user o
 
     -- Apply each memory's combinatorial network (i->o)
-    so' <- sequence $ liftA2 mem s i'
+    so' <- sequence $ mem <$> i' <.> s
     let s' = fmap fst so'
         o' = fmap snd so'
 

@@ -26,6 +26,7 @@ module Seq where
 import Control.Applicative
 import Data.Foldable
 import Data.Traversable
+import Data.Functor.Apply
 
 -- Abstract tag for signal representation.
 data S = S
@@ -152,17 +153,22 @@ if' = op3 IF
 -- A meta-level Foldable is used to bundle registers.  Typically, a
 -- List will do.
 
-fixReg :: (Traversable f, Seq m r) =>
+fixReg :: (Apply f, Traversable f, Seq m r) =>
   f SType -> (f (r S) -> m (f (r S), o)) -> m o
 fixReg ts f = do
   rs <- sequence $ fmap signal ts
   (rs', o) <- f rs
-  -- Note that liftA2 performs outer product for lists.  We want 1-1
-  -- correspondence, so convert to list and zip.
-  let lrs  = toList rs
-      lrs' = toList rs'
-  sequence_ $ zipWith next (toList rs) (toList rs')
+  sequence_ $ next <$> rs <.> rs'
   return o
+
+-- Note that this can only work properly when the applicative functor
+-- is of the zipping kind.  Currently I do not know how to express
+-- this without ruling out the useful ZipList.  Ideally, a module
+-- would use its own functor to describe collections of registers.
+
+
+
+  
 
 -- Note: it might be possible to avoid 'signal' and 'next' in Seq, and
 -- replace it with fixReg.  Currently, the MyHDL uses it to bind
