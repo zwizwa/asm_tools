@@ -24,6 +24,7 @@
 module Seq where
 
 import Control.Applicative
+import Data.Foldable
 import Data.Traversable
 
 -- Abstract tag for signal representation.
@@ -148,15 +149,19 @@ if' = op3 IF
 -- the creation of undriven or multiply-driven signals.  This is
 -- preferred over using the low-level primitives directly.
 
--- A meta-level applicative functor is used to bundle registers.
--- Typically, a List will do.
-regFix ::
-  forall f m r o. (Applicative f, Traversable f, Seq m r) =>
+-- A meta-level Foldable is used to bundle registers.  Typically, a
+-- List will do.
+
+regFix :: (Traversable f, Seq m r) =>
   f SType -> (f (r S) -> m (f (r S), o)) -> m o
 regFix ts f = do
   rs <- sequence $ fmap signal ts
   (rs', o) <- f rs
-  sequence_ $ liftA2 next rs rs'
+  -- Note that liftA2 performs outer product for lists.  We want 1-1
+  -- correspondence, so convert to list and zip.
+  let lrs  = toList rs
+      lrs' = toList rs'
+  sequence_ $ zipWith next (toList rs) (toList rs')
   return o
 
 -- Note: it might be possible to avoid 'signal' and 'next' in Seq, and
