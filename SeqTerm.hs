@@ -85,13 +85,13 @@ data R t = R { unR :: Op NodeNum }
 
 instance Seq.Seq M R where
 
+  constant (Seq.SInt _ v) = R $ Const v
+
   -- undriven signal
   signal _  = fmap R makeNode
   stype _   = return $ Seq.SInt Nothing 0
 
   -- driven nodes
-  constant (Seq.SInt _ v) = R $ Const v
-
   op1 o (R a) =
     fmap R $ driven $ Comb1 o a
 
