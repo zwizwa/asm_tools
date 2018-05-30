@@ -25,7 +25,7 @@ import Data.Map.Lazy (Map, (!), lookup, empty, insert, fromList)
 import qualified Data.Map as Map
 import Data.Bits
 import Data.Functor.Compose
-import Data.Functor.Apply
+-- import Data.Functor.Apply
 -- import Data.Functor.Rep
 
 
@@ -226,7 +226,7 @@ mem (wEn, wAddr, wData, rAddr) memState = do
 -- Couple memory access code to memory implementation.
 -- Multiple memories are contained in a functor, similar to fixReg.
 fixMem :: 
-  (Apply f, Traversable f) =>
+  (Applicative f, Traversable f) =>
   f SType ->
   (f (R S) -> M (f (R S, R S, R S, R S), o)) ->
   f MemState -> M (f MemState, o)
@@ -243,7 +243,7 @@ fixMem t user s = fixReg t comb where
     (i', x) <- user o
 
     -- Apply each memory's combinatorial network (i->o)
-    so' <- sequence $ mem <$> i' <.> s
+    so' <- sequence $ liftA2 mem i' s
     let s' = fmap fst so'
         o' = fmap snd so'
 

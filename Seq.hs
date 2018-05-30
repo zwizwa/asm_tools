@@ -26,7 +26,6 @@ module Seq where
 import Control.Applicative
 import Data.Foldable
 import Data.Traversable
-import Data.Functor.Apply
 
 -- Abstract tag for signal representation.
 data S = S
@@ -146,27 +145,24 @@ if' = op3 IF
 -- "tucking away" the registers.  This effectively computes the fixed
 -- point with register decoupling, defining a sequence.
 
--- Noe that using 'singal' and 'next' in the same function will avoid
+-- Noe that using 'signal' and 'next' in the same function will avoid
 -- the creation of undriven or multiply-driven signals.  This is
 -- preferred over using the low-level primitives directly.
 
 -- A meta-level Foldable is used to bundle registers.  Typically, a
 -- List will do.
 
-fixReg :: (Apply f, Traversable f, Seq m r) =>
+fixReg :: (Applicative f, Traversable f, Seq m r) =>
   f SType -> (f (r S) -> m (f (r S), o)) -> m o
 fixReg ts f = do
   rs <- sequence $ fmap signal ts
   (rs', o) <- f rs
-  sequence_ $ next <$> rs <.> rs'
+  sequence_ $ liftA2 next rs rs'
   return o
 
--- Note that this can only work properly when the applicative functor
--- is of the zipping kind.  Currently I do not know how to express
--- this without ruling out the useful ZipList.  Ideally, a module
--- would use its own functor to describe collections of registers.
-
-
+-- Note that the applicative functor needs to be pairwize.  How to
+-- express this?  If not, a run-time error is raised in case a
+-- cross-product causes multiple 'next' invocations.
 
   
 

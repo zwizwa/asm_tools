@@ -4,19 +4,20 @@ cabal-version: >= 1.18
 build-type: Simple
 license: BSD3
 
--- adjunctions: Data.Functor.Rep
+-- adjunctions:   Data.Functor.Rep
+-- semigroupoids: Data.Functor.Apply
 Library
-    build-depends: base, containers, mtl, free, semigroupoids
+    build-depends: base, containers, mtl, free
     build-depends: base
 
 Test-Suite test-pru
-    build-depends: base, containers, mtl, free, semigroupoids
+    build-depends: base, containers, mtl, free
     type:       exitcode-stdio-1.0
     main-is:    test-pru.hs
     build-depends: base
 
 Test-Suite test-seq
-    build-depends: base, containers, mtl, free, semigroupoids
+    build-depends: base, containers, mtl, free
     type:       exitcode-stdio-1.0
     main-is:    test-seq.hs
     build-depends: base

@@ -45,6 +45,7 @@ import Data.Map.Lazy (empty, foldrWithKey, insert)
 import qualified Data.Map.Lazy as Map
 import qualified Control.Applicative as Applicative
 import Control.Applicative (ZipList(..))
+-- import Data.Functor.Apply
 
 
   
