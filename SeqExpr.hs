@@ -41,22 +41,29 @@ newtype Expr n = Expr {unExpr :: Free Term' n}
 -- expressions inlined.
 inlined :: forall n. Ord n => [(n, Term (Op n))] -> [(n, Expr n)]
 inlined termBindings = exprBindings where
-  -- Wrapper used throughout
-  termBindings' = map (\(n,t) -> (n, Compose t)) termBindings  -- wrap
+  -- Dictionary.  Keep this unwrapped.
+  ref :: n -> Term (Op n)
+  ref = ((Map.fromList termBindings) !)
+
   -- Code will operate on nodes (NodeNum).  This renders to Term'
-  ref :: n -> Term' n
-  ref = ((Map.fromList termBindings') !)
   -- What to keep. Need to preserve order, so use a list.
   keep = map fst termBindings  -- FIXME
-  exprBindings = [(n, inlinedNode ref n) | n <- keep]
+  exprBindings = [(n, exprDef n) | n <- keep]  -- FIXME: cutuff 1? (*)
+  exprDef n = inlineNode ref n
 
-inlinedNode :: (n -> Term' n) -> n -> Expr n
-inlinedNode ref n = Expr $ unfold inl n where
+-- (*) Basically, it's guaranteed that there is at least one level, so
+-- fmap over the original term with Free wrappers.
+
+
+
+inlineNode :: (n -> Term (Op n)) -> n -> Expr n
+inlineNode ref n = Expr $ e where
+  e = unfold inl n
   inl n = em where
     t = ref n
     em = case t of
-      (Compose (Delay _)) -> Left n
-      _ -> Right t
+      (Delay _) -> Left n
+      _ -> Right $ Compose t
       
   
 
@@ -91,20 +98,20 @@ sexp e = str where
 mSexp' :: Show n => Expr n -> M' ()
 mSexp' (Expr e) = mSexp e
 
-mSexp (Pure n) = list "node" [tell $ show n]
+mSexp (Pure n) = tagged "node" [tell $ show n]
 mSexp (Free (Compose e)) = mTerm e
 
-mTerm Input           = do tell $ "<Input>"
-mTerm (Delay a)       = do tell $ "<Delay>"   ; mOp a
-mTerm (Connect a)     = do tell $ "<Connect>" ; mOp a
-mTerm (Comb1 _ a)     = do tell $ "<Comb1>"   ; mOp a
-mTerm (Comb2 _ a b)   = do tell $ "<Comb2>"   ; mOp a ; mOp b
-mTerm (Comb3 _ a b c) = do tell $ "<Comb3>"   ; mOp a ; mOp b ; mOp c
+mTerm Input           = tagged "input" []
+mTerm (Delay a)       = tagged "delay" [mOp a]
+mTerm (Connect a)     = tagged "connect" [mOp a]
+mTerm (Comb1 o a)     = tagged (show o) [mOp a]
+mTerm (Comb2 o a b)   = tagged (show o) [mOp a, mOp b]
+mTerm (Comb3 o a b c) = tagged (show o) [mOp a, mOp b, mOp c]
 
-mOp (Const v) = tell "<const>" -- list ["const", show v]
-mOp (Node n)  = do tell $ "<node>" ; mSexp n
+mOp (Const v) = tagged "const" [ tell $ show v]
+mOp (Node n)  = mSexp n
 
-list tag ms = do
+tagged tag ms = do
   tell "("
   tell tag
   sequence_ $ map ((tell " ") >>) ms
