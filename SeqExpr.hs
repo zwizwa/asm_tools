@@ -34,8 +34,9 @@ import Data.Functor.Compose
 
 
 type Term' = Compose Term Op
-newtype Expr n = Expr {unExpr :: Free Term' n}
-  deriving (Functor, Applicative, Monad)
+type Expr n = Free Term' n
+
+
 
 -- The main routine converts a flat dictionary to one that has
 -- expressions inlined.
@@ -49,7 +50,11 @@ inlined termBindings = exprBindings where
   -- What to keep. Need to preserve order, so use a list.
   keep = map fst termBindings  -- FIXME
   exprBindings = [(n, exprDef n) | n <- keep]  -- FIXME: cutuff 1? (*)
-  exprDef n = inlineNode ref n
+
+  -- exprDef n = liftF $ Compose $ ref n
+  exprDef = inlineNode ref
+  
+  -- exprDef n = (liftF $ ref n) >>= inlineNode ref
 
 -- (*) Basically, it's guaranteed that there is at least one level, so
 -- fmap over the original term with Free wrappers.
@@ -57,7 +62,7 @@ inlined termBindings = exprBindings where
 
 
 inlineNode :: (n -> Term (Op n)) -> n -> Expr n
-inlineNode ref n = Expr $ e where
+inlineNode ref n = e where
   e = unfold inl n
   inl n = em where
     t = ref n
@@ -81,22 +86,21 @@ sexp' bindings =
 
 -- This is "the other" monad.  Clean this up.
 -- It tags some formatting machinery to the Free monad.
-newtype M' t = M' { unM' :: WriterT String (ReaderT IndentLevel Expr) t } deriving
-  (Functor, Applicative, Monad,
-   MonadWriter String,
-   MonadReader IndentLevel)
+newtype M' t = M' { unM' :: WriterT String (ReaderT IndentLevel (Free Term')) t }
+  deriving (Functor, Applicative, Monad,
+            MonadWriter String,
+            MonadReader IndentLevel)
 type IndentLevel = Int
 
 -- FIXME: This took some type checker fight.  The idea is simpler, but
 -- the final solution is only obvious in retrospect.
 sexp :: Show n => Expr n -> String
 sexp e = str where
-  Expr (Pure ((), str)) = runReaderT (runWriterT (unM' $ mSexp' e)) 0
+  Pure ((), str) = runReaderT (runWriterT (unM' $ mSexp e)) 0
 
 
 -- Keep this wrapper: easier to express the types.
-mSexp' :: Show n => Expr n -> M' ()
-mSexp' (Expr e) = mSexp e
+mSexp :: Show n => Expr n -> M' ()
 
 mSexp (Pure n) = tagged "node" [tell $ show n]
 mSexp (Free (Compose e)) = mTerm e
