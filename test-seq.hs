@@ -68,11 +68,11 @@ main = do
   putStrLn "--- test_mem2"
   print $ take 10 $ test_mem2
 
-  -- putStrLn "--- test_hdl"
-  -- print_hdl test_hdl
+  putStrLn "--- test_hdl"
+  print_hdl test_hdl
 
-  -- putStrLn "--- test_hdl_sync"
-  -- print_hdl test_hdl_sync
+  putStrLn "--- test_hdl_sync"
+  print_hdl test_hdl_sync
 
   putStrLn "--- test_cpu_net"
   printSeqTerm $ test_cpu_net
@@ -97,11 +97,6 @@ printSeqTerm src = do
   putStrLn "-- inlined: "
   putStr $ SeqExpr.sexp' inl
 
-  -- let inlined = SeqTerm.inlined bindings
-  -- putStrLn "-- inlined: "
-  -- printl $ inlined
-  -- putStrLn "-- sexp: "
-  -- putStrLn $ SeqTerm.sexp' $ inlined
 
 
 printSeqEmu :: SeqEmu.M (SeqEmu.R S) -> IO ()
@@ -184,32 +179,33 @@ test_cpu_emu =  SeqEmu.traceIO [empty] m where
   m = SeqEmu.fixMem [(typ,typ)] CPU.cpu
 
 
--- -- MyHDL export needs some wrapping to specify module I/O structure.
--- -- SeqTerm has support for this.
--- test_hdl :: SeqTerm.M [SeqTerm.R S]
--- test_hdl = do
---   io@[i,o] <- SeqTerm.io 2
---   j  <- delay i
---   o' <- delay j  
---   connect o o'   -- allow direct output
---   return io
+-- MyHDL export needs some wrapping to specify module I/O structure.
+-- SeqTerm has support for this.
+test_hdl :: SeqTerm.M [SeqTerm.R S]
+test_hdl = do
+  io@[i,o] <- SeqTerm.io 2
+  j  <- delay i
+  o' <- delay j  
+  connect o o'   -- allow direct output
+  return io
 
--- test_hdl_sync :: SeqTerm.M [SeqTerm.R S]
--- test_hdl_sync = do
---   io@[i,o] <- SeqTerm.io 2
---   o' <- sync (SInt (Just 2) 0) i
---   connect o o'
---   return io
+test_hdl_sync :: SeqTerm.M [SeqTerm.R S]
+test_hdl_sync = do
+  io@[i,o] <- SeqTerm.io 2
+  o' <- sync (SInt (Just 2) 0) i
+  connect o o'
+  return io
 
--- print_hdl src = do
---   let (ports, bindings) = SeqTerm.compile src
---   putStrLn "-- ports: "
---   print ports
---   putStrLn "-- bindings: "
---   printl $ bindings
---   printl $ SeqTerm.inlined $ bindings
---   putStrLn "-- MyHDL: "
---   putStr $ MyHDL.gen (ports, bindings)
-
+print_hdl src = do
+  let (ports, bindings) = SeqTerm.compile src
+  putStrLn "-- ports: "
+  print ports
+  putStrLn "-- bindings: "
+  printl $ bindings
+  let inl = SeqExpr.inlined $ bindings
+  putStr $ SeqExpr.sexp' inl
+  -- putStrLn "-- MyHDL: "
+  -- putStr $ MyHDL.gen (ports, bindings)
+  return ()
   
 
