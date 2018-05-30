@@ -47,7 +47,7 @@ type InitVal = Int
 --    functions taking value inputs and returning values.
 --
 -- b) Registers are created using 'signal' and bound using 'next'.
---    For the library, a higher level 'regFix' is exposed which avoids
+--    For the library, a higher level 'fixReg' is exposed which avoids
 --    creating unbound or multiply-bound signals.
 
 
@@ -152,9 +152,9 @@ if' = op3 IF
 -- A meta-level Foldable is used to bundle registers.  Typically, a
 -- List will do.
 
-regFix :: (Traversable f, Seq m r) =>
+fixReg :: (Traversable f, Seq m r) =>
   f SType -> (f (r S) -> m (f (r S), o)) -> m o
-regFix ts f = do
+fixReg ts f = do
   rs <- sequence $ fmap signal ts
   (rs', o) <- f rs
   -- Note that liftA2 performs outer product for lists.  We want 1-1
@@ -165,7 +165,7 @@ regFix ts f = do
   return o
 
 -- Note: it might be possible to avoid 'signal' and 'next' in Seq, and
--- replace it with regFix.  Currently, the MyHDL uses it to bind
+-- replace it with fixReg.  Currently, the MyHDL uses it to bind
 -- outputs, but that can probably be solved differently.
 
 -- Can Num be implemented generically?

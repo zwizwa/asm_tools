@@ -77,9 +77,9 @@ main = do
   putStrLn "--- test_hdl_sync"
   print_hdl test_hdl_sync
 
-  putStrLn "--- test_regfix"
-  print $ take 10 $ test_regfix
-  printSeqTerm $ regfix2
+  putStrLn "--- test_fixReg"
+  print $ take 10 $ test_fixReg
+  printSeqTerm $ fixReg2
   
   putStrLn "--- test_cpu_net"
   printSeqTerm $ test_cpu_net
@@ -131,14 +131,14 @@ test_counter = SeqEmu.trace' $  do
   -- [] is a meta-language construct needed for trace
   return [c1, c2]
 
-regfix2 = do
+fixReg2 = do
   let t = SInt Nothing 0
-  regFix [t,t] $ \[a,b] -> do
+  fixReg [t,t] $ \[a,b] -> do
     a' <- add a 2
     b' <- add b 3
     return ([a',b'],[a,b])
 
-test_regfix = SeqEmu.trace' regfix2
+test_fixReg = SeqEmu.trace' fixReg2
 
 
 -- For testing, outputs need to be collected in lists.
@@ -164,7 +164,7 @@ dummy_mem [_] = do         -- memory's output registers
 test_mem :: [[Int]]
 test_mem = SeqEmu.traceState [empty] m where
   t = SInt Nothing 0
-  m = SeqEmu.fixMem [(t,t)] dummy_mem
+  m = SeqEmu.fixMem [t] dummy_mem
 
 
 -- After thinking a bit, I want this interface:
@@ -181,7 +181,7 @@ dummy_mem2 [mo1, mo2] = do
 
 test_mem2 = SeqEmu.traceState [empty, empty] m where
   t = SInt Nothing 0
-  m = SeqEmu.fixMem [(t,t),(t,t)] dummy_mem2
+  m = SeqEmu.fixMem [t,t] dummy_mem2
 
 -- Stub out what doesn't fit.  The idea is to find a way to gracefully
 -- have these two interpretations produce something useful: MyHDL code
@@ -190,9 +190,9 @@ test_cpu_net = do
   (Applicative.ZipList [(a,b,c,d)], o) <- CPU.cpu $ Applicative.ZipList [0]
   return $ o ++ [a,b,c,d]
 test_cpu_emu =  SeqEmu.traceState (Applicative.ZipList [mem]) m where
-  typ = SInt Nothing 0
-  m = SeqEmu.fixMem (Applicative.ZipList [(typ,typ)]) CPU.cpu
-  mem = Map.fromList $ [(n,n+1) | n <- [0..5]]
+  t = SInt Nothing 0
+  m = SeqEmu.fixMem (Applicative.ZipList [t]) CPU.cpu
+  mem = Map.fromList $ [(n,n+1) | n <- [0..2]]
 
 -- test_cpu_emu' =  SeqEmu.traceState mem m where
 --   typ = SInt Nothing 0

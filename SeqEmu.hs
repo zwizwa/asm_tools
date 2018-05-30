@@ -207,14 +207,10 @@ mem memState (wEn, wAddr, wData, rAddr) = do
   wData' <- val $ unR wData
   wEn'   <- val $ unR wEn
 
-  regs <- ask
-  
   let memState' =
         if wEn' == 0 then
           memState
         else
-          -- All regs set to 1?  How is that possible?
-          -- error $ show ([regs n | n <- [0..6]], memState)
           insert wAddr' wData' memState
           
   return (memState', rData)
@@ -223,47 +219,40 @@ mem memState (wEn, wAddr, wData, rAddr) = do
 
 
 -- Memory interfaces contained in a functor.
-fixMem ::
+fixMem :: 
   (Applicative f, Traversable f) =>
-  f (SType, SType) ->
+  f SType ->
   (f (R S) -> M (f (R S, R S, R S, R S), o)) ->
   f MemState -> M (f MemState, o)
-fixMem types memUser s = regFix types' comb where
-  -- Pack/unpack for memory input, output.  Represented as List, a way
-  -- to allow Compose to flatten the functor for regFix.
-  -- w: write, r:read, a: address, d: data
-  memIO (we,wa,wd,ra) rd = ZipList [we,wa,wd,ra,rd]
-  memI  (ZipList [we,wa,wd,ra,rd]) = (we,wa,wd,ra)
-  memO  (ZipList [we,wa,wd,ra,rd]) = rd
+fixMem t memUser s = fixReg t comb where
 
-  -- Register type spec has same shape as comb argument.
-  types' = Compose $ fmap (\(a, d) -> memIO (SInt (Just 1) 0, a, d, a) d) types
+  -- Below, we couple the usere's access code to the implementation of
+  -- the memory.  Input/Output are named from memory's perspecitive: o
+  -- is the read port data register.  The memory is implemented as a
+  -- combinatorial network to allow single cycle access.
+  comb o = do
 
-  comb (Compose regs) = do
-    -- Input/Output named from memory's perspecitive
-    let i = fmap memI regs
-        o = fmap memO regs
-    -- Apply each memory's combinatorial network (i->o)
-    so' <- sequence $ liftA2 mem s i
-    let s' = fmap fst so'
-        o' = fmap snd so'
     -- Apply user combinatorial network (o->i)
     -- x is just an output we pass along.
     (i', x) <- memUser o
+
+    -- Apply each memory's combinatorial network (i->o)
+    so' <- sequence $ liftA2 mem s i'
+    let s' = fmap fst so'
+        o' = fmap snd so'
     -- Pack
-    let regs' = liftA2 memIO i' o'
-    return (Compose regs', (s', x))
+    return (o', (s', x))
 
 
 -- ARCHIVE: Unary version used to derive the version above.
--- Similar to regFix: Patch the complement of the memory interface,
+-- Similar to fixReg: Patch the complement of the memory interface,
 -- creating the registers.  Allow a collection (Applicative,
 -- Traversable functor) of interfaces.
 -- fixMem' ::
 --   (SType, SType) ->
 --   (R S -> M ((R S, R S, R S, R S), o)) ->
 --   MemState -> M (MemState, o)
--- fixMem' t@(ta, td) memUser s = regFix types comb where
+-- fixMem' t@(ta, td) memUser s = fixReg types comb where
 --   types = [SInt (Just 1) 0, ta, td, ta, td]
 --   comb [we, wa, wd, ra, rd] = do
 --     ((we', wa', wd', ra'), x)  <- memUser rd
