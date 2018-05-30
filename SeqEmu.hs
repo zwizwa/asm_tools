@@ -32,13 +32,13 @@ newtype M t = M { unM :: ReaderT RegIn (State CompState) t } deriving
   (Functor, Applicative, Monad,
    MonadReader RegIn,
    MonadState CompState)
-type RegNum   = Int
-type ConstVal = Int
-type RegVal   = Int
-type RegType  = (Size, Int)
+type RegNum    = Int
+type ConstVal  = Int
+type RegVal    = Int
+type RegType   = (Size, RegVal)
 -- Keep these two separate
-type RegVals  = Map RegNum RegVal
-type RegTypes = Map RegNum RegType
+type RegVals   = Map RegNum RegVal
+type RegTypes  = Map RegNum RegType
 -- More abstract, allows probing
 type RegIn = RegNum -> RegVal
 type CompState = (RegNum, RegTypes, RegVals)
@@ -103,7 +103,6 @@ val' (Reg r) = do
   return ((sz, r0), v)
 styp = (fmap fst) . val'
 
-regval r regs = regs r
 
 
 sz Nothing a = a
@@ -172,8 +171,8 @@ reset m = s0 where
 -- program. Abstract user state is threaded explicitly in this
 -- function, which is simpler than extending the M state to contain
 -- the extra type parameter.
-traceIO :: io -> (io -> M (io, [R S])) -> [Bus]
-traceIO io0 mf = t io0 s0 where
+traceState :: io -> (io -> M (io, [R S])) -> [Bus]
+traceState io0 mf = t io0 s0 where
   s0 = reset (mf io0) -- probe with first state input
   t io s  = o : t io' s' where
     (s', (io', o)) = f s
@@ -182,36 +181,45 @@ traceIO io0 mf = t io0 s0 where
 -- Special case: Implement input via traceIO by using io to contain
 -- the input list.
 trace :: ([R S] -> M [R S]) -> [Bus] -> [Bus]
-trace mf is0 = traceIO is0 mf' where
+trace mf is0 = traceState is0 mf' where
   mf' (i:is) = do
     o <- mf [constant (SInt Nothing v) | v <- i]
     return (is, o)
 
 -- Version without external state
 trace' :: M [R S] -> [Bus]
-trace' m = traceIO () (\() -> do o <- m; return ((), o))
+trace' m = traceState () (\() -> do o <- m; return ((), o))
 
 
 -- Implement memory as a threaded computation.
 type MemState = Map RegNum RegVal
 type Mem = MemState -> (R S, R S, R S, R S) -> M (MemState, R S)
 mem :: Mem
-mem memState (wEn, R (Reg wAddr), wData, R (Reg rAddr)) = do
-               
+mem memState (wEn, wAddr, wData, rAddr) = do
+
   -- Read
-  let rData' = memState ! rAddr
+  rAddr' <- val $ unR rAddr 
+  let rData' = Map.findWithDefault 0 rAddr' memState
   (SInt data_s _) <- stype wData
   let rData = constant $ SInt data_s rData'
   -- Write
+  wAddr' <- val $ unR wAddr
   wData' <- val $ unR wData
   wEn'   <- val $ unR wEn
+
+  regs <- ask
+  
   let memState' =
-        if wEn' /= 0 then
-          insert wAddr wData' memState
-        else
+        if wEn' == 0 then
           memState
+        else
+          -- All regs set to 1?  How is that possible?
+          -- error $ show ([regs n | n <- [0..6]], memState)
+          insert wAddr' wData' memState
           
   return (memState', rData)
+
+-- regNo (R (Reg n)) = n
 
 
 -- Memory interfaces contained in a functor.
@@ -251,16 +259,16 @@ fixMem types memUser s = regFix types' comb where
 -- Similar to regFix: Patch the complement of the memory interface,
 -- creating the registers.  Allow a collection (Applicative,
 -- Traversable functor) of interfaces.
--- fixMem ::
+-- fixMem' ::
 --   (SType, SType) ->
---   (R S -> M ((R S, R S, R S), o)) ->
+--   (R S -> M ((R S, R S, R S, R S), o)) ->
 --   MemState -> M (MemState, o)
--- fixMem t@(ta, td) memUser s = regFix types comb where
---   types = [ta, td, ta, td]
---   comb [ra, rd, wa, wd] = do
---     ((ra', wa', wd'), o) <- memUser rd
---     (s', rd')            <- mem s (ra, wa, wd)
---     return ([ra', rd', wa', wd'], (s',o))
+-- fixMem' t@(ta, td) memUser s = regFix types comb where
+--   types = [SInt (Just 1) 0, ta, td, ta, td]
+--   comb [we, wa, wd, ra, rd] = do
+--     ((we', wa', wd', ra'), x)  <- memUser rd
+--     (s', rd')                  <- mem s (we, wa, wd, ra)
+--     return ([we', wa', wd', ra', rd'], (s',x))
 
 
 -- For constants.

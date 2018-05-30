@@ -36,11 +36,12 @@ import Control.Monad
 -- extended to more abstract operations.
 
 
-cpu :: Seq m r => [r S] -> m ([(r S, r S, r S, r S)], [r S])
+cpu :: forall m r. (Num (r S), Seq m r) => [r S] -> m ([(r S, r S, r S, r S)], [r S])
 cpu [i] = do
-  -- Constants.
-  let z = int 0
-      ip = int 0 -- Instruction pointer.
+  c <- counter (SInt Nothing 0)
+  c' <- reg (SInt Nothing 0) $ \x -> add x 2
+  let ip = i -- pointer chaser
   -- Instruction memory input registers.  Write is disabled.
-  let iregs = (0,z,z,ip)
-  return $ ([iregs],[])
+  let iregs = (0,0,0,ip)
+  return $ ([iregs],[i,c,c'])
+

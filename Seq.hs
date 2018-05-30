@@ -151,7 +151,7 @@ if' = op3 IF
 -- A meta-level applicative functor is used to bundle registers.
 -- Typically, a List will do.
 regFix ::
-  (Applicative f, Traversable f, Seq m r) =>
+  forall f m r o. (Applicative f, Traversable f, Seq m r) =>
   f SType -> (f (r S) -> m (f (r S), o)) -> m o
 regFix ts f = do
   rs <- sequence $ fmap signal ts

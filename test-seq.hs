@@ -42,7 +42,8 @@ import qualified SeqEmu
 import qualified MyHDL
 import qualified CPU
 import Data.Map.Lazy (empty, foldrWithKey, insert)
-
+import qualified Data.Map.Lazy as Map
+import qualified Control.Applicative as Applicative
 
 
 -- Let's start with a counter
@@ -68,11 +69,6 @@ main = do
   putStrLn "--- test_mem2"
   print $ take 10 $ test_mem2
 
-  putStrLn "--- test_cpu_net"
-  printSeqTerm $ test_cpu_net
-  putStrLn "--- test_cpu_emu"
-  print $ take 10 $ test_cpu_emu
-
   putStrLn "--- counter SeqTerm.sexp'"
   printSeqTerm $ do c <- counter $ SInt Nothing 2 ; return [c]
 
@@ -81,6 +77,16 @@ main = do
 
   putStrLn "--- test_hdl_sync"
   print_hdl test_hdl_sync
+
+  putStrLn "--- test_cpu_net"
+  printSeqTerm $ test_cpu_net
+  
+  putStrLn "--- test_cpu_emu"
+  print $ take 10 $ test_cpu_emu
+
+  putStrLn "--- test_regfix"
+  print $ take 10 $ test_regfix
+  printSeqTerm $ regfix2
 
 
 
@@ -120,11 +126,21 @@ square = do
   c <- counter $ SInt (Just 3) 0
   slr c (int 2) >>= bit
 
-test_counter = SeqEmu.trace' $ do
+test_counter = SeqEmu.trace' $  do
   c1 <- counter $ SInt (Just 1) 0
   c2 <- counter $ SInt (Just 3) 0
   -- [] is a meta-language construct needed for trace
   return [c1, c2]
+
+regfix2 = do
+  let t = SInt Nothing 0
+  regFix [t,t] $ \[a,b] -> do
+    a' <- add a 2
+    b' <- add b 3
+    return ([a',b'],[a,b])
+
+test_regfix = SeqEmu.trace' regfix2
+
 
 -- For testing, outputs need to be collected in lists.
 test_edge = SeqEmu.trace' $ do
@@ -147,7 +163,7 @@ dummy_mem [_] = do         -- memory's output registers
   return ([(z, z, z, z)],  -- memory's input registers
           [])              -- test program empty output bus
 test_mem :: [[Int]]
-test_mem = SeqEmu.traceIO [empty] m where
+test_mem = SeqEmu.traceState [empty] m where
   t = SInt Nothing 0
   m = SeqEmu.fixMem [(t,t)] dummy_mem
 
@@ -164,7 +180,7 @@ dummy_mem2 [mo1, mo2] = do
   ([mi2],_) <- dummy_mem [mo2]
   return $ ([mi1, mi2],[])
 
-test_mem2 = SeqEmu.traceIO [empty, empty] m where
+test_mem2 = SeqEmu.traceState [empty, empty] m where
   t = SInt Nothing 0
   m = SeqEmu.fixMem [(t,t),(t,t)] dummy_mem2
 
@@ -174,10 +190,17 @@ test_mem2 = SeqEmu.traceIO [empty, empty] m where
 test_cpu_net = do
   ([(a,b,c,d)], o) <- CPU.cpu [0]
   return $ o ++ [a,b,c,d]
-test_cpu_emu =  SeqEmu.traceIO [empty] m where
+test_cpu_emu =  SeqEmu.traceState [mem] m where
   typ = SInt Nothing 0
   m = SeqEmu.fixMem [(typ,typ)] CPU.cpu
+  mem = Map.fromList $ [(n,n+1) | n <- [0..5]]
 
+-- test_cpu_emu' =  SeqEmu.traceState mem m where
+--   typ = SInt Nothing 0
+--   m = SeqEmu.fixMem' (typ,typ) $ \memo -> do
+--     ([memi],o) <- CPU.cpu [memo]
+--     return (memi, o)
+--   mem = Map.fromList $ [(n,n+1) | n <- [0..5]]
 
 -- MyHDL export needs some wrapping to specify module I/O structure.
 -- SeqTerm has support for this.
