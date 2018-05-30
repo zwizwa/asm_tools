@@ -15,6 +15,7 @@ module CPU where
 import Seq
 import SeqLib
 import Control.Monad
+import Control.Applicative
 
 -- How to begin?  Memory seems to be the most important component.
 -- I'm going to target the iCE40, which has a bunch of individual
@@ -36,12 +37,13 @@ import Control.Monad
 -- extended to more abstract operations.
 
 
-cpu :: forall m r. (Num (r S), Seq m r) => [r S] -> m ([(r S, r S, r S, r S)], [r S])
-cpu [i] = do
-  c <- counter (SInt Nothing 0)
-  c' <- reg (SInt Nothing 0) $ \x -> add x 2
+cpu :: forall m r. (Num (r S), Seq m r) =>
+  ZipList (r S) -> m (ZipList (r S, r S, r S, r S), [r S])
+cpu (ZipList [i]) = do
+  --c <- counter (SInt Nothing 0)
+  --c' <- reg (SInt Nothing 0) $ \x -> add x 2
   let ip = i -- pointer chaser
   -- Instruction memory input registers.  Write is disabled.
-  let iregs = (0,0,0,ip)
-  return $ ([iregs],[i,c,c'])
+  let iregs = (0, 0, 0, ip)
+  return $ (ZipList [iregs],[i])
 

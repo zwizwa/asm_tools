@@ -232,9 +232,9 @@ fixMem types memUser s = regFix types' comb where
   -- Pack/unpack for memory input, output.  Represented as List, a way
   -- to allow Compose to flatten the functor for regFix.
   -- w: write, r:read, a: address, d: data
-  memIO (we,wa,wd,ra) rd = [we,wa,wd,ra,rd]
-  memI  [we,wa,wd,ra,rd] = (we,wa,wd,ra)
-  memO  [we,wa,wd,ra,rd] = rd
+  memIO (we,wa,wd,ra) rd = ZipList [we,wa,wd,ra,rd]
+  memI  (ZipList [we,wa,wd,ra,rd]) = (we,wa,wd,ra)
+  memO  (ZipList [we,wa,wd,ra,rd]) = rd
 
   -- Register type spec has same shape as comb argument.
   types' = Compose $ fmap (\(a, d) -> memIO (SInt (Just 1) 0, a, d, a) d) types

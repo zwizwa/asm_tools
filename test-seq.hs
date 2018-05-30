@@ -45,7 +45,6 @@ import Data.Map.Lazy (empty, foldrWithKey, insert)
 import qualified Data.Map.Lazy as Map
 import qualified Control.Applicative as Applicative
 
-
 -- Let's start with a counter
 
 
@@ -78,15 +77,15 @@ main = do
   putStrLn "--- test_hdl_sync"
   print_hdl test_hdl_sync
 
+  putStrLn "--- test_regfix"
+  print $ take 10 $ test_regfix
+  printSeqTerm $ regfix2
+  
   putStrLn "--- test_cpu_net"
   printSeqTerm $ test_cpu_net
   
   putStrLn "--- test_cpu_emu"
   print $ take 10 $ test_cpu_emu
-
-  putStrLn "--- test_regfix"
-  print $ take 10 $ test_regfix
-  printSeqTerm $ regfix2
 
 
 
@@ -188,11 +187,11 @@ test_mem2 = SeqEmu.traceState [empty, empty] m where
 -- have these two interpretations produce something useful: MyHDL code
 -- and an emulation test.
 test_cpu_net = do
-  ([(a,b,c,d)], o) <- CPU.cpu [0]
+  (Applicative.ZipList [(a,b,c,d)], o) <- CPU.cpu $ Applicative.ZipList [0]
   return $ o ++ [a,b,c,d]
-test_cpu_emu =  SeqEmu.traceState [mem] m where
+test_cpu_emu =  SeqEmu.traceState (Applicative.ZipList [mem]) m where
   typ = SInt Nothing 0
-  m = SeqEmu.fixMem [(typ,typ)] CPU.cpu
+  m = SeqEmu.fixMem (Applicative.ZipList [(typ,typ)]) CPU.cpu
   mem = Map.fromList $ [(n,n+1) | n <- [0..5]]
 
 -- test_cpu_emu' =  SeqEmu.traceState mem m where
