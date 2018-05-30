@@ -33,9 +33,9 @@ import Data.Functor.Compose
 
 
 
-type Term' = Compose Term Op
-type Expr n = Free Term' n
 
+type Term' = Compose Term Op  -- Functor
+type Expr n = Free Term' n    -- Monad
 
 
 -- The main routine converts a flat dictionary to one that has
@@ -51,19 +51,16 @@ inlined termBindings = exprBindings where
   keep = map fst termBindings  -- FIXME
   exprBindings = [(n, exprDef n) | n <- keep]  -- FIXME: cutuff 1? (*)
 
-  -- exprDef n = liftF $ Compose $ ref n
-  exprDef = inlineNode ref
+  -- exprDef = inlineNode ref              -- 0 levels
+  -- exprDef n = liftF $ Compose $ ref n   -- 1 level
+  exprDef n = (liftF $ Compose $ ref n) >>= inlineNode ref  -- 1 + inline
   
   -- exprDef n = (liftF $ ref n) >>= inlineNode ref
-
--- (*) Basically, it's guaranteed that there is at least one level, so
--- fmap over the original term with Free wrappers.
 
 
 
 inlineNode :: (n -> Term (Op n)) -> n -> Expr n
-inlineNode ref n = e where
-  e = unfold inl n
+inlineNode ref n = nfold inl n where
   inl n = em where
     t = ref n
     em = case t of
