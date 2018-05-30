@@ -44,8 +44,7 @@ import qualified CPU
 import Data.Map.Lazy (empty, foldrWithKey, insert)
 import qualified Data.Map.Lazy as Map
 import qualified Control.Applicative as Applicative
-
--- Let's start with a counter
+import Control.Applicative (ZipList(..))
 
 
   
@@ -157,14 +156,14 @@ test_sync = SeqEmu.trace f is where
   
 
 -- Bare bones memFix test.
-dummy_mem [_] = do         -- memory's output registers
+dummy_mem (Applicative.ZipList [_]) = do       -- memory's output
   let z = int 0
-  return ([(z, z, z, z)],  -- memory's input registers
-          [])              -- test program empty output bus
+  return (ZipList [(z, z, z, z)],  -- memory's input
+          [])                 -- test program empty output bus
 test_mem :: [[Int]]
-test_mem = SeqEmu.traceState [empty] m where
+test_mem = SeqEmu.traceState (ZipList [empty]) m where
   t = SInt Nothing 0
-  m = SeqEmu.fixMem [t] dummy_mem
+  m = SeqEmu.fixMem (ZipList [t]) dummy_mem
 
 
 -- After thinking a bit, I want this interface:
@@ -174,24 +173,24 @@ test_mem = SeqEmu.traceState [empty] m where
 --
 -- b) Below uses a list, but allow a generic functor
   
-dummy_mem2 [mo1, mo2] = do
-  ([mi1],_) <- dummy_mem [mo1]
-  ([mi2],_) <- dummy_mem [mo2]
-  return $ ([mi1, mi2],[])
+dummy_mem2 (ZipList [mo1, mo2]) = do
+  (ZipList [mi1],_) <- dummy_mem $ ZipList [mo1]
+  (ZipList [mi2],_) <- dummy_mem $ ZipList [mo2]
+  return $ (ZipList [mi1, mi2],[])
 
-test_mem2 = SeqEmu.traceState [empty, empty] m where
+test_mem2 = SeqEmu.traceState (ZipList [empty, empty]) m where
   t = SInt Nothing 0
-  m = SeqEmu.fixMem [t,t] dummy_mem2
+  m = SeqEmu.fixMem (ZipList [t,t]) dummy_mem2
 
 -- Stub out what doesn't fit.  The idea is to find a way to gracefully
 -- have these two interpretations produce something useful: MyHDL code
 -- and an emulation test.
 test_cpu_net = do
-  (Applicative.ZipList [(a,b,c,d)], o) <- CPU.cpu $ Applicative.ZipList [0]
+  (ZipList [(a,b,c,d)], o) <- CPU.cpu $ ZipList [0]
   return $ o ++ [a,b,c,d]
-test_cpu_emu =  SeqEmu.traceState (Applicative.ZipList [mem]) m where
+test_cpu_emu =  SeqEmu.traceState (ZipList [mem]) m where
   t = SInt Nothing 0
-  m = SeqEmu.fixMem (Applicative.ZipList [t]) CPU.cpu
+  m = SeqEmu.fixMem (ZipList [t]) CPU.cpu
   mem = Map.fromList $ [(n,n+1) | n <- [0..2]]
 
 -- test_cpu_emu' =  SeqEmu.traceState mem m where
