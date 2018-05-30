@@ -52,8 +52,8 @@ data Term t
 -- Constants are not monadic values in Seq (tried that, and decided
 -- it's too annoying), so the operand type Op has two clauses:
 data Op t
-  = Node t          -- reference to output node: combinatorial or register (Delay)
-  | Const ConstVal  -- inlined constants
+  = Node  t         -- node reference
+  | Const ConstVal  -- inlined constant
   deriving (Show, Functor, Foldable)
 
 

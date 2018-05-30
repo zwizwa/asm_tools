@@ -39,7 +39,7 @@ import SeqLib
 import qualified SeqTerm
 import qualified SeqExpr
 import qualified SeqEmu
--- import qualified MyHDL
+import qualified MyHDL
 import qualified CPU
 import Data.Map.Lazy (empty, foldrWithKey, insert)
 
@@ -68,20 +68,20 @@ main = do
   putStrLn "--- test_mem2"
   print $ take 10 $ test_mem2
 
+  putStrLn "--- test_cpu_net"
+  printSeqTerm $ test_cpu_net
+  putStrLn "--- test_cpu_emu"
+  print $ take 10 $ test_cpu_emu
+
+  putStrLn "--- counter SeqTerm.sexp'"
+  printSeqTerm $ do c <- counter $ SInt Nothing 2 ; return [c]
+
   putStrLn "--- test_hdl"
   print_hdl test_hdl
 
   putStrLn "--- test_hdl_sync"
   print_hdl test_hdl_sync
 
-  putStrLn "--- test_cpu_net"
-  printSeqTerm $ test_cpu_net
-  putStrLn "--- test_cpu_emu"
-  print $ take 10 $ test_cpu_emu
-
-
-  putStrLn "--- counter SeqTerm.sexp'"
-  printSeqTerm $ do c <- counter $ SInt Nothing 2 ; return [c]
 
 
 
@@ -204,8 +204,8 @@ print_hdl src = do
   printl $ bindings
   let inl = SeqExpr.inlined $ bindings
   putStr $ SeqExpr.sexp' inl
-  -- putStrLn "-- MyHDL: "
-  -- putStr $ MyHDL.gen (ports, bindings)
+  putStrLn "-- MyHDL: "
+  putStr $ MyHDL.gen ports inl
   return ()
   
 

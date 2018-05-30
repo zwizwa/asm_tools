@@ -1,11 +1,5 @@
 -- Expression language.
 
--- MyHDL doesn't need to be in ANF, so provide a mechanism to
--- partially restore to an expression language.
-
--- The canonical way to do this uses a the Free monad of the functor.
--- This took a day of typechecker fighting to finally understand, then simplify.
-
 -- {-# LANGUAGE FlexibleInstances #-}
 -- {-# LANGUAGE TypeSynonymInstances #-}
 -- {-# LANGUAGE MultiParamTypeClasses #-}
@@ -32,10 +26,21 @@ import qualified Data.Set as Set
 import Data.Functor.Compose
 
 
+-- MyHDL doesn't need to be in ANF, so provide a mechanism to
+-- partially restore to an expression language for nodes that are not
+-- shared.
 
+-- The canonical way to do this uses the Free monad of the functor.
+-- This took a day of typechecker fighting to finally understand, then
+-- simplify.
 
 type Term' = Compose Term Op  -- the Functor
 type Expr n = Free Term' n    -- the Monad
+
+-- These are horrible constructor names.  To read the code, note that:
+-- a) Compose is just a wrapper to flatten Term and Op functors
+-- b) Free essentially means "inline"
+
 
 
 -- The main routine converts a flat dictionary to one that has
@@ -66,6 +71,7 @@ inlined termBindings = [(n, exprDef n) | n <- keep] where
   -- Reference count
   rc :: n -> Int
   rc n = Map.findWithDefault 0 n rcMap
+  terms :: [Term (Op n)]
   rcMap = foldr count Map.empty $ Compose $ Compose $ terms
   count n = Map.insertWith (+) n 1
 
@@ -83,8 +89,7 @@ sexp' :: Show n => [(n, Expr n)] -> String
 sexp' bindings =
   concat [concat [show n, " <- ", sexp e, "\n"] | (n, e) <- bindings]
 
--- This is "the other" monad.  Clean this up.
--- It tags some formatting machinery to the Free monad.
+-- Pile some formatting machinery on top of the Free monad.
 newtype PrintExpr t = PrintExpr {
   runPrintExpr :: WriterT String (ReaderT IndentLevel (Free Term')) t
   }
@@ -99,7 +104,6 @@ sexp e = str where
   Pure ((), str) = runReaderT (runWriterT (runPrintExpr $ mSexp e)) 0
 
 
--- Keep this wrapper: easier to express the types.
 mSexp :: Show n => Expr n -> PrintExpr ()
 
 mSexp (Pure n) = tagged "NODE" [tell $ show n]
@@ -121,9 +125,7 @@ tagged tag ms = do
   sequence_ $ map ((tell " ") >>) ms
   tell ")"
 
-
-
-
+-- Indentation not used.
 line str = do
   n <- ask
   sequence_ $ [tell "\t" | _ <- [1..n]]
