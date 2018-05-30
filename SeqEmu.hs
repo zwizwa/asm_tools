@@ -21,7 +21,7 @@ import Control.Monad.State
 import Control.Monad.Writer
 import Control.Monad.Reader
 import Control.Applicative
-import Data.Map.Lazy (Map, (!), lookup, empty, insert, insertWith, fromList)
+import Data.Map.Lazy (Map, (!), lookup, empty, insert, fromList)
 import qualified Data.Map as Map
 import Data.Bits
 import Data.Functor.Compose
@@ -92,6 +92,11 @@ instance Seq M R where
     
   -- this is an artefact necessary for MyHDL non-registered outputs
   connect _ _ = error "SeqEmu does not support connect"
+
+
+-- This can happen due to []'s applicative functor.
+insert' tag = Map.insertWithKey err where
+  err k v v_old = error $ tag ++ "double insert: (k,v,v_old)=" ++ show (k,v,v_old)
     
 -- Value dereference & meta information.
 val  = (fmap snd) . val'
@@ -202,11 +207,11 @@ mem memState (wEn, wAddr, wData, rAddr) = do
   let rData' = Map.findWithDefault 0 rAddr' memState
   (SInt data_s _) <- stype wData
   let rData = constant $ SInt data_s rData'
+  
   -- Write
   wAddr' <- val $ unR wAddr
   wData' <- val $ unR wData
   wEn'   <- val $ unR wEn
-
   let memState' =
         if wEn' == 0 then
           memState
@@ -215,49 +220,33 @@ mem memState (wEn, wAddr, wData, rAddr) = do
           
   return (memState', rData)
 
--- regNo (R (Reg n)) = n
 
-
--- Memory interfaces contained in a functor.
+-- Couple memory access code to memory implementation.
+-- Multiple memories are contained in a functor, similar to fixReg.
 fixMem :: 
   (Applicative f, Traversable f) =>
   f SType ->
   (f (R S) -> M (f (R S, R S, R S, R S), o)) ->
   f MemState -> M (f MemState, o)
-fixMem t memUser s = fixReg t comb where
+fixMem t user s = fixReg t comb where
 
-  -- Below, we couple the usere's access code to the implementation of
-  -- the memory.  Input/Output are named from memory's perspecitive: o
-  -- is the read port data register.  The memory is implemented as a
-  -- combinatorial network to allow single cycle access.
+  -- Input/Output are named from memory's perspecitive: o is the
+  -- memory's read port data register.  The memory enable, address and
+  -- data input is implemented as a combinatorial network to provide
+  -- single cycle read acces.
   comb o = do
 
     -- Apply user combinatorial network (o->i)
-    -- x is just an output we pass along.
-    (i', x) <- memUser o
+    -- x is just an output we pass along for generic threading.
+    (i', x) <- user o
 
     -- Apply each memory's combinatorial network (i->o)
     so' <- sequence $ liftA2 mem s i'
     let s' = fmap fst so'
         o' = fmap snd so'
-    -- Pack
+
     return (o', (s', x))
 
-
--- ARCHIVE: Unary version used to derive the version above.
--- Similar to fixReg: Patch the complement of the memory interface,
--- creating the registers.  Allow a collection (Applicative,
--- Traversable functor) of interfaces.
--- fixMem' ::
---   (SType, SType) ->
---   (R S -> M ((R S, R S, R S, R S), o)) ->
---   MemState -> M (MemState, o)
--- fixMem' t@(ta, td) memUser s = fixReg types comb where
---   types = [SInt (Just 1) 0, ta, td, ta, td]
---   comb [we, wa, wd, ra, rd] = do
---     ((we', wa', wd', ra'), x)  <- memUser rd
---     (s', rd')                  <- mem s (we, wa, wd, ra)
---     return ([we', wa', wd', ra', rd'], (s',x))
 
 
 -- For constants.
