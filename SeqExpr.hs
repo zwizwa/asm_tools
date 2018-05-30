@@ -42,49 +42,42 @@ type Expr n = Free Term' n    -- the Monad
 -- expressions inlined.
 inlined :: forall n. Ord n => [(n, Term (Op n))] -> [(n, Expr n)]
 inlined termBindings = [(n, exprDef n) | n <- keep] where
-  
-  keep = filter (not . inlinable') $ map fst termBindings
-  exprDef n = (liftF $ Compose $ ref n)
-              >>= inlineNode inlinable' ref -- 1 level + inline
+
+  keep = filter (not . inlinable) nodes
+  exprDef n = (liftF $ Compose $ ref n)  -- unpack 1 level
+              >>= unfold inline          -- plus inline
+
+  inline :: n -> Either n (Term' n)
+  inline n = case inlinable n of
+               False -> Left n
+               True  -> Right $ Compose $ ref n
+
+  inlinable n = 
+    case ref n of
+      (Delay _) -> False      -- inlining Delay would create loops
+      Input     -> False      -- keep external refernces as nodes
+      _         -> 1 == rc n  -- rc > 1 would lead to code duplication
   
   -- Term dictionary.
   ref :: n -> Term (Op n)
   ref = ((Map.fromList termBindings) !)
+  (nodes, terms) = unzip termBindings
 
-  rc = refcount $ map snd termBindings
-  inlinable' = inlinable rc ref
-
-inlineNode :: (n -> Bool) -> (n -> Term (Op n)) -> n -> Expr n
-inlineNode inlinable ref n = unfold inline n where
-  inline n = 
-    case inlinable n of
-      False -> Left n
-      True  -> Right $ Compose $ ref n
-
-inlinable :: (n -> Int) -> (n -> Term (Op n)) -> n -> Bool
-inlinable rc ref n = 
-  case ref n of
-    (Delay _) -> False
-    Input     -> False
-    _         -> 1 == rc n
-      
-refcount :: Ord n => [Term (Op n)] -> (n -> Int)
-refcount terms n = Map.findWithDefault 0 n map where
-  -- Flatten functors to foldr down to nodes.
-  map = foldr count Map.empty $ Compose $ Compose $ terms
+  -- Reference count
+  rc :: n -> Int
+  rc n = Map.findWithDefault 0 n rcMap
+  rcMap = foldr count Map.empty $ Compose $ Compose $ terms
   count n = Map.insertWith (+) n 1
 
 
 
-  
 
--- There was an error about Show1 I didn't understand:
+  
+-- Show gives this error:
 -- No instance for (Data.Functor.Classes.Show1 SeqTerm.Term)
 
--- So I'm taking the detour to implement a printer explicitly.
-
--- Generic s-expression printer.  Serves as a template for other
--- generators.
+-- So implement a printer.  Generic s-expression printer.  Serves as a
+-- template for other generators using writer monad.
 
 sexp' :: Show n => [(n, Expr n)] -> String
 sexp' bindings =
@@ -92,33 +85,34 @@ sexp' bindings =
 
 -- This is "the other" monad.  Clean this up.
 -- It tags some formatting machinery to the Free monad.
-newtype M' t = M' { unM' :: WriterT String (ReaderT IndentLevel (Free Term')) t }
+newtype PrintExpr t = PrintExpr {
+  runPrintExpr :: WriterT String (ReaderT IndentLevel (Free Term')) t
+  }
   deriving (Functor, Applicative, Monad,
             MonadWriter String,
             MonadReader IndentLevel)
 type IndentLevel = Int
 
--- FIXME: This took some type checker fight.  The idea is simpler, but
--- the final solution is only obvious in retrospect.
+
 sexp :: Show n => Expr n -> String
 sexp e = str where
-  Pure ((), str) = runReaderT (runWriterT (unM' $ mSexp e)) 0
+  Pure ((), str) = runReaderT (runWriterT (runPrintExpr $ mSexp e)) 0
 
 
 -- Keep this wrapper: easier to express the types.
-mSexp :: Show n => Expr n -> M' ()
+mSexp :: Show n => Expr n -> PrintExpr ()
 
-mSexp (Pure n) = tagged "node" [tell $ show n]
+mSexp (Pure n) = tagged "NODE" [tell $ show n]
 mSexp (Free (Compose e)) = mTerm e
 
-mTerm Input           = tagged "input" []
-mTerm (Delay a)       = tagged "delay" [mOp a]
-mTerm (Connect a)     = tagged "connect" [mOp a]
-mTerm (Comb1 o a)     = tagged (show o) [mOp a]
-mTerm (Comb2 o a b)   = tagged (show o) [mOp a, mOp b]
-mTerm (Comb3 o a b c) = tagged (show o) [mOp a, mOp b, mOp c]
+mTerm Input           = tagged "INPUT"   []
+mTerm (Delay a)       = tagged "DELAY"   [mOp a]
+mTerm (Connect a)     = tagged "CONNECT" [mOp a]
+mTerm (Comb1 o a)     = tagged (show o)  [mOp a]
+mTerm (Comb2 o a b)   = tagged (show o)  [mOp a, mOp b]
+mTerm (Comb3 o a b c) = tagged (show o)  [mOp a, mOp b, mOp c]
 
-mOp (Const v) = tagged "const" [ tell $ show v]
+mOp (Const v) = tagged "CONST" [ tell $ show v]
 mOp (Node n)  = mSexp n
 
 tagged tag ms = do
@@ -136,77 +130,4 @@ line str = do
   tell $ str ++ "\n"
 
   
--- mSexp v = do
---   -- tell "<dummy>"
---   tell $ show v
---   return ()
-
-
-
--- -- Converting from "basic template" to "recursive type" is exactly
--- -- what the Free monad does:
--- newtype Term' n = Term (Op n)
--- type Expr n  = Free Term' n
-
--- -- We can inline everything except:
--- -- a) Delay nodes would create cycles
--- -- b) Input nodes are external
--- -- c) Nodes with Fanout>1 would create duplicate code
-
--- inlinable :: Ord n => Map n (Term (Op n)) -> n -> Bool
--- inlinable terms = pred where
---   rc = refcount $ Map.elems terms
---   pred n =
---     case terms ! n of
---       (Delay _) -> False
---       Input     -> False
---       _         -> 1 == rc n
-
--- -- Utility wrapper: folds over all nodes in a list of terms.
--- newtype Terms n = Terms [Term (Op n)] deriving Foldable
-
--- refcount :: Ord n => [Term (Op n)] -> (n -> Int)
--- refcount terms n = Map.findWithDefault 0 n map where
---   map = foldr count Map.empty $ Terms $ terms
---   count n = Map.insertWith (+) n 1
-
--- -- Inline node based on predicate.
--- inlineP :: (n -> Bool) -> (n -> Term (Op n)) -> n -> Expr n
--- inlineP p ref = inl where
---   inl (Term' (Node n)) = case (p n) of
---     -- liftM :: Term n -> Expr n
---     True  -> liftF (ref n) >>= inl
---     False -> return n
-
--- -- Bindings as list, to keep order for code gen.
--- inlined :: Ord n => [(n, Term' n)] -> [(n, Expr n)]
--- inlined bindings = map outBinding keep where
-
---   keep = filter (not . inlinable') nodes
---   outBinding n = (n, Free $ fmap inline $ ref n)
-  
---   inline = inlineP inlinable' ref
---   inlinable' = inlinable bindings'
---   ref = (bindings' !)
---   bindings' = Map.fromList bindings
---   nodes = map fst bindings
-
-
-
-
--- -- Generic s-expression printer.  Serves as a template for other
--- -- generators.
-
--- sexp' :: Show n => [(n, Expr (Op n))] -> String
--- sexp' bindings =
---   concat [(list [show n, sexp e]) ++ "\n" | (n, e) <- bindings]
-
--- parens s = "(" ++ s ++ ")"
--- spaced = intercalate " "
--- list l = parens $ spaced l
-
--- sexp :: Show n => Expr (Op n) -> String
--- sexp = show
-
-
 
