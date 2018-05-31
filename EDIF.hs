@@ -1,36 +1,49 @@
 -- EDIF netlist parser
 
--- This is set up to evolve.
--- Currently only supports what's needed for application.
+-- EDIF is s-expression based.  Racket's default reader could not deal
+-- with some special characters, so I'm just doing everything in
+-- Haskell.  This is set up to evolve.  Currently only supports what's
+-- needed for application.
+
+-- LICENSE: This is derived from https://en.wikibooks.org/wiki/Write_Yourself_a_Scheme_in_48_Hours
+-- FIXME: currently assuming that's ok
+
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module EDIF where
 
--- EDIF is s-expression based.  Racket's default reader could not deal
--- with some special characters, so using a modification of:
--- https://en.wikibooks.org/wiki/Write_Yourself_a_Scheme_in_48_Hours
 
 import Text.ParserCombinators.Parsec
 import Text.Parsec.Error
 import Control.Monad
+import Control.Monad.Writer
+import Control.Monad.Reader
 import Control.Monad.Free
 import System.IO
 
 -- Use Free to provide the nesting structure in terms of ordinary
--- lists.  No need to get fancy.
-type EDIF = Free [] Leaf
+-- lists.  No need to get fancy.  Use generic names "Tree" and "Leaf"
+-- since they are "the" tree and leaf.
+
+type Tree = Free []
+type EDIF = Tree Leaf
 
 -- This allows focus on leaf nodes.  
 data Leaf =
-   -- Here, we have some generic placeholders for information we don't
-   -- need yet.
-  Atom String
-  | Number Integer
-  | String String
+  -- Placeholders for information we don't use.
+  Atom String | Number Integer | String String
+  -- EDIF-specific nodes
+  | Ref Integer
+  | X
   deriving Show
+
 
 -- Leaf constructor from Strings found by parser.
 leaf :: String -> Leaf
-leaf = Atom
+--leaf ('&':str) = Ref $ read str  -- doesn't work yet
+leaf str = Atom str
 
 
 list' :: [EDIF] -> EDIF
@@ -46,43 +59,26 @@ spaces1 = skipMany1 space
 
 parseString :: Parser EDIF
 parseString = do
-                char '"'
-                x <- many (noneOf "\"")
-                char '"'
-                return $ Pure $ String x
-
+  char '"'
+  x <- many (noneOf "\"")
+  char '"'
+  return $ Pure $ String x
                 
 parseAtom :: Parser EDIF
 parseAtom = do 
-              first <- letter <|> symbol
-              rest <- many (letter <|> digit <|> symbol)
-              return $ Pure $ leaf $ first:rest
+  first <- letter <|> symbol
+  rest <- many (letter <|> digit <|> symbol)
+  return $ Pure $ leaf $ first:rest
 
 parseNumber :: Parser EDIF
 parseNumber = liftM (Pure . Number . read) $ many1 digit               
                          
-parseList :: Parser EDIF
-parseList = liftM list' $ sepEndBy parseExpr spaces1
-
-parseQuoted :: Parser EDIF
-parseQuoted = do
-    char '\''
-    x <- parseExpr
-    return $ list' [Pure $ Atom "quote", x]
-
--- This is where leading spaces are consumed.  Trailing spaces can be
--- left.
 parseExpr :: Parser EDIF
-parseExpr = spaces >> parseExpr'
-parseExpr' =
-  parseAtom
-  <|> parseString
-  <|> parseNumber
-  <|> parseQuoted
-  <|> do char '(' ; x <- parseList
-         spaces ; char ')'
-         return x
+parseExpr  = spaces >> (parseAtom <|> parseString <|> parseNumber <|> parseList)
+parseList  = do char '(' ; x <- parseExprs ; spaces ; char ')' ; return x
+parseExprs = liftM list' $ sepEndBy parseExpr spaces1
 
+readEDIF :: String -> String -> Either String EDIF
 readEDIF fileName contents =
   case parse parseExpr "lisp" contents of
     Right parsed -> Right parsed
@@ -100,3 +96,76 @@ readFile fileName = do
   h <- openFile fileName ReadMode
   hSetEncoding h latin1
   hGetContents h
+
+
+
+-- How to work with a tree represented as a Free monad?
+-- I've settled on iterM using a writer monad, and a reader containing the path.
+type M w t = WriterT w (Reader [Leaf]) t
+
+down tag' mf nodes = local (++ [tag']) $ sequence_ [mf n | n <- nodes]
+
+-- Prettyprinter is a special case:
+type ShowM t = M String t
+type IndentLevel = Int
+
+show' :: EDIF -> String
+show' edif = w where
+  (_,w) = runReader (runWriterT $ iterM showNode edif) []
+
+tabs :: Int -> ShowM ()
+tabs n = sequence_ $ [tell "  " | _ <- [1..n]]
+
+line :: Leaf -> ShowM ()
+line node = do
+  path <- ask
+  tabs $ length path
+  tell $ showLeaf node ++ "\n"
+
+-- line node = do
+--   path <- ask
+--   tell $ showLeafs path ++ showLeaf node ++ "\n"
+
+showLeafs as = concat $ map showLeaf as
+showLeaf (Atom str) = str ++ "/"
+showLeaf a = show a
+
+showNode :: [ShowM Leaf] -> ShowM Leaf
+showNode (tag : nodes) = do
+  tag' <- tag
+  line tag'
+  -- local (++ [tag']) $ sequence_ [do n' <- n ; line n' | n <- nodes]
+  -- down tag' (\n -> do n' <- n ; line n') nodes
+  down tag' (>>= line) nodes
+  return tag'
+
+-- EXAMPLE: cut off at view by not executing the monad components
+-- descend :: [M Leaf] -> M Leaf
+-- descend (tag : nodes) = do
+--   tag' <- tag
+--   line tag'
+--   case tag' of
+--     Atom "view" ->
+--       -- Stop here
+--       return ()
+--     _ ->
+--       local (++ [tag']) $ sequence_ [do n' <- n ; line n' | n <- nodes]
+--   return tag'
+
+ 
+-- List all nets based on a filter on path.
+-- type M' t = M String t
+-- filterJoined :: [M' Leaf] -> M' Leaf
+-- filterJoined (tag : nodes) = do
+--   p <- ask
+--   let p' = map (\(Atom tag) -> tag) p
+--   case p of
+--     "edif":"library":"cell":"view":"contents":"Net":"Joined":"PortRef":sub ->
+--       tell $ show tag' ++ "\n"
+--                 -- &6/
+--                 -- InstanceRef/
+--                 --   P3/
+--                 -- InstanceRef/
+--     _ ->
+--       return ()
+--   tag
