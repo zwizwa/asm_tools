@@ -5,6 +5,9 @@
 
 import qualified EDIF as EDIF
 import System.Environment
+import Data.Foldable
+
+
 -- import Seq
 -- import SeqLib
 -- import qualified SeqTerm
@@ -24,12 +27,14 @@ main = getArgs >>= main'
 main' [] = do
   main' ["/tmp/test.edif"]
 main' [fileName] = do
-  contents <- readFile fileName
+  contents <- EDIF.readFile fileName
   case EDIF.readEDIF fileName contents of
     Left errorMsg ->
       putStrLn errorMsg
     Right edif ->
-      print edif
-    
+      -- List structure seems fine.  Focus on atoms.
+      -- print edif
+      printl $ toList edif
+      
 
--- List structure seems fine.  Focus on atoms.
+printl es = sequence_ $ map print es
