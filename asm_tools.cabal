@@ -7,17 +7,17 @@ license: BSD3
 -- adjunctions:   Data.Functor.Rep
 -- semigroupoids: Data.Functor.Apply
 Library
-    build-depends: base, containers, mtl, free
+    build-depends: base, containers, mtl, free, keys
     build-depends: base
 
 Test-Suite test-pru
-    build-depends: base, containers, mtl, free
+    build-depends: base, containers, mtl, free, keys
     type:       exitcode-stdio-1.0
     main-is:    test-pru.hs
     build-depends: base
 
 Test-Suite test-seq
-    build-depends: base, containers, mtl, free
+    build-depends: base, containers, mtl, free, keys
     type:       exitcode-stdio-1.0
     main-is:    test-seq.hs
     build-depends: base

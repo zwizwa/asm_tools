@@ -10,6 +10,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveTraversable #-}
 
 module CPU where
 import Seq
@@ -36,14 +38,24 @@ import Control.Applicative
 -- not necessarily general purpose CPUs.  This can then be gradually
 -- extended to more abstract operations.
 
+-- So memory was not easy to implement.  Got side tracked by a couple
+-- of things.  Eventually, the implementation is quite simple though.
+-- Next is to make a simple sequencer for a deterministic language
+-- that can generate a sequence.
+
+-- data In s = In { i :: s } deriving (Functor, Foldable, Traversable)
+
 
 cpu :: forall m r. (Num (r S), Seq m r) =>
-  ZipList (r S) -> m (ZipList (r S, r S, r S, r S), [r S])
-cpu (ZipList [i]) = do
+  [(r S)] -> m ([(r S, r S, r S, r S)], [r S])
+cpu ([i]) = do
+
+  -- dispatch the instruction
+  
   --c <- counter (SInt Nothing 0)
   --c' <- reg (SInt Nothing 0) $ \x -> add x 2
   let ip = i -- pointer chaser
   -- Instruction memory input registers.  Write is disabled.
   let iregs = (0, 0, 0, ip)
-  return $ (ZipList [iregs],[i])
+  return $ ([iregs],[i])
 

@@ -26,6 +26,7 @@ module Seq where
 import Control.Applicative
 import Data.Foldable
 import Data.Traversable
+import qualified Data.Key as Key
 
 -- Abstract tag for signal representation.
 data S = S
@@ -152,12 +153,12 @@ if' = op3 IF
 -- A meta-level Foldable is used to bundle registers.  Typically, a
 -- List will do.
 
-fixReg :: (Applicative f, Traversable f, Seq m r) =>
+fixReg :: (Key.Zip f, Traversable f, Seq m r) =>
   f SType -> (f (r S) -> m (f (r S), o)) -> m o
 fixReg ts f = do
   rs <- sequence $ fmap signal ts
   (rs', o) <- f rs
-  sequence_ $ liftA2 next rs rs'
+  sequence_ $ Key.zipWith next rs rs'
   return o
 
 -- Note that the applicative functor needs to be pairwize.  How to
