@@ -4,8 +4,13 @@ cabal-version: >= 1.18
 build-type: Simple
 license: BSD3
 
+-- No longer needed. Data.Keys.Zip was what I was looking for.
 -- adjunctions:   Data.Functor.Rep
 -- semigroupoids: Data.Functor.Apply
+
+-- pretty-simple, text, 
+
+
 Library
     build-depends: base, containers, mtl, free, keys
     build-depends: base
@@ -20,4 +25,10 @@ Test-Suite test-seq
     build-depends: base, containers, mtl, free, keys
     type:       exitcode-stdio-1.0
     main-is:    test-seq.hs
+    build-depends: base
+
+Test-Suite test-edif
+    build-depends: base, parsec, sqlite-simple
+    type:       exitcode-stdio-1.0
+    main-is:    test-edif.hs
     build-depends: base

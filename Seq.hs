@@ -26,7 +26,8 @@ module Seq where
 import Control.Applicative
 import Data.Foldable
 import Data.Traversable
-import qualified Data.Key as Key
+import Data.Key hiding((!))
+import Prelude hiding(zipWith)
 
 -- Abstract tag for signal representation.
 data S = S
@@ -150,22 +151,18 @@ if' = op3 IF
 -- the creation of undriven or multiply-driven signals.  This is
 -- preferred over using the low-level primitives directly.
 
--- A meta-level Foldable is used to bundle registers.  Typically, a
--- List will do.
+-- A meta-level container is used to bundle registers.  Typically, a
+-- List will do, but the interface is generic.  Note: liftA2 doesn't
+-- do the right thing on lists.
 
-fixReg :: (Key.Zip f, Traversable f, Seq m r) =>
+fixReg :: (Zip f, Traversable f, Seq m r) =>
   f SType -> (f (r S) -> m (f (r S), o)) -> m o
 fixReg ts f = do
   rs <- sequence $ fmap signal ts
   (rs', o) <- f rs
-  sequence_ $ Key.zipWith next rs rs'
+  sequence_ $ zipWith next rs rs'
   return o
 
--- Note that the applicative functor needs to be pairwize.  How to
--- express this?  If not, a run-time error is raised in case a
--- cross-product causes multiple 'next' invocations.
-
-  
 
 -- Note: it might be possible to avoid 'signal' and 'next' in Seq, and
 -- replace it with fixReg.  Currently, the MyHDL uses it to bind
