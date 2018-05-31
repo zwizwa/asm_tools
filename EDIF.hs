@@ -9,13 +9,18 @@ module EDIF where
 import Text.ParserCombinators.Parsec
 import Text.Parsec.Error
 import Control.Monad
+import Control.Monad.Free
 
-data LispVal = Atom String
-             | List [LispVal]
-             | Number Integer
-             | String String
-             | Bool Bool
+data Leaf = Atom   String
+          | Number Integer
+          | String String
+          | Bool   Bool
   deriving Show
+
+type EDIF = Free [] Leaf
+
+list' :: [EDIF] -> EDIF
+list' = Free
 
 
 symbol :: Parser Char
@@ -25,42 +30,40 @@ symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
 spaces1 :: Parser ()
 spaces1 = skipMany1 space
 
-parseString :: Parser LispVal
+parseString :: Parser EDIF
 parseString = do
                 char '"'
                 x <- many (noneOf "\"")
                 char '"'
-                return $ String x
+                return $ Pure $ String x
 
                 
-parseAtom :: Parser LispVal
+parseAtom :: Parser EDIF
 parseAtom = do 
               first <- letter <|> symbol
               rest <- many (letter <|> digit <|> symbol)
               let atom = first:rest
-              return $ case atom of 
-                         "#t" -> Bool True
-                         "#f" -> Bool False
-                         _    -> Atom atom
+              return $ Pure $
+                case atom of 
+                  "#t" -> Bool True
+                  "#f" -> Bool False
+                  _    -> Atom atom
 
-parseNumber :: Parser LispVal
-parseNumber = liftM (Number . read) $ many1 digit               
+parseNumber :: Parser EDIF
+parseNumber = liftM (Pure . Number . read) $ many1 digit               
                          
-parseList :: Parser LispVal
-parseList = liftM List $ sepEndBy parseExpr listSep
+parseList :: Parser EDIF
+parseList = liftM list' $ sepEndBy parseExpr spaces1
 
-listSep = spaces1
-
-
-parseQuoted :: Parser LispVal
+parseQuoted :: Parser EDIF
 parseQuoted = do
     char '\''
     x <- parseExpr
-    return $ List [Atom "quote", x]
+    return $ list' [Pure $ Atom "quote", x]
 
 -- This is where leading spaces are consumed.  Trailing spaces can be
 -- left.
-parseExpr :: Parser LispVal
+parseExpr :: Parser EDIF
 parseExpr = spaces >> parseExpr'
 parseExpr' =
   parseAtom

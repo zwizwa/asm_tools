@@ -28,7 +28,7 @@ Test-Suite test-seq
     build-depends: base
 
 Test-Suite test-edif
-    build-depends: base, parsec, sqlite-simple
+    build-depends: base, parsec, sqlite-simple, free
     type:       exitcode-stdio-1.0
     main-is:    test-edif.hs
     build-depends: base

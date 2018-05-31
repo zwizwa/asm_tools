@@ -32,3 +32,4 @@ main' [fileName] = do
       print edif
     
 
+-- List structure seems fine.  Focus on atoms.
