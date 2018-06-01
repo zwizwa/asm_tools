@@ -35,7 +35,8 @@ main' [fileName] = do
       -- List structure seems fine.  Focus on atoms.
       -- print edif
       -- printl $ toList edif
-      putStr $ EDIF.show' edif
+      -- putStr $ EDIF.show' edif
+      putStr $ EDIF.table edif
       
 
 printl es = sequence_ $ map print es

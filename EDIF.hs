@@ -11,6 +11,9 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveFunctor #-}
 
 module EDIF where
 
@@ -103,15 +106,18 @@ readFile fileName = do
 -- I've settled on iterM using a writer monad, and a reader containing the path.
 type M w t = WriterT w (Reader [Leaf]) t
 
+
 down tag' mf nodes = local (++ [tag']) $ sequence_ [mf n | n <- nodes]
 
 -- Prettyprinter is a special case:
-type ShowM t = M String t
+newtype ShowM t = ShowM { runShowM :: M String t }
+  deriving (Functor, Applicative, Monad, MonadReader [Leaf], MonadWriter String)
+  
 type IndentLevel = Int
 
 show' :: EDIF -> String
 show' edif = w where
-  (_,w) = runReader (runWriterT $ iterM showNode edif) []
+  (_,w) = runReader (runWriterT $ runShowM $ iterM showNode $ edif) []
 
 tabs :: Int -> ShowM ()
 tabs n = sequence_ $ [tell "  " | _ <- [1..n]]
@@ -154,18 +160,28 @@ showNode (tag : nodes) = do
 
  
 -- List all nets based on a filter on path.
--- type M' t = M String t
--- filterJoined :: [M' Leaf] -> M' Leaf
--- filterJoined (tag : nodes) = do
---   p <- ask
---   let p' = map (\(Atom tag) -> tag) p
---   case p of
---     "edif":"library":"cell":"view":"contents":"Net":"Joined":"PortRef":sub ->
---       tell $ show tag' ++ "\n"
---                 -- &6/
---                 -- InstanceRef/
---                 --   P3/
---                 -- InstanceRef/
---     _ ->
---       return ()
---   tag
+newtype TableM t = TableM { runTableM :: M String t }
+  deriving (Functor, Applicative, Monad, MonadReader [Leaf], MonadWriter String)
+
+
+table edif = w where
+  (_,w) = runReader (runWriterT $ runTableM $ iterM filterJoined $ edif) []
+
+filterJoined :: [TableM Leaf] -> TableM Leaf
+filterJoined (tag : nodes) = do
+  p <- ask
+  tag' <- tag
+  let p' = map (\(Atom tag) -> tag) p
+  case p' of
+    "edif":"library":"cell":"view":"contents":"Net":"Joined":"PortRef":sub ->
+      tell $ show tag' ++ "\n"
+                -- &6/
+                -- InstanceRef/
+                --   P3/
+                -- InstanceRef/
+    _ ->
+      return ()
+  down tag' (>>= (\_ -> return ())) nodes
+  tag
+
+-- tomorrow..
