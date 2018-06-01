@@ -26,16 +26,10 @@ import Control.Monad.Reader
 import Control.Monad.Free
 import System.IO
 
--- Use Free to provide the nesting structure in terms of ordinary
--- lists.  No need to get fancy.  Use generic names "Tree" and "Leaf"
--- since they are "the" tree and leaf.
-
-type Tree = Free []
-type EDIF = Tree Leaf
-
--- FIXME: The s-expressions can be further constrainted to have only
--- Atom tags.  See 'down' below.
-
+-- Use Free to provide the nesting structure.  Use generic names
+-- "Leaf" and "Rec" since they are "the" leaf structure and tree
+-- recursion structure.
+type EDIF = Free Rec Leaf
 
 -- This allows focus on leaf nodes.  
 data Leaf =
@@ -46,15 +40,15 @@ data Leaf =
   | X
   deriving Show
 
+-- With the only constraint on recursive nodes that there is at least
+-- a tag node to make paths.
+data Rec t = Rec t [t] deriving Functor
 
 -- Leaf constructor from Strings found by parser.
 leaf :: String -> Leaf
 --leaf ('&':str) = Ref $ read str  -- doesn't work yet
 leaf str = Atom str
 
-
-list' :: [EDIF] -> EDIF
-list' = Free
 
 -- Parser
 
@@ -83,7 +77,11 @@ parseNumber = liftM (Pure . Number . read) $ many1 digit
 parseExpr :: Parser EDIF
 parseExpr  = spaces >> (parseAtom <|> parseString <|> parseNumber <|> parseList)
 parseList  = do char '(' ; x <- parseExprs ; spaces ; char ')' ; return x
-parseExprs = liftM list' $ sepEndBy parseExpr spaces1
+parseExprs = liftM struct $ sepEndBy parseExpr spaces1
+
+-- FIXME: handle this deconstruction in parseList
+struct :: [EDIF] -> EDIF
+struct (tag:args) = Free $ Rec tag args 
 
 readEDIF :: String -> String -> Either String EDIF
 readEDIF fileName contents =
@@ -118,7 +116,7 @@ runPathM m = w where
   (_,w) = runReader (runWriterT $ unPathM $ m) []
 
 -- FIXME: Abstract this further.
-down mf (tag : nodes) = do
+down mf (Rec tag nodes) = do
   tag' <- tag
   mf tag'
   local (++ [tag']) $ sequence_ [n >>= mf | n <- nodes]
@@ -146,7 +144,7 @@ showLeafs as = concat $ map showLeaf as
 showLeaf (Atom str) = str ++ "/"
 showLeaf a = show a
 
-showNode :: [ShowM Leaf] -> ShowM Leaf
+showNode :: Rec (ShowM Leaf) -> ShowM Leaf
 showNode mNodes = do
   -- local (++ [tag']) $ sequence_ [do n' <- n ; line n' | n <- nodes]
   -- down tag' (\n -> do n' <- n ; line n') nodes
@@ -171,7 +169,7 @@ type TableM = PathM String
 table :: EDIF -> String
 table edif = runPathM $ iterM filterJoined edif
 
-filterJoined :: [TableM Leaf] -> TableM Leaf
+filterJoined :: Rec (TableM Leaf) -> TableM Leaf
 filterJoined nodes = down fm nodes where
   fm _ = do
     path <- ask
@@ -187,3 +185,7 @@ filterJoined nodes = down fm nodes where
         return ()
 
 -- tomorrow..
+
+-- Parameterize the functor with a tag type that can be used to
+-- construct paths as [tag].
+
