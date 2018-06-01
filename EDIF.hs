@@ -33,6 +33,10 @@ import System.IO
 type Tree = Free []
 type EDIF = Tree Leaf
 
+-- FIXME: The s-expressions can be further constrainted to have only
+-- Atom tags.  See 'down' below.
+
+
 -- This allows focus on leaf nodes.  
 data Leaf =
   -- Placeholders for information we don't use.
@@ -114,7 +118,11 @@ runPathM m = w where
   (_,w) = runReader (runWriterT $ unPathM $ m) []
 
 -- FIXME: Abstract this further.
-down tag' mf nodes = local (++ [tag']) $ sequence_ [mf n | n <- nodes]
+down mf (tag : nodes) = do
+  tag' <- tag
+  mf tag'
+  local (++ [tag']) $ sequence_ [n >>= mf | n <- nodes]
+  return tag'
 
 -- Prettyprinter as a special case.
 type ShowM = PathM String
@@ -139,12 +147,10 @@ showLeaf (Atom str) = str ++ "/"
 showLeaf a = show a
 
 showNode :: [ShowM Leaf] -> ShowM Leaf
-showNode (tag : nodes) = do
-  tag' <- tag
-  line tag'
+showNode mNodes = do
   -- local (++ [tag']) $ sequence_ [do n' <- n ; line n' | n <- nodes]
   -- down tag' (\n -> do n' <- n ; line n') nodes
-  down tag' (>>= line) nodes
+  tag' <- down line mNodes
   return tag'
 
 -- EXAMPLE: cut off at view by not executing the monad components
@@ -166,20 +172,18 @@ table :: EDIF -> String
 table edif = runPathM $ iterM filterJoined edif
 
 filterJoined :: [TableM Leaf] -> TableM Leaf
-filterJoined (tag : nodes) = do
-  p <- ask
-  tag' <- tag
-  let p' = map (\(Atom tag) -> tag) p
-  case p' of
-    "edif":"library":"cell":"view":"contents":"Net":"Joined":"PortRef":sub ->
-      tell $ show tag' ++ "\n"
-                -- &6/
-                -- InstanceRef/
-                --   P3/
-                -- InstanceRef/
-    _ ->
-      return ()
-  down tag' (>>= (\_ -> return ())) nodes
-  tag
+filterJoined nodes = down fm nodes where
+  fm _ = do
+    path <- ask
+    let path' = map (\(Atom str) -> str) path
+    case path' of
+      "edif":"library":"cell":"view":"contents":"Net":"Joined":"PortRef":sub ->
+        tell $ show path ++ "\n"
+        -- &6/
+        -- InstanceRef/
+        --   P3/
+        -- InstanceRef/
+      _ ->
+        return ()
 
 -- tomorrow..
