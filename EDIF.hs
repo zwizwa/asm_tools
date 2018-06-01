@@ -104,20 +104,22 @@ readFile fileName = do
 
 -- How to work with a tree represented as a Free monad?
 -- I've settled on iterM using a writer monad, and a reader containing the path.
-type M w t = WriterT w (Reader [Leaf]) t
 
 
+-- List all nets based on a filter on path.
+newtype PathM w t = PathM { unPathM :: WriterT w (Reader [Leaf]) t }
+  deriving (Functor, Applicative, Monad, MonadReader [Leaf], MonadWriter w)
+
+runPathM m = w where
+  (_,w) = runReader (runWriterT $ unPathM $ m) []
+
+-- FIXME: Abstract this further.
 down tag' mf nodes = local (++ [tag']) $ sequence_ [mf n | n <- nodes]
 
--- Prettyprinter is a special case:
-newtype ShowM t = ShowM { runShowM :: M String t }
-  deriving (Functor, Applicative, Monad, MonadReader [Leaf], MonadWriter String)
-  
-type IndentLevel = Int
-
+-- Prettyprinter as a special case.
+type ShowM = PathM String
 show' :: EDIF -> String
-show' edif = w where
-  (_,w) = runReader (runWriterT $ runShowM $ iterM showNode $ edif) []
+show' edif = runPathM $ iterM showNode $ edif
 
 tabs :: Int -> ShowM ()
 tabs n = sequence_ $ [tell "  " | _ <- [1..n]]
@@ -159,13 +161,9 @@ showNode (tag : nodes) = do
 --   return tag'
 
  
--- List all nets based on a filter on path.
-newtype TableM t = TableM { runTableM :: M String t }
-  deriving (Functor, Applicative, Monad, MonadReader [Leaf], MonadWriter String)
-
-
-table edif = w where
-  (_,w) = runReader (runWriterT $ runTableM $ iterM filterJoined $ edif) []
+type TableM = PathM String
+table :: EDIF -> String
+table edif = runPathM $ iterM filterJoined edif
 
 filterJoined :: [TableM Leaf] -> TableM Leaf
 filterJoined (tag : nodes) = do
