@@ -76,12 +76,13 @@ parseNumber = liftM (Pure . Number . read) $ many1 digit
                          
 parseExpr :: Parser EDIF
 parseExpr  = spaces >> (parseAtom <|> parseString <|> parseNumber <|> parseList)
-parseList  = do char '(' ; x <- parseExprs ; spaces ; char ')' ; return x
-parseExprs = liftM struct $ sepEndBy parseExpr spaces1
+parseList  = do
+  char '(' ;
+  tag <- parseExpr
+  args <- sepEndBy parseExpr spaces1
+  spaces ; char ')'
+  return $ Free $ Rec tag args
 
--- FIXME: handle this deconstruction in parseList
-struct :: [EDIF] -> EDIF
-struct (tag:args) = Free $ Rec tag args 
 
 readEDIF :: String -> String -> Either String EDIF
 readEDIF fileName contents =
