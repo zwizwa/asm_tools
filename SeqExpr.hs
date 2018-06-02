@@ -91,7 +91,7 @@ sexp' bindings =
 
 -- Pile some formatting machinery on top of the Free monad.
 newtype PrintExpr t = PrintExpr {
-  runPrintExpr :: WriterT String (ReaderT IndentLevel (Free Term')) t
+  runPrintExpr :: WriterT String (Reader IndentLevel) t
   }
   deriving (Functor, Applicative, Monad,
             MonadWriter String,
@@ -101,7 +101,7 @@ type IndentLevel = Int
 
 sexp :: Show n => Expr n -> String
 sexp e = str where
-  Pure ((), str) = runReaderT (runWriterT (runPrintExpr $ mSexp e)) 0
+  ((), str) = runReader (runWriterT (runPrintExpr $ mSexp e)) 0
 
 
 mSexp :: Show n => Expr n -> PrintExpr ()

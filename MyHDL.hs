@@ -26,9 +26,9 @@ import qualified Data.Set as Set
 import qualified Data.Map.Strict as Map
 import Data.Functor.Compose
 
--- Pile some formatting machinery on top of the Free monad.
+
 newtype PrintMyHDL t = PrintExpr {
-  runPrintMyHDL :: StateT BlockState (WriterT String (ReaderT IndentLevel (Free Term'))) t
+  runPrintMyHDL :: StateT BlockState (WriterT String (Reader IndentLevel)) t
   }
   deriving (Functor, Applicative, Monad,
             MonadWriter String,
@@ -42,8 +42,8 @@ data Mode = None | Seq | Comb deriving Eq
 gen :: (Eq n, Show n) => [Op n] -> [(n, Expr n)] -> String
 gen ports bindings = str where
   m = mGen ports bindings
-  Pure (((), mode), str) =
-    runReaderT (runWriterT (runStateT (runPrintMyHDL m) (0, None))) 0
+  (((), mode), str) =
+    runReader (runWriterT (runStateT (runPrintMyHDL m) (0, None))) 0
 
 mGen :: (Eq n, Show n) => [Op n] -> [(n, Expr n)] -> PrintMyHDL ()
 mGen ports bindings = do
