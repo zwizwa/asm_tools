@@ -9,6 +9,7 @@ import Data.Foldable
 import Control.Monad.Free
 import Data.Map.Strict(Map)
 import qualified Data.Map.Strict as Map
+import Data.Tuple
 
 -- import Seq
 -- import SeqLib
@@ -35,13 +36,15 @@ main' [fileName] = do
       putStrLn errorMsg
     Right edif ->
       -- printl $ map noTags $ mapToList $ EDIF.paths edif
-      -- printl $ mapToList $ EDIF.paths edif
-      print $ map nodeName $ libraries edif
+      -- print $ map nodeName $ libraries edif
+      -- printl $ map swap $ mapToList $ EDIF.paths edif
+      printl $ EDIF.netlist edif
 
 noTags (p, a) = (map snd p, a)
 
 mapToList :: Map k v -> [(k, v)]
 mapToList = Map.foldrWithKey f [] where f k v t = (k,v):t
-      
+
+                                        
 
 printl es = sequence_ $ map print es
