@@ -7,6 +7,8 @@ import EDIF
 import System.Environment
 import Data.Foldable
 import Control.Monad.Free
+import Data.Map.Strict(Map)
+import qualified Data.Map.Strict as Map
 
 -- import Seq
 -- import SeqLib
@@ -38,6 +40,10 @@ main' [fileName] = do
       -- putStr $ EDIF.show' edif
       -- printl $ EDIF.paths [Edif,Library,Cell,View,Contents] edif
       printl $ toList $ EDIF.rels edif
+
+
+mapToList :: Map k v -> [(k, v)]
+mapToList = Map.foldrWithKey f [] where f k v t = (k,v):t
       
 
 printl es = sequence_ $ map print es

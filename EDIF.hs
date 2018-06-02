@@ -28,6 +28,8 @@ import Control.Monad.Free
 import System.IO
 import Data.Set(Set)
 import qualified Data.Set as Set
+import Data.Map.Strict(Map)
+import qualified Data.Map.Strict as Map
 
 -- Use Free to provide the nesting structure.  Use generic names
 -- "Leaf" and "Node" since they are "the" leaf structure and tree
@@ -36,15 +38,15 @@ type EDIF = Free Node Leaf
 
 -- This allows focus on leaf nodes.  
 data Leaf =
+  -- Generic leaf node.
+  L String | N Int
   -- EDIF-specific nodes
-  Edif
-  | Library | Cell | View | Contents 
-  | Instance | Property
-  | Net | Joined | PortRef | InstanceRef
-  | ViewRef | NetListView | CellRef
-  | Interface | Port
-  -- Generic nodes
-  | Atom String | Number Integer | String String
+  -- | Edif
+  -- | Library | Cell | View | Contents 
+  -- | Instance | Property
+  -- | Net | Joined | PortRef | InstanceRef
+  -- | ViewRef | NetListView | CellRef
+  -- | Interface | Port
 
   deriving (Show, Eq, Ord)
 
@@ -55,24 +57,24 @@ data Node t = Node t [t] deriving Functor
 -- Leaf constructor from Strings found by parser.
 leaf :: String -> Leaf
 --leaf ('&':str) = Ref $ read str  -- doesn't work yet
-leaf "edif" = Edif
-leaf "library" = Library
-leaf "cell" = Cell
-leaf "view" = View
-leaf "contents" = Contents
-leaf "Net" = Net
-leaf "Joined" = Joined
-leaf "PortRef" = PortRef
-leaf "InstanceRef" = InstanceRef
-leaf "Instance" = Instance
-leaf "Property" = Property
-leaf "viewRef" = ViewRef
-leaf "cellRef" = CellRef
-leaf "NetListView" = NetListView
-leaf "interface" = Interface
-leaf "port" = Port
+-- leaf "edif" = Edif
+-- leaf "library" = Library
+-- leaf "cell" = Cell
+-- leaf "view" = View
+-- leaf "contents" = Contents
+-- leaf "Net" = Net
+-- leaf "Joined" = Joined
+-- leaf "PortRef" = PortRef
+-- leaf "InstanceRef" = InstanceRef
+-- leaf "Instance" = Instance
+-- leaf "Property" = Property
+-- leaf "viewRef" = ViewRef
+-- leaf "cellRef" = CellRef
+-- leaf "NetListView" = NetListView
+-- leaf "interface" = Interface
+-- leaf "port" = Port
 -- Other, currently unused.
-leaf str = Atom str
+leaf str = L str
 
 
 -- Parser
@@ -88,7 +90,8 @@ parseString = do
   char '"'
   x <- many (noneOf "\"")
   char '"'
-  return $ Pure $ String x
+  -- Not necessary to distinguish from Atom
+  return $ Pure $ L x
                 
 parseAtom :: Parser EDIF
 parseAtom = do 
@@ -97,10 +100,10 @@ parseAtom = do
   return $ Pure $ leaf $ first:rest
 
 parseNumber :: Parser EDIF
-parseNumber = liftM (Pure . Number . read) $ many1 digit               
-                         
+parseNumber = liftM (Pure . N . read) $ many1 digit               
+
 parseExpr :: Parser EDIF
-parseExpr  = spaces >> (parseAtom <|> parseString <|> parseNumber <|> parseList)
+parseExpr  = spaces >> (parseAtom <|> parseNumber <|> parseString <|> parseList)
 parseList  = do
   char '(' ;
   tag <- parseExpr
@@ -168,81 +171,63 @@ line node = do
   tabs $ length path
   tell $ showLeaf node ++ "\n"
 
--- line node = do
---   path <- ask
---   tell $ showLeafs path ++ showLeaf node ++ "\n"
-
 showLeafs as = concat $ map showLeaf as
-showLeaf (Atom str) = str ++ "/"
-showLeaf a = show a
+showLeaf (L str) = str ++ "/"
+-- showLeaf a = show a
 
 showNode :: Node (ShowM Leaf) -> ShowM Leaf
 showNode = down line
 
--- Collect paths under a subpath.
-type TableM = PathM[[Leaf]]
-paths :: [Leaf] -> EDIF -> [[Leaf]]
-paths parent edif = runPathM $ iterM (mPaths parent) edif
-
-mPaths :: [Leaf] -> Node (TableM Leaf) -> TableM Leaf
-mPaths parent nodes = down fm nodes where
-  n = length parent
-  fm tag = do
-    path <- ask
-    case parent == take n path of
-      True -> tell $ [(drop n path) ++ [tag]]
-      _ -> return ()
-
--- Note that in the EDIF case, paths like this are not unique.  To
--- make them unique, add some form of tagging.
-
--- Here's a different approach.  Transform the tree into a relation
--- based on paths.  Use a state monad instead of a writer.
 
 
-  
 
--- Convert tree to relation expressed as a list of unique paths.  Each
--- "type" of path is a separate relation.
+-- Convert tree to relation expressed as a list of unique paths.
+-- Each "type" of path in the output set represents a different relation.
 
-newtype RelM t = RelM { unRelM :: StateT PathRel (Reader UniquePath) t }
+newtype PathMapM t = PathMapM { unPathMapM :: StateT PathMap (Reader UniquePath) t }
   deriving (Functor, Applicative, Monad,
-            MonadState PathRel, MonadReader UniquePath)
+            MonadState PathMap, MonadReader UniquePath)
 
-type PathRel = Set UniquePath
+type PathMap = Map UniquePath Bool
 type UniquePath = [(UniqueLeaf)]
 type UniqueLeaf = (Leaf,Int)
 
-runRelM s0 m = s where
-  (_, s) = runReader (runStateT (unRelM $ m) s0) []
 
-rels :: EDIF -> PathRel
-rels edif = runRelM Set.empty $ iterRelM edif
+rels :: EDIF -> Set UniquePath
+rels edif = s' where
+  -- To distinguish leaf from non-leaf intermediate path names, a Map
+  -- to Bool is used.  When done, intermediate paths can be removed.
+  s' = Map.keysSet $ Map.filter id s
+  ((), s) = runReader (runStateT (unPathMapM $ iterPathMapM edif) Map.empty) []
+
 
 -- Explicit recursion.  Standard iterM doesn't fit the case here.  
-iterRelM :: EDIF -> RelM ()
-iterRelM node = do
-  -- The need for this translation here probably indicates there is a
-  -- better way to represent the data structure.
-  let (name, children) = case node of
-        (Pure val) -> (val, [])
-        (Free (Node (Pure tag) nodes)) -> (tag, nodes)
+iterPathMapM :: EDIF -> PathMapM ()
+iterPathMapM node = do
   parent <- ask
-  paths  <- get
-  let subPath = unique paths parent name
-  modify $ Set.insert subPath
-  local (\_ -> subPath) $ sequence_ $ map iterRelM children
+  dict   <- get
+  -- The need for this translation here probably indicates there is a
+  -- better way to represent the data.
+  let (name, isVal, children) = case node of
+        (Pure val) -> (val, True, [])
+        (Free (Node (Pure tag) nodes)) -> (tag, False, nodes)
+        (Free (Node _ _)) -> error "Internal error: impure tag"
+      paths = Map.keysSet dict
+      subPath = unique paths parent name
+  modify $ Map.insert subPath isVal
+  local (\_ -> subPath) $ sequence_ $ map iterPathMapM children
+
   
 
 -- Given current set, create a unique path from unique parent and
 -- possibly non-unique leaf.
-unique :: PathRel -> UniquePath -> Leaf -> UniquePath
+unique :: Set UniquePath -> UniquePath -> Leaf -> UniquePath
 unique paths parent name = parent ++ [(name,n+1)] where
   n :: Int
   n = Set.foldr max' 0 paths where
   depth = length parent
   max' :: UniquePath -> Int -> Int
-  max' p n = case parent /= take depth p of
+  max' p n = case parent == take depth p of
     True -> case drop depth p of
       [(name',i)] -> case name == name' of
         True -> max i n
@@ -251,31 +236,6 @@ unique paths parent name = parent ++ [(name,n+1)] where
     _ -> n
 
 
--- To create a flat node list, collecting just the paths has the
--- information spread out.  I need a way to:
--- 1) list all nodes under a subpath
--- 2) query the entire tree by going to the parent node
+-- Next iteration: produce a map.  This means distinguishing leaf
+-- nodes from path nodes.
 
--- What does it mean to go to the parent node?  It's straightforward
--- to do with paths, as long as the paths are unique.  How to make
--- them unique?
-
-
--- Maybe uniqueness is not necessary if I can just "overwrite" the
--- last unique structure.  E.g. create something similar to a stack
--- trace.
-
--- [Net,Atom "SPI0_SCLK"]
--- [Net,Joined]
--- [Net,Joined,PortRef]
--- [Net,Joined,PortRef,Atom "A23"]
--- [Net,Joined,PortRef,InstanceRef]
--- [Net,Joined,PortRef,InstanceRef,Atom "U8"]
--- [Net,Joined,PortRef,InstanceRef]
--- [Net,Joined,PortRef]
--- [Net,Joined,PortRef]
--- [Net,Joined,PortRef,Atom "&16"]
--- [Net,Joined,PortRef,InstanceRef]
--- [Net,Joined,PortRef,InstanceRef,Atom "U9"]
--- [Net,Joined,PortRef,InstanceRef]
--- [Net,Joined,PortRef]
