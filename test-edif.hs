@@ -29,17 +29,12 @@ main = getArgs >>= main'
 main' [] = do
   main' ["/tmp/test.edif"]
 main' [fileName] = do
-  contents <- EDIF.readFile fileName
-  case EDIF.readEDIF fileName contents of
+  contents <- EDIF.readEdifFile fileName
+  case readEdif fileName contents of
     Left errorMsg ->
       putStrLn errorMsg
     Right edif ->
-      -- List structure seems fine.  Focus on atoms.
-      -- print edif
-      -- printl $ toList edif
-      -- putStr $ EDIF.show' edif
-      -- printl $ EDIF.paths [Edif,Library,Cell,View,Contents] edif
-      printl $ toList $ EDIF.rels edif
+      printl $ toList $ EDIF.paths edif
 
 
 mapToList :: Map k v -> [(k, v)]
@@ -47,14 +42,3 @@ mapToList = Map.foldrWithKey f [] where f k v t = (k,v):t
       
 
 printl es = sequence_ $ map print es
-
-      -- Edif:Library:Cell:View:Contents:Net:Joined:PortRef:InstanceRef:sub ->
-      -- Edif:Library:Cell:View:Contents:Net:Joined:PortRef:sub ->
-      -- Edif:Library:Cell:View:Contents:Net:sub ->
-      -- Edif:Library:Cell:View:Contents:sub ->
-
-        
-        -- &6/
-        -- InstanceRef/
-        --   P3/
-        -- InstanceRef/
