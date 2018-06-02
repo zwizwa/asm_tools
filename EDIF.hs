@@ -109,50 +109,33 @@ newtype PathsM t = PathsM { unPathsM :: StateT Paths (Reader UniquePath) t }
   deriving (Functor, Applicative, Monad,
             MonadState Paths, MonadReader UniquePath)
 
-type Paths = Map UniquePath Bool
+type Paths = Map UniquePath (Maybe Leaf)
 type UniquePath = [(UniqueLeaf)]
 type UniqueLeaf = (Leaf,Int)
 
 
-paths :: EDIF -> Set UniquePath
+paths :: EDIF -> Map UniquePath Leaf
 paths edif = s' where
   -- To distinguish leaf from non-leaf intermediate path names, a Map
   -- to Bool is used.  When done, intermediate paths can be removed.
-  s' = Map.keysSet $ Map.filter id s
+  s' = Map.mapMaybe id s
   ((), s) = runReader (runStateT (unPathsM $ iterPathsM edif) Map.empty) []
 
 -- Explicit recursion.  Standard iterM doesn't fit the case here.  
 iterPathsM :: EDIF -> PathsM ()
 iterPathsM node = do
-  parent <- ask
-  dict   <- get
-  -- The need for this translation here probably indicates there is a
-  -- better way to represent the data.
-  let (name, isVal, children) = case node of
-        (Pure val) -> (val, True, [])
-        (Free (Node (Pure tag) nodes)) -> (tag, False, nodes)
-        (Free (Node _ _)) -> error "Internal error: impure tag"
-      paths = Map.keysSet dict
-      subPath = unique paths parent name
-  modify $ Map.insert subPath isVal
-  local (\_ -> subPath) $ sequence_ $ map iterPathsM children
+  here <- ask
+  case node of
+    (Pure val) -> do
+      modify $ Map.insert here $ Just val
+    (Free (Node (Pure tag) nodes)) -> do
+      modify $ Map.insert here $ Nothing
+      let sub node num = local (\_ -> here ++ [(tag, num)]) $ iterPathsM node
+      sequence_ $ zipWith sub nodes [0..]
 
--- Given current set, create a unique path from unique parent and
--- possibly non-unique leaf.
-unique :: Set UniquePath -> UniquePath -> Leaf -> UniquePath
-unique paths parent name = parent ++ [(name,n+1)] where
-  n :: Int
-  n = Set.foldr max' 0 paths where
-  depth = length parent
-  max' :: UniquePath -> Int -> Int
-  max' p n = case parent == take depth p of
-    True -> case drop depth p of
-      [(name',i)] -> case name == name' of
-        True -> max i n
-        _ -> n
-      _ -> n
-    _ -> n
+ 
+  
 
 
--- Use the argument position as unique path number.
+
 

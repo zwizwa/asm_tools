@@ -34,7 +34,7 @@ main' [fileName] = do
     Left errorMsg ->
       putStrLn errorMsg
     Right edif ->
-      printl $ toList $ EDIF.paths edif
+      printl $ mapToList $ EDIF.paths edif
 
 
 mapToList :: Map k v -> [(k, v)]
