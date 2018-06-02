@@ -34,8 +34,11 @@ main' [fileName] = do
     Left errorMsg ->
       putStrLn errorMsg
     Right edif ->
-      printl $ mapToList $ EDIF.paths edif
+      -- printl $ map noTags $ mapToList $ EDIF.paths edif
+      -- printl $ mapToList $ EDIF.paths edif
+      print $ map nodeName $ libraries edif
 
+noTags (p, a) = (map snd p, a)
 
 mapToList :: Map k v -> [(k, v)]
 mapToList = Map.foldrWithKey f [] where f k v t = (k,v):t

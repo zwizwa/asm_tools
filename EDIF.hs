@@ -1,9 +1,6 @@
 -- EDIF netlist parser
 
--- EDIF is s-expression based.  Racket's default reader could not deal
--- with some special characters, so I'm just doing everything in
--- Haskell.  This is set up to evolve.  Currently only supports what's
--- needed for application.
+-- Evolved into generic SExp -> UniquePath -> Leaf
 
 -- LICENSE: This is derived from https://en.wikibooks.org/wiki/Write_Yourself_a_Scheme_in_48_Hours
 -- FIXME: currently assuming that's ok
@@ -15,7 +12,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFunctor #-}
 
-module EDIF(readEdifFile,readEdif,paths) where
+module EDIF(readEdifFile,readEdif,paths,libraries,nodeName) where
 
 
 import Text.ParserCombinators.Parsec
@@ -33,15 +30,16 @@ import qualified Data.Map.Strict as Map
 
 -- Use Free to provide the nesting structure.  Use generic names
 -- "Leaf" and "Node" since they are "the" leaf structure and tree
--- recursion structure.
+-- recursion structure in this module.
 type EDIF = Free Node Leaf
 
 -- Keep it really simple.  We'll do postprocessing, so no need to take
--- apart all the different node types.
+-- apart all the different node types.  We're primarily interested in
+-- just getting at the data.
 type Leaf = String
 
--- With the only constraint on recursive nodes that there is at least
--- a tag node to make paths.
+-- Nodes do need a tag to make (human readable) paths, so they have a
+-- little bit more structure than ordinary lists.
 data Node t = Node t [t] deriving Functor
 
 -- Parser
@@ -102,23 +100,34 @@ readEdifFile fileName = do
 
 
 
--- Convert tree to relation expressed as a list of unique paths.
--- Each "type" of path in the output set represents a different relation.
 
-newtype PathsM t = PathsM { unPathsM :: StateT Paths (Reader UniquePath) t }
+-- Convert parser tree output to path->leaf map
+paths :: EDIF -> PathToLeaf
+
+-- Uniqueness of paths is guaranteed by numbering nodes using the
+-- original file structure.  Type information is tagged on to keep
+-- paths human-readable, and allow semantic filter operations without
+-- a need for data structure lookups.
+type UniqueLeaf = (Leaf, Index)
+type UniquePath = [UniqueLeaf]
+
+-- E..g.
+-- ([("edif",6),("library",3),("cell",2),("view",3),("contents",91),("Net",0)],"SPI0_SCLK")
+-- first node is an edif node, take entry 6
+-- arriving at a library node, take entry 3,
+-- ..
+-- finally arriving at a leaf node "SPI0_SCLK"
+-- ...
+-- Structurally, [6,3,2,3,91,0] is enough to identify the "PI0_SCLK" entry.
+
+-- Use a state-reader monad to construct the dictionary.
+newtype PathsM t = PathsM { unPathsM :: StateT PathToLeaf (Reader UniquePath) t }
   deriving (Functor, Applicative, Monad,
-            MonadState Paths, MonadReader UniquePath)
+            MonadState PathToLeaf, MonadReader UniquePath)
+type PathToLeaf = Map UniquePath Leaf
+type Index = Int
 
-type Paths = Map UniquePath (Maybe Leaf)
-type UniquePath = [(UniqueLeaf)]
-type UniqueLeaf = (Leaf,Int)
-
-
-paths :: EDIF -> Map UniquePath Leaf
-paths edif = s' where
-  -- To distinguish leaf from non-leaf intermediate path names, a Map
-  -- to Bool is used.  When done, intermediate paths can be removed.
-  s' = Map.mapMaybe id s
+paths edif = s where
   ((), s) = runReader (runStateT (unPathsM $ iterPathsM edif) Map.empty) []
 
 -- Explicit recursion.  Standard iterM doesn't fit the case here.  
@@ -127,14 +136,67 @@ iterPathsM node = do
   here <- ask
   case node of
     (Pure val) -> do
-      modify $ Map.insert here $ Just val
+      modify $ Map.insert here $ val
     (Free (Node (Pure tag) nodes)) -> do
-      modify $ Map.insert here $ Nothing
       let sub node num = local (\_ -> here ++ [(tag, num)]) $ iterPathsM node
       sequence_ $ zipWith sub nodes [0..]
+    (Free (Node _  nodes)) -> error "impure node tag" -- doesn't happen
 
- 
+
+
+-- Queries.
   
+
+-- Note: while Free is used for the data structure, none of its
+-- properties are actually used in parsing nor path construction.
+
+-- Next: map the PathToLeaf dictionary to some simpler functions.  
+-- Each "type" of path in the output set represents a different relation.
+
+-- What I want: a simple list of netlists: [(name,[(instance,pin)])]
+
+netlist :: EDIF -> [(String,[(String,String)])]
+netlist _ = []
+
+-- Parent : ([("edif",6),("library",3),("cell",2),("view",3),("contents",91)
+-- Sub:
+-- ("Net",0)],"SPI0_SCLK")
+-- ("Net",1),("Joined",0),("PortRef",0)],"A23")
+-- ("Net",1),("Joined",0),("PortRef",1),("InstanceRef",0)],"U8")
+-- ("Net",1),("Joined",1),("PortRef",0)],"&16")
+-- ("Net",1),("Joined",1),("PortRef",1),("InstanceRef",0)],"U9")
+
+-- How to do this properly?
+-- Let's do it in a dirty way first:
+-- Find all like this: ("Net",1),("Joined",0),("PortRef",1),("InstanceRef",0)],"U8")
+-- Then from the path, get the portref and netname.
+
+-- EDIT: Rethinking.  I don't really need paths for referencing.  I
+-- only needed paths for prettyprinting.  Once the structure is known,
+-- referencing subtrees should do it.
+
+-- Some basic operations: filter nodes by tag.
+
+
+-- First atom is always type.  Second atom is sometimes name, but not
+-- always.  This is enough for what is needed below.
+nodeName n = t where (Pure t) = nodeRef 0 n
+
+
+nodeRef i (Free (Node _ ns)) = ns !! i
+
+libraries (Free (Node (Pure "edif") nodes)) =
+  filterTags "library" nodes
+
+filterTags :: String -> [EDIF] -> [EDIF]
+filterTags tag = filter f where
+  f (Free (Node (Pure t) _)) = t == tag
+  f _ = False
+
+
+-- Finding things.  I find it simplest to think in terms of
+-- subdirectories and going to parent to find things.  This can be
+-- done using paths.
 
 
 
