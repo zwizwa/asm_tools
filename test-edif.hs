@@ -3,7 +3,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 
 
-import qualified EDIF as EDIF
+import EDIF
 import System.Environment
 import Data.Foldable
 
@@ -36,7 +36,18 @@ main' [fileName] = do
       -- print edif
       -- printl $ toList edif
       -- putStr $ EDIF.show' edif
-      putStr $ EDIF.table edif
+      printl $ EDIF.paths [Edif,Library,Cell,View,Contents] edif
       
 
 printl es = sequence_ $ map print es
+
+      -- Edif:Library:Cell:View:Contents:Net:Joined:PortRef:InstanceRef:sub ->
+      -- Edif:Library:Cell:View:Contents:Net:Joined:PortRef:sub ->
+      -- Edif:Library:Cell:View:Contents:Net:sub ->
+      -- Edif:Library:Cell:View:Contents:sub ->
+
+        
+        -- &6/
+        -- InstanceRef/
+        --   P3/
+        -- InstanceRef/

@@ -27,25 +27,45 @@ import Control.Monad.Free
 import System.IO
 
 -- Use Free to provide the nesting structure.  Use generic names
--- "Leaf" and "Rec" since they are "the" leaf structure and tree
+-- "Leaf" and "Node" since they are "the" leaf structure and tree
 -- recursion structure.
-type EDIF = Free Rec Leaf
+type EDIF = Free Node Leaf
 
 -- This allows focus on leaf nodes.  
 data Leaf =
-  -- Placeholders for information we don't use.
-  Atom String | Number Integer | String String
   -- EDIF-specific nodes
-  | Ref Integer
-  deriving Show
+  Edif
+  | Library | Cell | View | Contents 
+  | Instance | Property
+  | Net | Joined | PortRef | InstanceRef
+  | ViewRef | NetListView | CellRef |
+  -- Generic nodes
+  Atom String | Number Integer | String String
+
+  deriving (Show, Eq)
 
 -- With the only constraint on recursive nodes that there is at least
 -- a tag node to make paths.
-data Rec t = Rec t [t] deriving Functor
+data Node t = Node t [t] deriving Functor
 
 -- Leaf constructor from Strings found by parser.
 leaf :: String -> Leaf
 --leaf ('&':str) = Ref $ read str  -- doesn't work yet
+leaf "edif" = Edif
+leaf "library" = Library
+leaf "cell" = Cell
+leaf "view" = View
+leaf "contents" = Contents
+leaf "Net" = Net
+leaf "Joined" = Joined
+leaf "PortRef" = PortRef
+leaf "InstanceRef" = InstanceRef
+leaf "Instance" = Instance
+leaf "Property" = Property
+leaf "viewRef" = ViewRef
+leaf "cellRef" = CellRef
+leaf "NetListView" = NetListView
+-- Other, currently unused.
 leaf str = Atom str
 
 
@@ -80,7 +100,7 @@ parseList  = do
   tag <- parseExpr
   args <- sepEndBy parseExpr spaces1
   spaces ; char ')'
-  return $ Free $ Rec tag args
+  return $ Free $ Node tag args
 
 
 readEDIF :: String -> String -> Either String EDIF
@@ -116,7 +136,7 @@ runPathM m = w where
   (_,w) = runReader (runWriterT $ unPathM $ m) []
 
 -- FIXME: Abstract this further.
-down mf (Rec tag nodes) = do
+down mf (Node tag nodes) = do
   tag' <- tag
   mf tag'
   local (++ [tag']) $ sequence_ [n >>= mf | n <- nodes]
@@ -144,44 +164,48 @@ showLeafs as = concat $ map showLeaf as
 showLeaf (Atom str) = str ++ "/"
 showLeaf a = show a
 
-showNode :: Rec (ShowM Leaf) -> ShowM Leaf
+showNode :: Node (ShowM Leaf) -> ShowM Leaf
 showNode = down line
 
--- EXAMPLE: cut off at view by not executing the monad components
--- descend :: [M Leaf] -> M Leaf
--- descend (tag : nodes) = do
---   tag' <- tag
---   line tag'
---   case tag' of
---     Atom "view" ->
---       -- Stop here
---       return ()
---     _ ->
---       local (++ [tag']) $ sequence_ [do n' <- n ; line n' | n <- nodes]
---   return tag'
+-- Collect paths under a subpath.
+type TableM = PathM [[Leaf]]
+paths :: [Leaf] -> EDIF -> [[Leaf]]
+paths parent edif = runPathM $ iterM (mPaths parent) edif
 
- 
-type TableM = PathM String
-table :: EDIF -> String
-table edif = runPathM $ iterM filterJoined edif
-
-filterJoined :: Rec (TableM Leaf) -> TableM Leaf
-filterJoined nodes = down fm nodes where
-  fm _ = do
+mPaths :: [Leaf] -> Node (TableM Leaf) -> TableM Leaf
+mPaths parent nodes = down fm nodes where
+  n = length parent
+  fm tag = do
     path <- ask
-    let path' = map (\(Atom str) -> str) path
-    case path' of
-      "edif":"library":"cell":"view":"contents":"Net":"Joined":"PortRef":sub ->
-        tell $ show path ++ "\n"
-        -- &6/
-        -- InstanceRef/
-        --   P3/
-        -- InstanceRef/
-      _ ->
-        return ()
+    case parent == take n path of
+      True -> tell $ [(drop n path) ++ [tag]]
+      _ -> return ()
 
--- tomorrow..
+-- To create a flat node list, collecting just the paths has the
+-- information spread out.  I need a way to:
+-- 1) list all nodes under a subpath
+-- 2) query the entire tree by going to the parent node
 
--- Parameterize the functor with a tag type that can be used to
--- construct paths as [tag].
+-- What does it mean to go to the parent node?  It's straightforward
+-- to do with paths, as long as the paths are unique.  How to make
+-- them unique?
 
+
+-- Maybe uniqueness is not necessary if I can just "overwrite" the
+-- last unique structure.  E.g. create something similar to a stack
+-- trace.
+
+-- [Net,Atom "SPI0_SCLK"]
+-- [Net,Joined]
+-- [Net,Joined,PortRef]
+-- [Net,Joined,PortRef,Atom "A23"]
+-- [Net,Joined,PortRef,InstanceRef]
+-- [Net,Joined,PortRef,InstanceRef,Atom "U8"]
+-- [Net,Joined,PortRef,InstanceRef]
+-- [Net,Joined,PortRef]
+-- [Net,Joined,PortRef]
+-- [Net,Joined,PortRef,Atom "&16"]
+-- [Net,Joined,PortRef,InstanceRef]
+-- [Net,Joined,PortRef,InstanceRef,Atom "U9"]
+-- [Net,Joined,PortRef,InstanceRef]
+-- [Net,Joined,PortRef]
