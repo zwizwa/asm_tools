@@ -177,71 +177,49 @@ iterPathsM node = do
 -- a) Top-down: match / query starting at the top of the hierarchy
 -- b) Bottom-up: filter nodes from zipper paths
 
--- The latter seems to be a lot less typing as much of the high level
--- boilerplate in the document can be ignored.
-
--- E.g. the "zipper paths" below [("contents",91),("view",3),("cell",2),("library",3),("edif",6)])
---
-
--- ("SPI0_SCLK",[("Net",0) ...
--- ("U8",[("InstanceRef",0),("PortRef",1),("Joined",0),("Net",1) ...
--- ("A23",[("PortRef",0),("Joined",0),("Net",1) ...
- 
+-- The former is straightforward but tedious to work through the
+-- boilerplate.  If structure permits, it's possible to take a
+-- bottom-up approach by zooming in on a particular collection of
+-- nodes and operating on its context using relative paths.  The
+-- latter is a lot less typing.
 
 netlist :: EDIF -> [(String,String,String)]
-netlist edif = rels where
-  -- To get the netlist, start with a list of nodes found by just
-  -- fishing out the deepest node in the structure.
-  m = Map.filterWithKey f $ paths edif
+netlist edif = map rel irefs where
+
+  -- Fish out a key that produces a single node for each relation we
+  -- want to return.
+  irefs :: [[Int]]
+  irefs = map (map snd) $ Map.keys $ Map.filterWithKey f $ paths edif
   f (("InstanceRef",_):_) _ = True
   f _ _ = False
 
-  -- Reduce to [[Int]] addresses.
-  rels = map (rel . map snd) $ Map.keys m
-
-  ref p = name $ refEdif edif p where
-    name (Pure v) = v
-    name (Free (Node (Pure "rename") [Pure n1, Pure n2])) = n2
-
+  -- Then fetch all information from that node's location, assuming
+  -- the structure is rigid such that coordinates can be used. E.g.:
+  -- ("U8",[("InstanceRef",0),("PortRef",1),("Joined",0),("Net",1) ...
+  -- ("A23",[("PortRef",0),("Joined",0),("Net",1) ...
+  -- ("SPI0_SCLK",[("Net",0) ...
   rel (0:1:j:1:up) = (name,inst,port) where
-    -- Structure is assumed to be the same so coordinates can be used.
-    -- Fill in the values from a printout of all paths:
-    -- ("U8",[("InstanceRef",0),("PortRef",1),("Joined",0),("Net",1) ...
     inst = ref (0:1:j:1:up)
-    -- ("A23",[("PortRef",0),("Joined",0),("Net",1) ...
     port = ref (0:j:1:up)
-    -- ("SPI0_SCLK",[("Net",0) ...
     name = ref (0:up)
+
+  ref :: [Int] -> String
+  ref p = name $ refEdif edif p
+
+  -- Handle node rename forms.  Not sure how this works..
+  name (Pure v) = v
+  name (Free (Node (Pure "rename") [Pure n1, Pure n2])) = n2
+
+
+-- TODO: A trick with "retract" is to define it to flatten the functor
+-- value into a list, with tags.  This would make matching more
+-- straightforward in some cases.
+
+
+
     
 
     
     
-    
-    
 
 
-
-
-
-
--- And use them to
-
--- ("SPI0_SCLK",[("Net",0)
-
-
-
-
--- Parent : ([("edif",6),("library",3),("cell",2),("view",3),("contents",91)
--- Sub:
--- ("Net",0)],"SPI0_SCLK")
--- ("Net",1),("Joined",0),("PortRef",0)],"A23")
--- ("Net",1),("Joined",0),("PortRef",1),("InstanceRef",0)],"U8")
--- ("Net",1),("Joined",1),("PortRef",0)],"&16")
--- ("Net",1),("Joined",1),("PortRef",1),("InstanceRef",0)],"U9")
-
--- E.g.
-
--- ([("InstanceRef",0),("PortRef",1),("Joined",2),("Net",1),("contents",28)
-
-
-  
