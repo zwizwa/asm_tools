@@ -6,7 +6,7 @@
 import EDIF
 import System.Environment
 import Data.Foldable
-
+import Control.Monad.Free
 
 -- import Seq
 -- import SeqLib
@@ -36,7 +36,8 @@ main' [fileName] = do
       -- print edif
       -- printl $ toList edif
       -- putStr $ EDIF.show' edif
-      printl $ EDIF.paths [Edif,Library,Cell,View,Contents] edif
+      -- printl $ EDIF.paths [Edif,Library,Cell,View,Contents] edif
+      printl $ toList $ EDIF.rels edif
       
 
 printl es = sequence_ $ map print es

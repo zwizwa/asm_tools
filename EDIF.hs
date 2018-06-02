@@ -41,11 +41,12 @@ data Leaf =
   | Library | Cell | View | Contents 
   | Instance | Property
   | Net | Joined | PortRef | InstanceRef
-  | ViewRef | NetListView | CellRef |
+  | ViewRef | NetListView | CellRef
+  | Interface | Port
   -- Generic nodes
-  Atom String | Number Integer | String String
+  | Atom String | Number Integer | String String
 
-  deriving (Show, Eq)
+  deriving (Show, Eq, Ord)
 
 -- With the only constraint on recursive nodes that there is at least
 -- a tag node to make paths.
@@ -68,6 +69,8 @@ leaf "Property" = Property
 leaf "viewRef" = ViewRef
 leaf "cellRef" = CellRef
 leaf "NetListView" = NetListView
+leaf "interface" = Interface
+leaf "port" = Port
 -- Other, currently unused.
 leaf str = Atom str
 
@@ -202,7 +205,7 @@ mPaths parent nodes = down fm nodes where
 -- Convert tree to relation expressed as a list of unique paths.  Each
 -- "type" of path is a separate relation.
 
-newtype RelM t = RelM { unRelM :: StateT PathRel (ReaderT UniquePath (Free Node)) t }
+newtype RelM t = RelM { unRelM :: StateT PathRel (Reader UniquePath) t }
   deriving (Functor, Applicative, Monad,
             MonadState PathRel, MonadReader UniquePath)
 
@@ -211,40 +214,41 @@ type UniquePath = [(UniqueLeaf)]
 type UniqueLeaf = (Leaf,Int)
 
 runRelM s0 m = s where
-  Pure (_, s) = runReaderT (runStateT (unRelM $ m) s0) []
+  (_, s) = runReader (runStateT (unRelM $ m) s0) []
 
 rels :: EDIF -> PathRel
-rels edif = runRelM Set.empty $ mRels edif
+rels edif = runRelM Set.empty $ iterRelM edif
 
--- Traverse for side effect only.
-mRels :: EDIF -> RelM ()
-mRels m = do
-  return ()
-  -- Node tag nodes <- retract m
-  -- parent <- ask
-  -- leaf <- tag
-  -- sub <- mUnique parent leaf
-  -- local (\_ -> sub) $ sequence_ [n >>= mRels | n <- nodes]
-
+-- Explicit recursion.  Standard iterM doesn't fit the case here.  
+iterRelM :: EDIF -> RelM ()
+iterRelM node = do
+  -- The need for this translation here probably indicates there is a
+  -- better way to represent the data structure.
+  let (name, children) = case node of
+        (Pure val) -> (val, [])
+        (Free (Node (Pure tag) nodes)) -> (tag, nodes)
+  parent <- ask
+  paths  <- get
+  let subPath = unique paths parent name
+  modify $ Set.insert subPath
+  local (\_ -> subPath) $ sequence_ $ map iterRelM children
+  
 
 -- Given current set, create a unique path from unique parent and
 -- possibly non-unique leaf.
 unique :: PathRel -> UniquePath -> Leaf -> UniquePath
-unique paths parent leaf = parent ++ [(leaf,n+1)] where
+unique paths parent name = parent ++ [(name,n+1)] where
   n :: Int
   n = Set.foldr max' 0 paths where
   depth = length parent
   max' :: UniquePath -> Int -> Int
   max' p n = case parent /= take depth p of
     True -> case drop depth p of
-      [(leaf',i)] -> case leaf == leaf' of
+      [(name',i)] -> case name == name' of
         True -> max i n
         _ -> n
       _ -> n
     _ -> n
-mUnique parent leaf = do
-  s <- get
-  return $ unique s parent leaf
 
 
 -- To create a flat node list, collecting just the paths has the
