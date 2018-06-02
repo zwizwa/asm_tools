@@ -23,8 +23,11 @@ import Text.Parsec.Error
 import Control.Monad
 import Control.Monad.Writer
 import Control.Monad.Reader
+import Control.Monad.State
 import Control.Monad.Free
 import System.IO
+import Data.Set(Set)
+import qualified Data.Set as Set
 
 -- Use Free to provide the nesting structure.  Use generic names
 -- "Leaf" and "Node" since they are "the" leaf structure and tree
@@ -130,17 +133,23 @@ readFile fileName = do
 
 -- List all nets based on a filter on path.
 newtype PathM w t = PathM { unPathM :: WriterT w (Reader [Leaf]) t }
-  deriving (Functor, Applicative, Monad, MonadReader [Leaf], MonadWriter w)
+  deriving (Functor, Applicative, Monad,
+            MonadReader [Leaf], MonadWriter w)
 
 runPathM m = w where
-  (_,w) = runReader (runWriterT $ unPathM $ m) []
+  (_,w) = runReader (runWriterT (unPathM $ m)) []
 
 -- FIXME: Abstract this further.
 down mf (Node tag nodes) = do
   tag' <- tag
   mf tag'
-  local (++ [tag']) $ sequence_ [n >>= mf | n <- nodes]
+  withPath tag' $ sequence_ [n >>= mf | n <- nodes]
   return tag'
+
+withPath tag' m = do
+  local (++ [tag']) m
+  
+
 
 -- Prettyprinter as a special case.
 type ShowM = PathM String
@@ -168,7 +177,7 @@ showNode :: Node (ShowM Leaf) -> ShowM Leaf
 showNode = down line
 
 -- Collect paths under a subpath.
-type TableM = PathM [[Leaf]]
+type TableM = PathM[[Leaf]]
 paths :: [Leaf] -> EDIF -> [[Leaf]]
 paths parent edif = runPathM $ iterM (mPaths parent) edif
 
@@ -180,6 +189,63 @@ mPaths parent nodes = down fm nodes where
     case parent == take n path of
       True -> tell $ [(drop n path) ++ [tag]]
       _ -> return ()
+
+-- Note that in the EDIF case, paths like this are not unique.  To
+-- make them unique, add some form of tagging.
+
+-- Here's a different approach.  Transform the tree into a relation
+-- based on paths.  Use a state monad instead of a writer.
+
+
+  
+
+-- Convert tree to relation expressed as a list of unique paths.  Each
+-- "type" of path is a separate relation.
+
+newtype RelM t = RelM { unRelM :: StateT PathRel (ReaderT UniquePath (Free Node)) t }
+  deriving (Functor, Applicative, Monad,
+            MonadState PathRel, MonadReader UniquePath)
+
+type PathRel = Set UniquePath
+type UniquePath = [(UniqueLeaf)]
+type UniqueLeaf = (Leaf,Int)
+
+runRelM s0 m = s where
+  Pure (_, s) = runReaderT (runStateT (unRelM $ m) s0) []
+
+rels :: EDIF -> PathRel
+rels edif = runRelM Set.empty $ mRels edif
+
+-- Traverse for side effect only.
+mRels :: EDIF -> RelM ()
+mRels m = do
+  return ()
+  -- Node tag nodes <- retract m
+  -- parent <- ask
+  -- leaf <- tag
+  -- sub <- mUnique parent leaf
+  -- local (\_ -> sub) $ sequence_ [n >>= mRels | n <- nodes]
+
+
+-- Given current set, create a unique path from unique parent and
+-- possibly non-unique leaf.
+unique :: PathRel -> UniquePath -> Leaf -> UniquePath
+unique paths parent leaf = parent ++ [(leaf,n+1)] where
+  n :: Int
+  n = Set.foldr max' 0 paths where
+  depth = length parent
+  max' :: UniquePath -> Int -> Int
+  max' p n = case parent /= take depth p of
+    True -> case drop depth p of
+      [(leaf',i)] -> case leaf == leaf' of
+        True -> max i n
+        _ -> n
+      _ -> n
+    _ -> n
+mUnique parent leaf = do
+  s <- get
+  return $ unique s parent leaf
+
 
 -- To create a flat node list, collecting just the paths has the
 -- information spread out.  I need a way to:

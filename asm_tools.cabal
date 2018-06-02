@@ -28,7 +28,7 @@ Library
 --     build-depends: base
 
 Test-Suite test-edif
-    build-depends: base, mtl, parsec, sqlite-simple, free
+    build-depends: base, mtl, parsec, sqlite-simple, free, containers
     type:       exitcode-stdio-1.0
     main-is:    test-edif.hs
     build-depends: base
