@@ -37,7 +37,6 @@ data Leaf =
   Atom String | Number Integer | String String
   -- EDIF-specific nodes
   | Ref Integer
-  | X
   deriving Show
 
 -- With the only constraint on recursive nodes that there is at least
@@ -146,11 +145,7 @@ showLeaf (Atom str) = str ++ "/"
 showLeaf a = show a
 
 showNode :: Rec (ShowM Leaf) -> ShowM Leaf
-showNode mNodes = do
-  -- local (++ [tag']) $ sequence_ [do n' <- n ; line n' | n <- nodes]
-  -- down tag' (\n -> do n' <- n ; line n') nodes
-  tag' <- down line mNodes
-  return tag'
+showNode = down line
 
 -- EXAMPLE: cut off at view by not executing the monad components
 -- descend :: [M Leaf] -> M Leaf
