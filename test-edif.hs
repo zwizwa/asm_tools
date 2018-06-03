@@ -4,6 +4,7 @@
 
 
 import EDIF
+import SE
 import System.Environment
 import Data.Foldable
 import Control.Monad.Free
@@ -11,27 +12,13 @@ import Data.Map.Strict(Map)
 import qualified Data.Map.Strict as Map
 import Data.Tuple
 
--- import Seq
--- import SeqLib
--- import qualified SeqTerm
--- import qualified SeqExpr
--- import qualified SeqEmu
--- import qualified MyHDL
--- import qualified CPU
--- import Data.Map.Lazy (empty, foldrWithKey, insert)
--- import qualified Data.Map.Lazy as Map
--- import qualified Control.Applicative as Applicative
--- import Control.Applicative (ZipList(..))
--- import Data.Functor.Apply
-
-  
 main = getArgs >>= main'
 
 main' [] = do
   main' ["/tmp/test.edif"]
 main' [fileName] = do
   contents <- EDIF.readEdifFile fileName
-  case readEdif fileName contents of
+  case readSE fileName contents of
     Left errorMsg ->
       putStrLn errorMsg
     Right edif -> do
@@ -39,15 +26,15 @@ main' [fileName] = do
       -- print $ map nodeName $ libraries edif
       -- printl $ map swap $ mapToList $ EDIF.paths edif
       
-      -- putStrLn "-- netlist"
-      -- printl $ EDIF.netlist edif
-      -- putStrLn "-- instances"
-      -- printl $ EDIF.instances edif
+      putStrLn "-- netlist"
+      printl $ EDIF.netlist edif
+      putStrLn "-- instances"
+      printl $ EDIF.instances edif
 
       -- putStrLn "-- paths"
       -- printl $ map swap $ mapToList $ EDIF.paths edif
 
-      printl $ EDIF.netlist edif
+      -- printl $ EDIF.netlist' edif
 
 noTags (p, a) = (map snd p, a)
 
