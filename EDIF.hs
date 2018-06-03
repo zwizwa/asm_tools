@@ -1,7 +1,5 @@
 -- EDIF netlist parser
 
--- Evolved into generic SExp -> UniquePath -> Leaf
-
 -- LICENSE: This is derived from https://en.wikibooks.org/wiki/Write_Yourself_a_Scheme_in_48_Hours
 -- FIXME: currently assuming that's ok
 
@@ -38,13 +36,10 @@ import GHC.Generics
 -- recursion structure in this module.
 type EDIF = Free Node Leaf
 
--- Keep it really simple.  We'll do postprocessing, so no need to take
--- apart all the different node types.  We're primarily interested in
--- just getting at the data.
-type Leaf = String
-
--- Overall it seems simplest to just wrap a list.
-newtype Node t = Node [t] deriving (Functor, Applicative, Monad)
+-- Keep it really simple.
+type    Leaf   = String
+newtype Node t = Node [t]
+  deriving (Functor, Applicative, Monad)
 
 
 -- Addresses are backwards paths by default.
@@ -199,22 +194,23 @@ netlist edif = map rel irefs where
 
   -- Then fetch all information from that node's location, assuming
   -- the structure is rigid such that coordinates can be used. E.g.:
-  -- ("U8",[("InstanceRef",0),("PortRef",1),("Joined",0),("Net",1) ...
-  --                  ("A23",[("PortRef",0),("Joined",0),("Net",1) ...
-  --                                       ("SPI0_SCLK",[("Net",0) ...
+  -- ("U8",[("InstanceRef",1),("PortRef",2),("Joined",1),("Net",2) ...
+  --                  ("A23",[("PortRef",1),("Joined",1),("Net",2) ...
+  --                                       ("SPI0_SCLK",[("Net",1) ...
   rel (1:j:2:up) = (name,inst,port) where
     inst = ref (1:2:j:2:up)
     port = ref   (1:j:2:up)
     name = ref       (1:up)
 
   ref :: [Int] -> String
-  ref = rename . (refEdif edif)
+  ref = rename . retract . (refEdif edif)
 
   -- Handle node rename forms.  Not sure how this works..
-  rename (Pure v) = v
-  rename (Free (Node [Pure "rename", Pure n1, Pure n2])) = n2
+  -- rename (Pure v) = v
+  -- rename (Free (Node [Pure "rename", Pure n1, Pure n2])) = n2
 
-
+  rename (Node [v]) = v
+  rename (Node ["rename", n1, n2]) = n2
 
 -- TODO: Is this just because I can, or is it actually useful?
  
