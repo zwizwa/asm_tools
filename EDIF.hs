@@ -10,7 +10,10 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveFunctor #-}
+--{-# LANGUAGE DeriveAnyClass #-}
+--{-# LANGUAGE TypeFamilies #-}
 
 -- module EDIF(readEdifFile,readEdif,paths,libraries,nodeName) where
 module EDIF where
@@ -27,6 +30,8 @@ import Data.Set(Set)
 import qualified Data.Set as Set
 import Data.Map.Strict(Map)
 import qualified Data.Map.Strict as Map
+import Data.Foldable
+import GHC.Generics
 
 -- Use Free to provide the nesting structure.  Use generic names
 -- "Leaf" and "Node" since they are "the" leaf structure and tree
@@ -38,16 +43,15 @@ type EDIF = Free Node Leaf
 -- just getting at the data.
 type Leaf = String
 
--- Nodes do need a tag to make (human readable) paths, so they have a
--- little bit more structure than ordinary lists.
-data Node t = Node t [t] deriving Functor
+-- Overall it seems simplest to just wrap a list.
+newtype Node t = Node [t] deriving (Functor, Applicative, Monad)
 
 
 -- Addresses are backwards paths by default.
 refEdif n is = refEdif' n (reverse is)
 refEdif' = f where
   f n [] = n
-  f (Free (Node _ nodes)) (i:is) = f (nodes !! i) is
+  f (Free (Node nodes)) (i:is) = f (nodes !! i) is
 
 
 
@@ -84,7 +88,7 @@ parseList  = do
   tag <- parseExpr
   args <- sepEndBy parseExpr spaces1
   spaces ; char ')'
-  return $ Free $ Node tag args
+  return $ Free $ Node (tag:args)
 
 
 readEdif :: String -> String -> Either String EDIF
@@ -157,10 +161,10 @@ iterPathsM node = do
   case node of
     (Pure val) -> do
       modify $ Map.insert here $ val
-    (Free (Node (Pure tag) nodes)) -> do
+    (Free (Node ((Pure tag):nodes))) -> do
       let sub node num = local (\_ -> (tag,num):here) $ iterPathsM node
-      sequence_ $ zipWith sub nodes [0..]
-    (Free (Node _  nodes)) -> error "impure node tag" -- doesn't happen
+      sequence_ $ zipWith sub nodes [1..]
+    (Free (Node _)) -> error "impure node tag" -- doesn't happen
 
 
 
@@ -190,36 +194,30 @@ netlist edif = map rel irefs where
   -- want to return.
   irefs :: [[Int]]
   irefs = map (map snd) $ Map.keys $ Map.filterWithKey f $ paths edif
-  f (("InstanceRef",_):_) _ = True
+  f (("PortRef",_):_) _ = True
   f _ _ = False
 
   -- Then fetch all information from that node's location, assuming
   -- the structure is rigid such that coordinates can be used. E.g.:
   -- ("U8",[("InstanceRef",0),("PortRef",1),("Joined",0),("Net",1) ...
-  -- ("A23",[("PortRef",0),("Joined",0),("Net",1) ...
-  -- ("SPI0_SCLK",[("Net",0) ...
-  rel (0:1:j:1:up) = (name,inst,port) where
-    inst = ref (0:1:j:1:up)
-    port = ref (0:j:1:up)
-    name = ref (0:up)
+  --                  ("A23",[("PortRef",0),("Joined",0),("Net",1) ...
+  --                                       ("SPI0_SCLK",[("Net",0) ...
+  rel (1:j:2:up) = (name,inst,port) where
+    inst = ref (1:2:j:2:up)
+    port = ref   (1:j:2:up)
+    name = ref       (1:up)
 
   ref :: [Int] -> String
-  ref p = name $ refEdif edif p
+  ref = rename . (refEdif edif)
 
   -- Handle node rename forms.  Not sure how this works..
-  name (Pure v) = v
-  name (Free (Node (Pure "rename") [Pure n1, Pure n2])) = n2
-
-
--- TODO: A trick with "retract" is to define it to flatten the functor
--- value into a list, with tags.  This would make matching more
--- straightforward in some cases.
+  rename (Pure v) = v
+  rename (Free (Node [Pure "rename", Pure n1, Pure n2])) = n2
 
 
 
-    
-
-    
+-- TODO: Is this just because I can, or is it actually useful?
+ 
     
 
 
