@@ -33,9 +33,9 @@ readEdifFile fileName = do
 -- a) Top-down: match / query starting at the top of the hierarchy
 -- b) Bottom-up: filter nodes from zipper paths
 
--- Use the former.  Tedious boilerplate but more readable and easier
--- to cross-reference with an example data file Alternative bottom up
--- code left after that, for reference.
+-- Use the former.  It exposes tedious boilerplate but more readable
+-- and easier to cross-reference with an example data file.  The
+-- alternative bottom up code left after that, for reference.
 
 
 
