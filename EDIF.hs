@@ -1,12 +1,14 @@
 -- EDIF netlist parser
 
+-- Minimally typed "scraper style".
+
 -- LICENSE: This is derived from https://en.wikibooks.org/wiki/Write_Yourself_a_Scheme_in_48_Hours
 -- FIXME: currently assuming that's ok
 
-{-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE NoMonomorphismRestriction #-}
+--{-# LANGUAGE TypeSynonymInstances #-}
+--{-# LANGUAGE FlexibleInstances #-}
+--{-# LANGUAGE FlexibleContexts #-}
+--{-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveFunctor #-}
@@ -28,25 +30,19 @@ import Data.Set(Set)
 import qualified Data.Set as Set
 import Data.Map.Strict(Map)
 import qualified Data.Map.Strict as Map
-import Data.Foldable
-import GHC.Generics
-
--- Use Free to provide the nesting structure.  Use generic names
--- "Leaf" and "Node" since they are "the" leaf structure and tree
--- recursion structure in this module.
-type EDIF = Free Node Leaf
+-- import Data.Foldable
+-- import GHC.Generics
 
 -- Keep it really simple.
-type    Leaf   = String
-newtype Node t = Node [t]
-  deriving (Functor, Applicative, Monad)
-
+type Leaf = String
+type Node = ([])
+type EDIF = Free Node Leaf
 
 -- Addresses are backwards paths by default.
 refEdif n is = refEdif' n (reverse is)
 refEdif' = f where
   f n [] = n
-  f (Free (Node nodes)) (i:is) = f (nodes !! i) is
+  f (Free nodes) (i:is) = f (nodes !! i) is
 
 
 
@@ -83,7 +79,7 @@ parseList  = do
   tag <- parseExpr
   args <- sepEndBy parseExpr spaces1
   spaces ; char ')'
-  return $ Free $ Node (tag:args)
+  return $ Free (tag:args)
 
 
 readEdif :: String -> String -> Either String EDIF
@@ -113,9 +109,9 @@ readEdifFile fileName = do
 paths :: EDIF -> PathToLeaf
 
 -- Uniqueness of paths is guaranteed by numbering nodes using the
--- original file structure.  Type information is tagged on to keep
--- paths human-readable, and allow semantic filter operations without
--- a need for data structure lookups.
+-- original file structure.  Node type information is tagged on to
+-- keep paths human-readable, and allow semantic filter operations
+-- without a need for data structure lookups.
 type UniqueLeaf = (Leaf, Index)
 
 -- Paths are useful to expose the structure of a document just for
@@ -156,12 +152,9 @@ iterPathsM node = do
   case node of
     (Pure val) -> do
       modify $ Map.insert here $ val
-    (Free (Node ((Pure tag):nodes))) -> do
+    (Free ((Pure tag):nodes)) -> do
       let sub node num = local (\_ -> (tag,num):here) $ iterPathsM node
       sequence_ $ zipWith sub nodes [1..]
-    (Free (Node _)) -> error "impure node tag" -- doesn't happen
-
-
 
 -- Note: while Free is used for the data structure, none of its
 -- properties are actually used in parsing nor path construction.
@@ -182,38 +175,60 @@ iterPathsM node = do
 -- nodes and operating on its context using relative paths.  The
 -- latter is a lot less typing.
 
-netlist :: EDIF -> [(String,String,String)]
-netlist edif = map rel irefs where
+netlist :: EDIF -> [(String,(String,String))]
+netlist edif = map rel irefs' where
 
-  -- Fish out a key that produces a single node for each relation we
-  -- want to return.
-  irefs :: [[Int]]
-  irefs = map (map snd) $ Map.keys $ Map.filterWithKey f $ paths edif
-  f (("PortRef",_):_) _ = True
-  f _ _ = False
+  -- Fish out a key that produces a single node as an anchor point to
+  -- retrieve information..
+  irefs' = irefs "InstanceRef" edif
 
-  -- Then fetch all information from that node's location, assuming
-  -- the structure is rigid such that coordinates can be used. E.g.:
+  -- .. and fetch the rest from the based on relative coordinates.
   -- ("U8",[("InstanceRef",1),("PortRef",2),("Joined",1),("Net",2) ...
   --                  ("A23",[("PortRef",1),("Joined",1),("Net",2) ...
   --                                       ("SPI0_SCLK",[("Net",1) ...
-  rel (1:j:2:up) = (name,inst,port) where
-    inst = ref (1:2:j:2:up)
-    port = ref   (1:j:2:up)
-    name = ref       (1:up)
+  rel (1:2:j:2:p) = (net,(inst,port)) where
+    inst = ref (1:2:j:2:p)
+    port = ref   (1:j:2:p)
+    net  = ref       (1:p)
 
   ref :: [Int] -> String
-  ref = rename . retract . (refEdif edif)
+  ref = rename . retract . (refEdif edif) -- (1)
 
   -- Handle node rename forms.  Not sure how this works..
-  -- rename (Pure v) = v
-  -- rename (Free (Node [Pure "rename", Pure n1, Pure n2])) = n2
+  rename [v] = v
+  rename ["rename", n1, n2] = n2
 
-  rename (Node [v]) = v
-  rename (Node ["rename", n1, n2]) = n2
+instances edif = map rel irefs' where
+  irefs' = irefs "Instance" edif
+  ref = rename . retract . (refEdif edif) -- (1)
+  rel (1:p) = (inst, typ) where
+    inst = ref     (1:p)
+    typ  = ref (1:2:2:p)
+  rename [v] = v
 
--- TODO: Is this just because I can, or is it actually useful?
- 
-    
+-- Bottom scraper
+irefs :: String -> EDIF -> [[Int]]
+irefs name edif = map (map snd) $ Map.keys $ Map.filterWithKey f $ paths edif where
+  f ((name',_):_) _ = name == name'
+  f _ _ = False
+  
+-- (1) The use of retract is just a notational short-hand.  The trees
+-- are not deep at that point, and we have that Monad instance to use...
 
+-- (2) The use of coordinates is also very ad-hoc. It's basically
+-- hard-to-read c[a|d]r programming, ignoring the node tags, and
+-- assuming the structure is fixed.  Do this differently.
+
+
+-- Given node, find all subnodes with a particular node type tag.
+sub :: Leaf -> EDIF -> [EDIF]
+sub t (Free (_:ns)) = filter f ns where
+  f (Free ((Pure t'):_)) = t == t'
+  f _ = False
+
+-- Same, but for the 2-tag pattern: node type, node name
+sub' :: Leaf -> Leaf -> EDIF -> [EDIF]
+sub' t1 t2 (Free (_:ns)) = filter f ns where
+  f (Free ((Pure t1'):(Pure t2'):_)) = (t1 == t1') && (t2 == t2')
+  f _ = False
 

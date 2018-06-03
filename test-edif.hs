@@ -34,11 +34,19 @@ main' [fileName] = do
   case readEdif fileName contents of
     Left errorMsg ->
       putStrLn errorMsg
-    Right edif ->
+    Right edif -> do
       -- printl $ map noTags $ mapToList $ EDIF.paths edif
       -- print $ map nodeName $ libraries edif
       -- printl $ map swap $ mapToList $ EDIF.paths edif
+      
+      putStrLn "-- netlist"
       printl $ EDIF.netlist edif
+      putStrLn "-- instances"
+      printl $ EDIF.instances edif
+
+      -- putStrLn "-- paths"
+      -- printl $ map swap $ mapToList $ EDIF.paths edif
+
 
 noTags (p, a) = (map snd p, a)
 
