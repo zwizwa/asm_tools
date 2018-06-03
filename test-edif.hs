@@ -39,14 +39,15 @@ main' [fileName] = do
       -- print $ map nodeName $ libraries edif
       -- printl $ map swap $ mapToList $ EDIF.paths edif
       
-      putStrLn "-- netlist"
-      printl $ EDIF.netlist edif
-      putStrLn "-- instances"
-      printl $ EDIF.instances edif
+      -- putStrLn "-- netlist"
+      -- printl $ EDIF.netlist edif
+      -- putStrLn "-- instances"
+      -- printl $ EDIF.instances edif
 
       -- putStrLn "-- paths"
       -- printl $ map swap $ mapToList $ EDIF.paths edif
 
+      printl $ EDIF.netlist edif
 
 noTags (p, a) = (map snd p, a)
 

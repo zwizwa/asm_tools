@@ -169,14 +169,63 @@ iterPathsM node = do
 -- a) Top-down: match / query starting at the top of the hierarchy
 -- b) Bottom-up: filter nodes from zipper paths
 
--- The former is straightforward but tedious to work through the
--- boilerplate.  If structure permits, it's possible to take a
--- bottom-up approach by zooming in on a particular collection of
--- nodes and operating on its context using relative paths.  The
--- latter is a lot less typing.
+-- Use the former.  Tedious but more readable.  Alternative bottom up
+-- code left after that, for reference.
 
-netlist :: EDIF -> [(String,(String,String))]
-netlist edif = map rel irefs' where
+
+
+-- Given node, find all subnodes with a particular node type tag.
+sub :: EDIF -> Leaf -> [EDIF]
+sub (Free (_:ns)) t = filter f ns where
+  f (Free ((Pure t'):_)) = t == t'
+  f _ = False
+
+-- Same, but for the 2-tag pattern: node type, node name
+sub' :: EDIF -> Leaf -> Leaf -> [EDIF]
+sub' (Free (_:ns)) t1 t2 = filter f ns where
+  f (Free ((Pure t1'):(Pure t2'):_)) = (t1 == t1') && (t2 == t2')
+  f _ = False
+
+
+-- Ad-hoc, from Altium export.  Recursive matching using sub,sub'
+-- It's not clear if there are other patterns to support.  Fix when needed.
+netlist edif = flat where
+  grouped = map net nets
+  flat = concat $ map (\(n, ps)  -> map (\ps -> (n,ps)) ps) grouped
+  
+  --             node  node_tag    node_name
+  --------------------------------------------------
+  [sheet] = sub' edif  "library"   "SHEET_LIB"
+  [cell]  = sub  sheet "cell"
+  [view]  = sub' cell  "view"      "netListView"
+  [cont]  = sub  view  "contents"
+  nets    = sub  cont  "Net"
+
+  net n@(Free ((Pure "Net"):name:_)) = (name',ports) where
+    name' = rename name
+    [js]  = sub n "Joined"
+    prefs = sub js "PortRef"
+    ports = map joined prefs
+
+  joined (Free [(Pure "PortRef"),p,i]) = (port p, inst i)
+
+  port (Pure p) = p
+  inst (Free [(Pure "InstanceRef"),(Pure i)]) = i
+  rename (Pure n) = n
+  rename (Free [(Pure "rename"),(Pure n1),(Pure n2)]) = n2
+
+
+
+-- HACKS
+
+-- Alternative implementation using bottom scraper.  This is left here
+-- for illustration.  Idea is nice but is very dirty in this case
+-- because structure might not be so fixed.  Also, not very readable.
+-- It's basically hard-to-read c[a|d]r programming. The use of
+-- retract is just a notational short-hand.
+
+netlist' :: EDIF -> [(String,(String,String))]
+netlist' edif = map rel irefs' where
 
   -- Fish out a key that produces a single node as an anchor point to
   -- retrieve information..
@@ -212,23 +261,6 @@ irefs name edif = map (map snd) $ Map.keys $ Map.filterWithKey f $ paths edif wh
   f ((name',_):_) _ = name == name'
   f _ _ = False
   
--- (1) The use of retract is just a notational short-hand.  The trees
--- are not deep at that point, and we have that Monad instance to use...
-
 -- (2) The use of coordinates is also very ad-hoc. It's basically
 -- hard-to-read c[a|d]r programming, ignoring the node tags, and
 -- assuming the structure is fixed.  Do this differently.
-
-
--- Given node, find all subnodes with a particular node type tag.
-sub :: Leaf -> EDIF -> [EDIF]
-sub t (Free (_:ns)) = filter f ns where
-  f (Free ((Pure t'):_)) = t == t'
-  f _ = False
-
--- Same, but for the 2-tag pattern: node type, node name
-sub' :: Leaf -> Leaf -> EDIF -> [EDIF]
-sub' t1 t2 (Free (_:ns)) = filter f ns where
-  f (Free ((Pure t1'):(Pure t2'):_)) = (t1 == t1') && (t2 == t2')
-  f _ = False
-
