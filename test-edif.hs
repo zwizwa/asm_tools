@@ -5,6 +5,7 @@
 
 import EDIF
 import SE
+import CSV
 import System.Environment
 import Data.Foldable
 import Control.Monad.Free
@@ -26,21 +27,29 @@ main' [fileName] = do
       -- print $ map nodeName $ libraries edif
       -- printl $ map swap $ mapToList $ EDIF.paths edif
       
-      putStrLn "-- netlist"
-      printl $ EDIF.netlist edif
-      putStrLn "-- instances"
-      printl $ EDIF.instances edif
+      -- putStrLn "-- netlist"
+      -- printl $ EDIF.netlist edif
+      -- putStrLn "-- instances"
+      -- printl $ EDIF.instances edif
 
       -- putStrLn "-- paths"
       -- printl $ map swap $ mapToList $ EDIF.paths edif
 
       -- printl $ EDIF.netlist' edif
 
+      -- printl CSV.test
+      test_csv
+
 noTags (p, a) = (map snd p, a)
 
 mapToList :: Map k v -> [(k, v)]
 mapToList = Map.foldrWithKey f [] where f k v t = (k,v):t
 
-                                        
-
 printl es = sequence_ $ map print es
+
+test_csv = do
+  let f = "/tmp/test.csv"
+  contents <- readFile f
+  case readCSV f contents of
+    Right table -> printl table
+    Left msg -> error msg
