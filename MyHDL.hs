@@ -54,6 +54,7 @@ mGen ports bindings = do
       isInternal n = not $ elem n portNodes
       name = "module"
 
+  tell $ "from myhdl import *\n"
   tell $ "def " ++ name ++ "("
   tell $ intercalate "," $ ["CLK","RST"] ++ map sig portNodes
   tell "):\n"

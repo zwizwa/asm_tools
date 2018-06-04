@@ -180,6 +180,13 @@ reset m = s0 where
 -- program. Abstract user state is threaded explicitly in this
 -- function, which is simpler than extending the M state to contain
 -- the extra type parameter.
+
+-- Note that the first value returned corresponds to the reset state
+-- of the registers and any combinatorial results computed from that.
+-- The second value corresponds to the time instance associated to the
+-- first active clock pulse, when registers are latched for the first
+-- time.
+
 traceState :: io -> (io -> M (io, [R S])) -> [Bus]
 traceState io0 mf = t io0 s0 where
   s0 = reset (mf io0) -- probe with first state input

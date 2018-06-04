@@ -52,6 +52,7 @@ import Control.Applicative (ZipList(..))
 main = do
   putStrLn "--- counter SeqEmu.compile"
   printSeqEmu $ counter (SInt (Just 2) 0)
+  
 
   putStrLn "--- counter SeqEmu.trace"
   print $ take 10 $ test_counter

@@ -41,9 +41,11 @@ instance Pru Gen where
 instance Show Asm where
   show (Asm lines) = concat $ map line lines
 
-line (Comment c) = "\t;; " ++ c ++ "\n"
-line (Lbl l) = lbl l ++ ":\n"
-line (Ins opc ops) = "\t" ++ opc ++ "\t" ++ (intercalate ", " $ map op ops) ++ "\n"
+line (Comment c)          = "\t;; " ++ c ++ "\n"
+line (Lbl l)              = lbl l ++ ":\n"
+line (Ins "XOUT" [a,b,c]) = "\tXOUT\t" ++ (comma [op a, "&" ++ op b, op c]) ++ "\n"
+line (Ins opc ops)        = "\t" ++ opc ++ "\t" ++ (comma $ map op ops) ++ "\n"
+
 lbl l = "L" ++ (show l)
 op (Reg (R r)) = "R" ++ show r
 op (Reg (Rw r w)) = "R" ++ show r ++ ".w" ++ show w
@@ -52,3 +54,4 @@ op (Im (I i))  = show i
 op (Im (L l))  = lbl l
 
 
+comma = intercalate ", "
