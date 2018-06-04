@@ -16,7 +16,6 @@ quoted = do
   char '"'
   x <- many (noneOf "\"")
   char '"'
-  -- Not necessary to distinguish from Unquoted
   return x
                 
 unquoted :: Parser Field
