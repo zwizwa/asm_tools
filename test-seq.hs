@@ -91,7 +91,7 @@ main = do
   print $ take 10 $ test_cpu_emu
 
   putStrLn "--- VCD"
-  let vcd =VCD.toVCD [("d1",1),("d2",1)] $ transpose [[0,1,1,0],[1,0,0,1]]
+  let vcd =VCD.toVCD [("d1",1),("d2",1),("d3",8)] $ transpose [[0,1,1,0,0],[1,0,0,1,0],[1,2,3,3,3]]
   putStr $ vcd
   writeFile "test.vcd" vcd
 
