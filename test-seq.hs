@@ -41,10 +41,12 @@ import qualified SeqExpr
 import qualified SeqEmu
 import qualified MyHDL
 import qualified CPU
+import qualified VCD
 import Data.Map.Lazy (empty, foldrWithKey, insert)
 import qualified Data.Map.Lazy as Map
 import qualified Control.Applicative as Applicative
 import Control.Applicative (ZipList(..))
+import Data.List
 -- import Data.Functor.Apply
 
 
@@ -88,8 +90,10 @@ main = do
   putStrLn "--- test_cpu_emu"
   print $ take 10 $ test_cpu_emu
 
-
-
+  putStrLn "--- VCD"
+  let vcd =VCD.toVCD [("d1",1),("d2",1)] $ transpose [[0,1,1,0],[1,0,0,1]]
+  putStr $ vcd
+  writeFile "test.vcd" vcd
 
 
 -- printSeqTerm :: Functor f => SeqTerm.M (f (SeqTerm.R S)) -> IO ()

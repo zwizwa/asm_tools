@@ -25,7 +25,7 @@ transfer nb_samples again = fill ++ tail where
     :: [m ()]
   tail =
     [xout (I 10) (R 21) (I 32),
-     ldi  (R 31) (I $ 32 + 16),      -- Interrupt PRU0
+     ldi  (R 31) (I $ 20 + 16),      -- Interrupt PRU0
      jmp (Im again)]
     :: [m ()]
               
