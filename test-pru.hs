@@ -34,6 +34,7 @@ import Pru           -- Abstract language
 import PruGen        -- Concrete assembly text generator
 import PruEmu        -- Compile to emulator functions
 import BeagleLogic   -- Example code to interface with BeagleLogic firmware
+import PruLib
 
 import Data.List
 import Data.Map.Strict (Map, (!), lookup, empty, insert, fromList, adjust)

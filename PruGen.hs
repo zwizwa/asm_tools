@@ -29,7 +29,9 @@ instance Pru Gen where
   insrr o a b    = w $ Ins (show o) [Reg a, Reg b]
   insrro o a b c = w $ Ins (show o) [Reg a, Reg b, c]
   insiri o a b c = w $ Ins (show o) [Im a, Reg b, Im c]
+  insiro o a b c = w $ Ins (show o) [Im a, Reg b, c]
   insro o a b    = w $ Ins (show o) [Reg a, b]
+  insi o i       = w $ Ins (show o) [Im i]
   inso o a       = w $ Ins (show o) [a]
   ins o          = w $ Ins (show o) []
   comment c      = w $ Comment c

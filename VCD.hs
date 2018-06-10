@@ -11,18 +11,19 @@ import Data.Char
 tags :: [Char]
 tags = map toEnum [33..126]
 
-toVCD :: (Eq a, Show a, Integral a) => [(String, Int)] -> [[a]] -> String
-toVCD types signals = header ++ vars ++ vcd where
+toVCD :: (Eq a, Show a, Integral a) => String -> ([(String, Int)], [[a]]) -> String
+toVCD timescale (types, signals) = header ++ vars ++ vcd ++ end where
   n = length header
   header = concat $ [
     "$date October 21, 2015 $end\n",
     "$version VCD.hs $end\n",
-    "$timescale 1ns $end\n",
+    "$timescale " ++ timescale ++ "1ns $end\n",
     "$scope module logic $end\n"]
   vars = concat $ concat $ [
     ["$var wire ", show width, " ", [tag], " ", name, " $end\n"] |
       ((name, width), tag) <- zip types tags]
-
+  end = "#" ++ (show $ length signals) ++ "\n"
+  
   -- bits vs ints
   fmt n = (map (fmt' . snd) types) !! n
   fmt' 1 = show

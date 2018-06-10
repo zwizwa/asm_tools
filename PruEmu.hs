@@ -6,7 +6,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module PruEmu(compile,compile'
-             ,Src,Comp,Emu
+             ,Src,Comp,Emu,Emu'
              ,EmuState(..),EmuVar(..)
              ,runEmu,logTrace,logTrace',stateTrace,tickTrace
              ,pseudo, loadm
@@ -59,6 +59,9 @@ type Labels = Map LabelNb Addr
 newtype Emu w t = Emu { unEmu :: (WriterT w (State EmuState) t) }
   deriving (Functor, Applicative, Monad,
             MonadWriter w, MonadState EmuState)
+
+-- With default writer.
+type Emu' = Emu String
 
 type EmuState = Map EmuVar Int
 data EmuVar
@@ -179,6 +182,27 @@ comp_link_ref f o = do
     o'' <- ref o' -- run time lookup: reg -> value
     f o''
 
+
+-- Contitional relative branches.
+cond :: OpcIRO -> Int -> Int -> Bool
+cond QBNE = (/=)
+cond QBEQ = (==)
+
+cond_branch p l r o = do
+  case l of
+    L _ -> return ()
+    I _ -> error "literal relative jumps not supported"
+
+  l' <- link $ Im l
+  comp $ do
+    l'' <- ref l'
+    r'  <- ref $ Reg  r
+    o'  <- ref o
+    case p  r' o' of
+      True  -> storem PCounter l''
+      False -> next
+
+
 -- Generic move.  On PRU this is split into two instructions: MOV and
 -- LDI, instead of one instruction that can take multiple operand
 -- types.
@@ -210,6 +234,8 @@ instance Monoid w => Pru (Comp w) where
     modify $ appLabels $ \ls -> insert l a ls
 
   inso JMP = comp_link_ref $ storem PCounter
+  insi QBA l = inso JMP $ Im l -- FIXME: only labels!
+  insiro op l r o = cond_branch (cond op) l r o
     
   insro JAL (R r) = comp_link_ref $ \o -> do
       pc <- loadm PCounter
@@ -220,6 +246,7 @@ instance Monoid w => Pru (Comp w) where
   insrr MOV ra rb = move ra (Reg rb)
   insri LDI ra ib = move ra (Im ib)
   insrro ADD = intop2 (+)
+  insrro SUB = intop2 (-)
   insrro CLR = intop2 clrbit
   insrro SET = intop2 setbit
   insiri XOUT _ _ _ = comp next -- FIXME

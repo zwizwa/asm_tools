@@ -12,11 +12,13 @@ class Monad m => Pru m where
   declare :: m I
   label   :: I -> m ()
   inso    :: OpcO   -> O           -> m ()
+  insi    :: OpcI   -> I           -> m ()
   insrr   :: OpcRR  -> R -> R      -> m ()
   insri   :: OpcRI  -> R -> I      -> m ()
   insro   :: OpcRO  -> R -> O      -> m ()
   insrro  :: OpcRRO -> R -> R -> O -> m ()
   insiri  :: OpcIRI -> I -> R -> I -> m ()
+  insiro  :: OpcIRO -> I -> R -> O -> m ()
   ins     :: Opc -> m ()
 
   -- Meta
@@ -35,8 +37,9 @@ data OpcRI  = LDI  deriving Show
 data OpcRO  = JAL  deriving Show
 data OpcIRI = XOUT deriving Show
 data Opc    = NOP | HALT deriving Show
-data OpcRRO = ADD | CLR | SET deriving Show
-
+data OpcRRO = ADD | SUB | CLR | SET deriving Show
+data OpcIRO = QBGT | QBGE | QBLT | QBLE | QBEQ | QBNE | QBBS | QBBC deriving Show
+data OpcI   = QBA deriving Show
 
 mov :: Pru m => R -> R -> m ()
 mov = insrr MOV
@@ -46,6 +49,9 @@ ldi = insri LDI
 
 add :: Pru m => R -> R -> O -> m ()
 add = insrro ADD
+
+sub :: Pru m => R -> R -> O -> m ()
+sub = insrro SUB
 
 clr :: Pru m => R -> R -> O -> m ()
 clr = insrro CLR
@@ -68,7 +74,33 @@ jal = insro JAL
 jmp :: Pru m => O -> m ()
 jmp = inso JMP
 
-  
+qbgt :: Pru m => I -> R -> O -> m ()
+qbgt = insiro QBGT
+
+qbge :: Pru m => I -> R -> O -> m ()
+qbge = insiro QBGE
+
+qblt :: Pru m => I -> R -> O -> m ()
+qblt = insiro QBLT
+
+qble :: Pru m => I -> R -> O -> m ()
+qble = insiro QBLE
+
+qbeq :: Pru m => I -> R -> O -> m ()
+qbeq = insiro QBEQ
+
+qbne :: Pru m => I -> R -> O -> m ()
+qbne = insiro QBNE
+
+qbbs :: Pru m => I -> R -> O -> m ()
+qbbs = insiro QBBS
+
+qbbc :: Pru m => I -> R -> O -> m ()
+qbbc = insiro QBBC
+
+qba :: Pru m => I -> m ()
+qba = insi QBA
+
 
 
 -- Shortcut in case no back-references are required.
