@@ -59,9 +59,9 @@ inlined termBindings = [(n, exprDef n) | n <- keep] where
 
   inlinable n = 
     case ref n of
-      (Delay _) -> False      -- inlining Delay would create loops
-      Input     -> False      -- keep external refernces as nodes
-      _         -> 1 == rc n  -- rc > 1 would lead to code duplication
+      (Delay _ _) -> False      -- inlining Delay would create loops
+      (Input _)   -> False      -- keep external refernces as nodes
+      _           -> 1 == rc n  -- rc > 1 would lead to code duplication
   
   -- Term dictionary.
   ref :: n -> Term (Op n)
@@ -109,15 +109,15 @@ mSexp :: Show n => Expr n -> PrintExpr ()
 mSexp (Pure n) = tagged "NODE" [tell $ show n]
 mSexp (Free (Compose e)) = mTerm e
 
-mTerm Input           = tagged "INPUT"   []
-mTerm (Delay a)       = tagged "DELAY"   [mOp a]
-mTerm (Connect a)     = tagged "CONNECT" [mOp a]
-mTerm (Comb1 o a)     = tagged (show o)  [mOp a]
-mTerm (Comb2 o a b)   = tagged (show o)  [mOp a, mOp b]
-mTerm (Comb3 o a b c) = tagged (show o)  [mOp a, mOp b, mOp c]
+mTerm (Input _)         = tagged "INPUT"   []
+mTerm (Delay _ a)       = tagged "DELAY"   [mOp a]
+mTerm (Connect _ a)     = tagged "CONNECT" [mOp a]
+mTerm (Comb1 _ o a)     = tagged (show o)  [mOp a]
+mTerm (Comb2 _ o a b)   = tagged (show o)  [mOp a, mOp b]
+mTerm (Comb3 _ o a b c) = tagged (show o)  [mOp a, mOp b, mOp c]
 
-mOp (Const v) = tagged "CONST" [ tell $ show v]
-mOp (Node n)  = mSexp n
+mOp (Const v)  = tagged "CONST" [ tell $ show v]
+mOp (Node _ n) = mSexp n
 
 tagged tag ms = do
   tell "("

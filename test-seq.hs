@@ -211,7 +211,7 @@ test_cpu_emu =  SeqEmu.traceState ([mem]) m where
 -- SeqTerm has support for this.
 test_hdl :: SeqTerm.M [SeqTerm.R S]
 test_hdl = do
-  io@[i,o] <- SeqTerm.io 2
+  io@[i,o] <- SeqTerm.io [SInt (Just 2) 0, SInt (Just 2) 0]
   j  <- delay i
   o' <- delay j  
   connect o o'   -- allow direct output
@@ -219,7 +219,7 @@ test_hdl = do
 
 test_hdl_sync :: SeqTerm.M [SeqTerm.R S]
 test_hdl_sync = do
-  io@[i,o] <- SeqTerm.io 2
+  io@[i,o] <- SeqTerm.io [SInt (Just 2) 0, SInt (Just 2) 0]
   o' <- sync (SInt (Just 2) 0) i
   connect o o'
   return io

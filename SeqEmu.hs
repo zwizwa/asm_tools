@@ -77,11 +77,15 @@ instance Seq M R where
   op1 o (R a) = do
     ((sza,_), va) <- val' a
     return $ R $ truncVal sza $ f1 o va
-
+  
   op2 o (R a) (R b) = do
     ((sza,_),va) <- val' a
     ((szb,_),vb) <- val' b
-    return $ R $ truncVal (sz sza szb) $ f2 o va vb
+    return $ R $ case o of
+      CONC ->
+        concVal (sza,va) (szb, vb)
+      _ ->
+        truncVal (sz sza szb) $ f2 o va vb
 
   op3 o (R a) (R b) (R c) = do
     ((sza,_),va) <- val' a
@@ -122,6 +126,15 @@ truncVal Nothing v     = Val Nothing v
 truncVal sz@(Just b) v = Val sz $ v .&. mask b
 
 mask b = (shiftL 1 b) - 1
+
+concVal (sza,va) (szb, vb) = 
+  case szb of
+    Nothing ->
+      error "conc: rightmost argument needs defined size"
+    Just szb' -> do
+      let sz = liftA2 (+) sza szb in
+        Val sz $ (shiftL va szb') .&. vb
+      
 
 f1 INV = complement
 
@@ -212,7 +225,7 @@ type MemState = Map RegNum RegVal
 type Mem = (R S, R S, R S, R S) -> MemState -> M (MemState, R S)
 mem :: Mem
 mem (wEn, wAddr, wData, rAddr) memState = do
-
+  
   -- Read
   rAddr' <- val $ unR rAddr 
   let rData' = Map.findWithDefault 0 rAddr' memState

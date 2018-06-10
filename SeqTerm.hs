@@ -12,6 +12,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 
 module SeqTerm where
+import Seq(SType(..))
 import qualified Seq as Seq
 import Control.Monad.State
 import Control.Monad.Writer
@@ -40,21 +41,38 @@ import Data.Functor.Compose
 -- 2) Use MyHDL to perform simulation and HDL export
 -- 3) Use Verilog/VHDL compiler to synthesize logic
 
-data Term t
-  = Comb1 Seq.Op1 t
-  | Comb2 Seq.Op2 t t
-  | Comb3 Seq.Op3 t t t
-  | Delay t
-  | Connect t
-  | Input -- Externally driven node
+
+data Term n
+  = Comb1   SType Seq.Op1 n
+  | Comb2   SType Seq.Op2 n n
+  | Comb3   SType Seq.Op3 n n n
+  | Delay   SType n
+  | Connect SType n
+  | Input   SType -- Externally driven node
   deriving (Show, Functor, Foldable)
 
 -- Constants are not monadic values in Seq (tried that, and decided
 -- it's too annoying), so the operand type Op has two clauses:
-data Op t
-  = Node  t         -- node reference
-  | Const ConstVal  -- inlined constant
+data Op n
+  = Node  SType n   -- node reference (*)
+  | Const SType     -- inlined constant
   deriving (Show, Functor, Foldable)
+
+
+-- (*) Type-annotated because due to use of writer monad, there is no
+-- access to the dictionary to retreive node type from a plain
+-- reference.  This introduces copying and some places where there are
+-- representable invalid states needing asserts, plus the awkward type
+-- selectors here.  How to fix that?
+termType (Comb1 t _ _) = t
+termType (Comb2 t _ _ _) = t
+termType (Comb3 t _ _ _ _) = t
+termType (Delay t _) = t
+termType (Connect t _) = t
+termType (Input t) = t
+
+opType (Const t) = t
+opType (Node t _) = t
 
 
 type NodeNum  = Int
@@ -85,35 +103,41 @@ data R t = R { unR :: Op NodeNum }
 
 instance Seq.Seq M R where
 
-  constant (Seq.SInt _ v) = R $ Const v
+  constant t = R $ Const t
 
   -- undriven signal
-  signal _  = fmap R makeNode
-  stype _   = return $ Seq.SInt Nothing 0
+  signal typ   = fmap R $ makeNode typ
+  stype (R op) = return $ opType op
 
   -- driven nodes
   op1 o (R a) =
-    fmap R $ driven $ Comb1 o a
+    fmap R $ driven $ Comb1 (mergeOpTypes [a]) o a
 
   op2 o (R a) (R b) =
-    fmap R $ driven $ Comb2 o a b
+    fmap R $ driven $ Comb2 (mergeOpTypes [a,b]) o a b
 
   op3 o (R a) (R b) (R c) =
-    fmap R $ driven $ Comb3 o a b c
-
-  -- register drive
-  next (R (Node dst)) (R src) =
-    driveNode dst $ Delay src
+    fmap R $ driven $ Comb3 (mergeOpTypes [a,b,c]) o a b c
 
   -- Combinatorial drive is needed to support combinatorial module
   -- outputs, but otherwise not used in Seq.hs code.
-  connect (R (Node dst)) (R src) =
-    driveNode dst $ Connect src
+  connect = bind Connect
+
+  -- register drive
+  next    = bind Delay
+
+
+bind cons (R (Node t' dst)) (R src) = do
+    let t = opType src
+    -- case t == t' of
+    --   False -> error $ "bind: different node types: " ++ show (t',t)
+    --   True  -> driveNode dst $ cons t src
+    driveNode dst $ cons t src
 
 
 -- For constants.
 instance Num (R Seq.S) where
-  fromInteger i = R $ Const $ fromInteger i
+  fromInteger i = R $ Const $ SInt Nothing $ fromInteger i
   -- Implement the rest just for constants.
   (+) = num2 (+)
   (*) = num2 (*)
@@ -121,29 +145,33 @@ instance Num (R Seq.S) where
   signum = num1 signum
   negate = num1 negate
 
-num1 f (R (Const a)) =
-  R $ Const $ f a
-num2 f (R (Const a)) (R (Const b)) =
-  R $ Const $ f a b
+num1 f (R (Const (SInt t a))) =
+  R $ Const $ SInt t $ f a
+num2 f (R (Const (SInt ta a))) (R (Const (SInt tb b))) =
+  R $ Const $ SInt (mergeTypes [ta,tb]) $ f a b
+
+
+mergeOpTypes ns = mergeTypes $ fmap opType ns
+mergeTypes (t:_) = t -- FIXME!!
 
 
 
-makeNode :: M (Op NodeNum)
-makeNode = do
+makeNode :: SType -> M (Op NodeNum)
+makeNode t = do
   n <- getNodeNum
   modifyNodeNum (+ 1)
-  return $ Node n
+  return $ Node t n
 
 driven c = do
-  s@(Node n) <- makeNode
+  s@(Node _ n) <- makeNode $ termType c
   driveNode n c
   return s
 
 
 -- I/O ports direction is not known until it is driven, so start them
 -- out as Input nodes ...
-io :: Int -> M [R Seq.S]
-io n = sequence $ [fmap R $ driven $ Input | _ <- [0..n-1]] 
+io :: [SType] -> M [R Seq.S]
+io ts = sequence $ [fmap R $ driven $ Input t | t <- ts]
 
 -- ... and convert them to output here.  Other nodes cannot be driven
 -- more than once.  Note: using fix, this error is avoided.

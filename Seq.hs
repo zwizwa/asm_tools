@@ -31,7 +31,7 @@ import Prelude hiding(zipWith)
 
 -- Abstract tag for signal representation.
 data S = S
-data SType = SInt (Maybe NbBits) InitVal
+data SType = SInt (Maybe NbBits) InitVal deriving Show
 type NbBits = Int
 type InitVal = Int
 
@@ -88,6 +88,11 @@ type InitVal = Int
 -- register nodes.  The implementation should raise an error in that
 -- case.
 
+-- Integers
+--
+-- Ints currently behave as MyHDL's modbv with min=0 and max=2^NbBits.
+-- This needs to be fixed at some point, but wait for application pull.
+
 class (Monad m, Num (r S)) => Seq m r | r -> m where
 
   -- Register operation
@@ -118,7 +123,7 @@ data Op1 = INV
 inv :: forall m r. Seq m r => r S -> m (r S)
 inv = op1 INV
 
-data Op2 = ADD | AND | XOR | SLL | SLR
+data Op2 = ADD | AND | XOR | SLL | SLR | CONC
   deriving Show
 
 add :: forall m r. Seq m r => r S -> r S -> m (r S)
@@ -135,6 +140,9 @@ sll = op2 SLL
 
 slr :: forall m r. Seq m r => r S -> r S -> m (r S)
 slr = op2 SLR
+
+conc :: forall m r. Seq m r => r S -> r S -> m (r S)
+conc = op2 CONC
 
 data Op3 = IF
   deriving Show

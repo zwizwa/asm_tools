@@ -48,10 +48,10 @@ gen ports bindings = str where
 mGen :: (Eq n, Show n) => [Op n] -> [(n, Expr n)] -> PrintMyHDL ()
 mGen ports bindings = do
   let portNodes = map unNode ports
-      unNode (Node n) = n
+      unNode (Node _ n) = n
       unNode (Const n) = error $ "mGen: Const in ports: " ++ show ports
-      internalNodes = filter isInternal $ map fst bindings
-      isInternal n = not $ elem n portNodes
+      internalBindings = filter isInternal $ bindings
+      isInternal (n,_) = not $ elem n portNodes
       name = "module"
 
   tell $ "from myhdl import *\n"
@@ -60,7 +60,7 @@ mGen ports bindings = do
   tell "):\n"
 
   indent (+ 1) $ do
-    sequence_ $ map defSignal internalNodes
+    sequence_ $ map defSignal internalBindings
     indent (+ 1 ) $ sequence_ $ [assignment n e | (n, e) <- bindings]
     (n,_) <- get
     tab
@@ -72,16 +72,25 @@ mGen ports bindings = do
 blk n = "blk" ++ show n
 sig n = "s" ++ show n
 
-defSignal n = do
-  tab ; tell $ sig n ++ " = Signal()\n"
+defSignal (n, e) = do
+  tab ; tell $ sig n ++ " = " ++ (sigSpec $ eType e) ++ "\n"
+
+sigSpec (SInt Nothing _) = error "Signals need to be fully specified"
+-- sigSpec (SInt Nothing v0) = sigSpec (SInt (Just 8) v0) -- FIXME
+
+
+sigSpec (SInt (Just n) v0) = "Signal(modbv(" ++ show v0 ++ ")[" ++ show n ++ ":])"
+eType :: Expr n -> SType
+eType (Free (Compose t)) = SeqTerm.termType t
+eType (Pure n) = error "eType doesn't work on node references"
   
 
 assignment :: Show n => n -> (Expr n) -> PrintMyHDL ()
-assignment n e@(Free (Compose (Delay _))) = do
+assignment n e@(Free (Compose (Delay _ _))) = do
   need Seq
   assignment' n e
 
-assignment n e@(Free (Compose Input)) = do
+assignment n e@(Free (Compose (Input _))) = do
   indent (+ (- 1)) $ do
     tab
     tell $ "# " ++ sig n ++ " is an input\n"
@@ -115,15 +124,16 @@ assignment' n e = do
 mExp (Pure n) = tell $ sig n
 mExp (Free (Compose e)) = mTerm e
 
-mTerm (Delay a)        = mOp a
-mTerm (Connect a)      = mOp a
-mTerm (Comb1 o a)      = call (show o) [mOp a]
-mTerm (Comb2 o a b)    = infx o (mOp a) (mOp b)
-mTerm (Comb3 IF c x y) = do  mOp x ; tell " if " ; mOp c ; tell " else " ; mOp y
-mTerm Input            = call "INPUT" [] -- not reached
+mTerm (Delay _ a)        = mOp a
+mTerm (Connect _ a)      = mOp a
+mTerm (Comb1 _ o a)      = call (show o) [mOp a]
+mTerm (Comb2 _ CONC a b) = prfx "concat" $ map mOp [a,b]
+mTerm (Comb2 _ o a b)    = infx o (mOp a) (mOp b)
+mTerm (Comb3 _ IF c x y) = do  mOp x ; tell " if " ; mOp c ; tell " else " ; mOp y
+mTerm (Input _)          = call "INPUT" [] -- not reached
 
-mOp (Const v) = tell $ show v
-mOp (Node n)  = mExp n
+mOp (Const (SInt _ v))  = tell $ show v
+mOp (Node _ n) = mExp n
 
 call tag ms = do
   tell tag
@@ -136,6 +146,11 @@ tab = do
   n <- ask
   sequence_ $ [tell "\t" | _ <- [1..n]]
 indent = local
+
+prfx op (o:os) = do
+  tell $ op ++ "(" ; o
+  sequence_ [tell ", " >> o | o <- os]
+  tell ")"
 
 infx o a b = do
   a ; tell " " ; tell (f2 o) ; tell " " ; b
