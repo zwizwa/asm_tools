@@ -4,11 +4,16 @@ module PruLib where
 
 import Pru
 
-ret :: forall m. Pru m => m ()
-ret = jmp $ Reg $ Rw 30 0
+retR = (Rw 30 0) -- FIXME
 
-sub :: forall m. Pru m => m () -> m (m ())
+call :: forall m. Pru m => I -> m ()
+call l = jal retR (Im l)
+
+ret :: forall m. Pru m => m ()
+ret = jmp $ Reg $ retR
+
+sub :: forall m. Pru m => m () -> m I
 sub routine = do
   l <- label'
   routine ; ret
-  return $ jal (Rw 30 0) (Im l)
+  return $ l
