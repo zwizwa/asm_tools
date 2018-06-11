@@ -66,4 +66,15 @@ case' ((cond, whenTrue):cases) dflt = do
   if' c t f
   
 
-  
+-- Shift register in terms of slice + conc.
+-- Return old and new for max flex.
+sr :: Seq m r => SType -> r S -> m (r S, r S)
+sr t i = do
+  fixReg [t] $ \[r] -> do
+    t' <- stype i
+    let SInt (Just r_bits) _ = t
+        SInt (Just i_bits) _ = t'
+    r_drop  <- slice r (Just $ r_bits - i_bits) 0
+    r_shift <- conc r_drop i
+    return $ ([r_shift], (r, r_shift))
+

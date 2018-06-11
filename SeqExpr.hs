@@ -115,7 +115,11 @@ mTerm (Connect _ a)     = tagged "CONNECT" [mOp a]
 mTerm (Comb1 _ o a)     = tagged (show o)  [mOp a]
 mTerm (Comb2 _ o a b)   = tagged (show o)  [mOp a, mOp b]
 mTerm (Comb3 _ o a b c) = tagged (show o)  [mOp a, mOp b, mOp c]
+mTerm (Slice _ a b c)   = tagged "SLICE"   [mOp a, tell $ showSize b, tell $ show c]
 
+showSize (Just s) = show s
+showSize Nothing = ""
+                                            
 mOp (Const v)  = tagged "CONST" [ tell $ show v]
 mOp (Node _ n) = mSexp n
 

@@ -211,10 +211,17 @@ test_cpu_emu =  SeqEmu.traceState ([mem]) m where
 -- SeqTerm has support for this.
 test_hdl :: SeqTerm.M [SeqTerm.R S]
 test_hdl = do
-  io@[i,o] <- SeqTerm.io [SInt (Just 2) 0, SInt (Just 2) 0]
-  j  <- delay i
-  o' <- delay j  
-  connect o o'   -- allow direct output
+  -- Define types and signals
+  let t    = SInt (Just 1) 0
+      t_sr = SInt (Just 8) 0
+  io@[i,o,sr_o] <- SeqTerm.io [t,t,t_sr]
+  -- Instantiate circuits
+  i1        <- delay i
+  i2        <- delay i1
+  (sr_o',_) <- sr t_sr i
+  -- Bind outputs
+  connect o i2   
+  connect sr_o sr_o'
   return io
 
 test_hdl_sync :: SeqTerm.M [SeqTerm.R S]
