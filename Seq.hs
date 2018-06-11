@@ -31,7 +31,8 @@ import Prelude hiding(zipWith)
 
 -- Abstract tag for signal representation.
 data S = S
-data SType = SInt (Maybe NbBits) InitVal deriving Show
+type SSize = Maybe NbBits
+data SType = SInt SSize InitVal deriving Show
 type NbBits = Int
 type InitVal = Int
 
@@ -114,6 +115,12 @@ class (Monad m, Num (r S)) => Seq m r | r -> m where
   op2 :: Op2 -> r S -> r S -> m (r S)
   op3 :: Op3 -> r S -> r S -> r S -> m (r S)
 
+  -- Slices are special: there's a big difference between constant
+  -- stlices (just wires) and dynamic slices (barrel shifter), so
+  -- limit to constant slices only.  Upper bound can be Nothing, which
+  -- takes all the upper bits.
+  slice :: r S -> SSize -> NbBits -> m (r S)
+
 
 -- Primitives
 
@@ -123,11 +130,14 @@ data Op1 = INV
 inv :: forall m r. Seq m r => r S -> m (r S)
 inv = op1 INV
 
-data Op2 = ADD | AND | XOR | SLL | SLR | CONC
+data Op2 = ADD | AND | XOR | SLL | SLR | CONC | EQU
   deriving Show
 
 add :: forall m r. Seq m r => r S -> r S -> m (r S)
 add = op2 ADD
+
+equ :: forall m r. Seq m r => r S -> r S -> m (r S)
+equ = op2 EQU
 
 band :: forall m r. Seq m r => r S -> r S -> m (r S)
 band = op2 AND

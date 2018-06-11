@@ -56,4 +56,14 @@ sync :: Seq m r => SType -> r S -> m (r S)
 sync t i = do
   reg t $ sync' (constant t) i
 
+-- Note: we only support the combinatorial (dual-clause) if.
+case' :: Seq m r => [(m (r S), m (r S))] -> m (r S) -> m (r S)
+case' [] dflt = dflt
+case' ((cond, whenTrue):cases) dflt = do
+  c <- cond
+  t <- whenTrue
+  f <- case' cases dflt
+  if' c t f
+  
 
+  

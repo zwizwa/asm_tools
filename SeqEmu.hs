@@ -73,6 +73,10 @@ instance Seq M R where
     (sz, r0) <- styp r
     return $ SInt sz r0
 
+  slice (R a) u l = do
+    ((sa,_), va) <- val' a
+    return $ R $ sliceVal (sa,va) u l
+
   -- driven signals
   op1 o (R a) = do
     ((sza,_), va) <- val' a
@@ -83,7 +87,7 @@ instance Seq M R where
     ((szb,_),vb) <- val' b
     return $ R $ case o of
       CONC ->
-        concVal (sza,va) (szb, vb)
+        concVal (sza, va) (szb, vb)
       _ ->
         truncVal (sz sza szb) $ f2 o va vb
 
@@ -134,7 +138,13 @@ concVal (sza,va) (szb, vb) =
     Just szb' -> do
       let sz = liftA2 (+) sza szb in
         Val sz $ (shiftL va szb') .&. vb
-      
+
+-- Array slice.  This mimicks MyHDL's signal[upper:lower] construct.
+-- Upper can be left unspecified as Nothing, which means the entire
+-- signal is taken.
+sliceVal (sa,va) upper lower = truncVal sa' va' where
+  sa' = fmap (+ (- lower)) $ sz sa upper
+  va' = shiftR lower va
 
 f1 INV = complement
 

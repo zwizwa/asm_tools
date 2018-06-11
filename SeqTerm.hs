@@ -46,6 +46,7 @@ data Term n
   = Comb1   SType Seq.Op1 n
   | Comb2   SType Seq.Op2 n n
   | Comb3   SType Seq.Op3 n n n
+  | Slice   SType n Seq.SSize Seq.NbBits
   | Delay   SType n
   | Connect SType n
   | Input   SType -- Externally driven node
@@ -67,6 +68,7 @@ data Op n
 termType (Comb1 t _ _) = t
 termType (Comb2 t _ _ _) = t
 termType (Comb3 t _ _ _ _) = t
+termType (Slice t _ _ _) = t
 termType (Delay t _) = t
 termType (Connect t _) = t
 termType (Input t) = t
@@ -111,13 +113,16 @@ instance Seq.Seq M R where
 
   -- driven nodes
   op1 o (R a) =
-    fmap R $ driven $ Comb1 (mergeOpTypes [a]) o a
+    fmap R $ driven $ Comb1 (combTypes [a]) o a
 
   op2 o (R a) (R b) =
-    fmap R $ driven $ Comb2 (mergeOpTypes [a,b]) o a b
+    fmap R $ driven $ Comb2 (combTypes [a,b]) o a b
 
   op3 o (R a) (R b) (R c) =
-    fmap R $ driven $ Comb3 (mergeOpTypes [a,b,c]) o a b c
+    fmap R $ driven $ Comb3 (combTypes [a,b,c]) o a b c
+
+  slice (R a) b c =
+    fmap R $ driven $ Slice (combTypes [a]) a b c
 
   -- Combinatorial drive is needed to support combinatorial module
   -- outputs, but otherwise not used in Seq.hs code.
@@ -145,15 +150,28 @@ instance Num (R Seq.S) where
   signum = num1 signum
   negate = num1 negate
 
-num1 f (R (Const (SInt t a))) =
-  R $ Const $ SInt t $ f a
-num2 f (R (Const (SInt ta a))) (R (Const (SInt tb b))) =
-  R $ Const $ SInt (mergeTypes [ta,tb]) $ f a b
+num1 f (R (Const (SInt s a))) =
+  R $ Const $ SInt s $ f a
+num2 f (R (Const (SInt sa a))) (R (Const (SInt sb b))) =
+  R $ Const $ SInt (mergeSize [sa,sb]) $ f a b
 
 
-mergeOpTypes ns = mergeTypes $ fmap opType ns
-mergeTypes (t:_) = t -- FIXME!!
+-- Note that this only works for combinatorial results, which do not
+-- have an initial value, but do have a bit width.  Another indication
+-- of data structures not being encoded well.
+combTypes :: [Op NodeNum] -> SType
+combTypes ns = SInt size 0 where
+  sizes = [s | (SInt s _) <- map opType ns]
+  size = mergeSize sizes
 
+
+mergeSize :: [Maybe Seq.NbBits] -> Maybe Seq.NbBits
+mergeSize [] = error "mergeSize internal error"
+mergeSize [t] = t
+mergeSize (ta:tb:ts) = mergeSize ((f ta tb):ts) where
+  f sz Nothing = sz
+  f Nothing sz = sz
+  f (Just a) (Just b) = Just $ max a b
 
 
 makeNode :: SType -> M (Op NodeNum)

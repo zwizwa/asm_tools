@@ -56,7 +56,7 @@ mGen ports bindings = do
 
   tell $ "from myhdl import *\n"
   tell $ "def " ++ name ++ "("
-  tell $ intercalate "," $ ["CLK","RST"] ++ map sig portNodes
+  tell $ intercalate ", " $ ["CLK","RST"] ++ map sig portNodes
   tell "):\n"
 
   indent (+ 1) $ do
@@ -65,7 +65,7 @@ mGen ports bindings = do
     (n,_) <- get
     tab
     tell "return ["
-    tell $ intercalate "," $ map blk [1..n]
+    tell $ intercalate ", " $ map blk [1..n]
     tell "]\n"
     -- tell $ "# " ++ show (nodeRefcounts nodes) ++ "\n"
 
@@ -76,9 +76,6 @@ defSignal (n, e) = do
   tab ; tell $ sig n ++ " = " ++ (sigSpec $ eType e) ++ "\n"
 
 sigSpec (SInt Nothing _) = error "Signals need to be fully specified"
--- sigSpec (SInt Nothing v0) = sigSpec (SInt (Just 8) v0) -- FIXME
-
-
 sigSpec (SInt (Just n) v0) = "Signal(modbv(" ++ show v0 ++ ")[" ++ show n ++ ":])"
 eType :: Expr n -> SType
 eType (Free (Compose t)) = SeqTerm.termType t
@@ -129,8 +126,12 @@ mTerm (Connect _ a)      = mOp a
 mTerm (Comb1 _ o a)      = call (show o) [mOp a]
 mTerm (Comb2 _ CONC a b) = prfx "concat" $ map mOp [a,b]
 mTerm (Comb2 _ o a b)    = infx o (mOp a) (mOp b)
-mTerm (Comb3 _ IF c x y) = do  mOp x ; tell " if " ; mOp c ; tell " else " ; mOp y
+mTerm (Comb3 _ IF c x y) = do mOp x ; tell " if " ; mOp c ; tell " else " ; mOp y
+mTerm (Slice _ a b c)    = do mOp a ; tell $ "[" ++ showSize b ++ ":" ++ show c ++ "]"
 mTerm (Input _)          = call "INPUT" [] -- not reached
+
+showSize (Just s) = show s
+showSize Nothing = ""
 
 mOp (Const (SInt _ v))  = tell $ show v
 mOp (Node _ n) = mExp n
@@ -138,7 +139,7 @@ mOp (Node _ n) = mExp n
 call tag ms = do
   tell tag
   tell "("
-  sequence_ $ intercalate [tell ","] $ map (\m->[m]) ms
+  sequence_ $ intercalate [tell ", "] $ map (\m->[m]) ms
   tell ")"
 
 tab :: PrintMyHDL ()
