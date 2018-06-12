@@ -218,7 +218,7 @@ test_hdl = do
   -- Instantiate circuits
   i1        <- delay i
   i2        <- delay i1
-  (sr_o',_) <- sr t_sr i
+  (sr_o',_) <- shiftReg t_sr i
   -- Bind outputs
   connect o i2   
   connect sr_o sr_o'

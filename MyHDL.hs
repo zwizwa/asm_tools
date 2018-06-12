@@ -117,18 +117,31 @@ assignment' n e = do
   tell $ sig n ++ ".next = "
   mExp e
   tell "\n"
+
+parens m = do -- (*)
+  tell "(" ; m ; tell ")"
   
 mExp (Pure n) = tell $ sig n
-mExp (Free (Compose e)) = mTerm e
+mExp (Free (Compose e)) = parens $ mTerm e -- (*)
+
+-- (*) When to insert parenthesis?  Easiest is to do it for each
+-- expression.  Python seems to allow this.
+
 
 mTerm (Delay _ a)        = mOp a
 mTerm (Connect _ a)      = mOp a
-mTerm (Comb1 _ o a)      = call (show o) [mOp a]
+mTerm (Input _)          = call "INPUT" [] -- not reached, matched earlier
+mTerm (Comb1 _ INV a)    = (tell "~") >> mOp a
 mTerm (Comb2 _ CONC a b) = prfx "concat" $ map mOp [a,b]
 mTerm (Comb2 _ o a b)    = infx o (mOp a) (mOp b)
-mTerm (Comb3 _ IF c x y) = do mOp x ; tell " if " ; mOp c ; tell " else " ; mOp y
-mTerm (Slice _ a b c)    = do mOp a ; tell $ "[" ++ showSize b ++ ":" ++ show c ++ "]"
-mTerm (Input _)          = call "INPUT" [] -- not reached
+mTerm (Comb3 _ IF c x y) = do
+  mOp x
+  tell " if "   ; mOp c
+  tell " else " ; mOp y
+mTerm (Slice _ a b c)    = do
+  mOp a
+  tell $ "[" ++ showSize b ++ ":"
+  tell $ show c ++ "]"
 
 showSize (Just s) = show s
 showSize Nothing = ""
@@ -156,9 +169,11 @@ prfx op (o:os) = do
 infx o a b = do
   a ; tell " " ; tell (f2 o) ; tell " " ; b
 
+
 f2 ADD = "+"
 f2 SLL = "<<"
 f2 SLR = ">>"
 f2 XOR = "^"
 f2 AND = "&"
+f2 EQU = "=="
 
