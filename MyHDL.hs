@@ -96,15 +96,23 @@ assignment n e = do
   need Comb
   assignment' n e
 
+-- Mode printing.  Combinatorial expressions each get their own block
+-- to provide proper sensitivity/signal semantics.  Sequential blocks
+-- could all be joined together, but we keep them in source order.
+
 need :: Mode -> PrintMyHDL ()
 need context = do
   (n, have) <- get
-  case have == context of
-    True -> return ()
-    False -> do
+  case (have == context, context) of
+    -- Sequential blocks can be joined
+    (True, Seq) ->
+      return ()
+    -- Comb->Comb or any change: create new block
+    _ -> do
       let state = (n+1, context)
       put state
       indent (+ (-1)) $ render state
+      
 render (n, Seq) = do
   tab ; tell $ "@always_seq(CLK.posedge, reset=RST)\n"
   tab ; tell $ "def blk" ++ show n ++ "():\n"
