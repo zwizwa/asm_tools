@@ -90,6 +90,9 @@ main = do
   putStrLn "--- test_cpu_emu"
   print $ take 10 $ test_cpu_emu
 
+  putStrLn "--- test_mem_delay"
+  print $ take 10 $ test_mem_delay
+
   putStrLn "--- VCD"
   let vcd = VCD.toVCD "1ns" ([("d1",1),("d2",1),("d3",8)], transpose [[0,1,1,0,0],[1,0,0,1,0],[1,2,3,3,3]])
   putStr $ vcd
@@ -189,6 +192,14 @@ test_mem2 = SeqEmu.traceState ([empty, empty]) m where
   t = SInt Nothing 0
   m = SeqEmu.fixMem ([t,t]) dummy_mem2
 
+-- Input/output delay.
+test_mem_delay = SeqEmu.traceState ([empty]) m where
+  t = SInt Nothing 0
+  m = SeqEmu.fixMem [t] $ \[rd] -> do
+    c <- counter $ SInt (Just 3) 0
+    return ([(1, 0, c, 0)], [c, rd])
+-- wEn, wAddr, wData, rAddr
+
 -- Stub out what doesn't fit.  The idea is to find a way to gracefully
 -- have these two interpretations produce something useful: MyHDL code
 -- and an emulation test.
@@ -206,6 +217,11 @@ test_cpu_emu =  SeqEmu.traceState ([mem]) m where
 --     ([memi],o) <- CPU.cpu [memo]
 --     return (memi, o)
 --   mem = Map.fromList $ [(n,n+1) | n <- [0..5]]
+
+
+
+
+
 
 -- MyHDL export needs some wrapping to specify module I/O structure.
 -- SeqTerm has support for this.
