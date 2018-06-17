@@ -186,7 +186,7 @@ test_mem = SeqEmu.traceState ([empty]) m where
 -- a) Do not put the memFix inside the code.  Memories are an external
 --    thing, so keep them as abstract as possible.
 --
--- b) Below uses a list, but allow a generic functor
+-- b) Below uses a list, but allow a generic functor (done: Zip f)
   
 dummy_mem2 ([mo1, mo2]) = do
   ([mi1],_) <- dummy_mem $ [mo1]

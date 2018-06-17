@@ -88,7 +88,7 @@ sum = reduce ADD
 
 reduce :: Seq m r => Op2 -> [r S] -> m (r S)
 reduce ADD [] = return 0
-reduce MUL [] = return 1  -- maybe introduce this?
+reduce MUL [] = return 1
 reduce XOR [] = return 0
 reduce AND [] = return $ -1
 reduce OR  [] = return 0
@@ -98,15 +98,11 @@ reduce opc [a,b]  = (op2 opc) a b
 reduce opc (a:as) = (reduce opc as) >>= (op2 opc) a
 
 
--- Lifted versions.  Note this is not the same as liftA2 because the
--- operation is not pure.
-liftOp2 :: forall m r. Seq m r =>
-  (r S -> r S -> m (r S)) ->
-  (m (r S)) -> (m (r S)) -> (m (r S))
-liftOp2 f a b = do
-  a' <- a
-  b' <- b
-  f a' b'
+-- Lifted versions, to be able to use expressions.  Note this is not
+-- the same as liftA2 because the operation is not pure.  It is a
+-- multi-argument version of bind (=<<).  Using these seems to be a
+-- bad idea. 
+bindOp2 f a b = do a' <- a ; b' <- b ; f a' b'
 
 add' :: Seq m r => (m (r S)) -> (m (r S)) -> (m (r S))
-add' = liftOp2 add
+add' = bindOp2 add

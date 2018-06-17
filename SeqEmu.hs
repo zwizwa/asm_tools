@@ -170,20 +170,19 @@ runEmu m i = (v, ts, so) where
 stateIn si r = si ! r
 
 -- The convention is that Seq programs we want to emulate will have
--- the type (M (t, [R S])), which is rendered to (t, [Int]) when
+-- the type (M (t, f S)), which is rendered to (t, f Int) when
 -- interpreted.
-type Bus = [Int]
 
 -- The user-defined type t is there mostly to provide abstract
 -- external state threading in traceIO, but might be useful for other
 -- things.
-toBus rs = sequence $ map (val . unR) rs
+toBus rs = sequence $ fmap (val . unR) rs
 toOut (t, rs) = do is <- toBus rs; return (t, is)
 
 -- Generic render function.  Produces concrete update function.
 -- Here t is some other type threaded through the Monad.
 -- FIXME: This can be further collapsed by exposing toOut.
-toTick :: M (t, [R S]) -> RegVals -> (RegVals, (t, Bus))
+toTick :: Traversable f => M (t, f (R S)) -> RegVals -> (RegVals, (t, f Int))
 toTick m si = (so, (t, o)) where
   ((t, o), _, so) = runEmu (m >>= toOut) $ stateIn si
 
@@ -210,7 +209,7 @@ reset m = s0 where
 -- first active clock pulse, when registers are latched for the first
 -- time.
 
-traceState :: io -> (io -> M (io, [R S])) -> [Bus]
+traceState :: Traversable f => io -> (io -> M (io, f (R S))) -> [f Int]
 traceState io0 mf = t io0 s0 where
   s0 = reset (mf io0) -- probe with first state input
   t io s  = o : t io' s' where
@@ -219,14 +218,15 @@ traceState io0 mf = t io0 s0 where
 
 -- Special case: Implement input via traceIO by using io to contain
 -- the input list.
-trace :: ([R S] -> M [R S]) -> [Bus] -> [Bus]
+trace :: (Functor f, Traversable f') =>
+  (f (R S) -> M (f' (R S))) -> [f Int] -> [f' Int]
 trace mf is0 = traceState is0 mf' where
   mf' (i:is) = do
-    o <- mf [constant (SInt Nothing v) | v <- i]
+    o <- mf $ fmap (constant . (SInt Nothing)) i
     return (is, o)
 
 -- Version without external state
-trace' :: M [R S] -> [Bus]
+trace' :: Traversable f => M (f (R S)) -> [f Int]
 trace' m = traceState () (\() -> do o <- m; return ((), o))
 
 
