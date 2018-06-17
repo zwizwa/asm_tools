@@ -176,7 +176,7 @@ dummy_mem ([_]) = do       -- memory's output
   return ([(z, z, z, z)],  -- memory's input
           [])              -- test program empty output bus
 test_mem :: [[Int]]
-test_mem = SeqEmu.traceSO ([empty]) m where
+test_mem = SeqEmu.traceSO m ([empty]) where
   t = SInt Nothing 0
   m = SeqEmu.fixMem ([t]) dummy_mem
 
@@ -193,12 +193,12 @@ dummy_mem2 ([mo1, mo2]) = do
   ([mi2],_) <- dummy_mem $ [mo2]
   return $ ([mi1, mi2],[])
 
-test_mem2 = SeqEmu.traceSO ([empty, empty]) m where
+test_mem2 = SeqEmu.traceSO m ([empty, empty]) where
   t = SInt Nothing 0
   m = SeqEmu.fixMem ([t,t]) dummy_mem2
 
 -- Input/output delay.
-test_mem_delay = SeqEmu.traceSO ([empty]) m where
+test_mem_delay = SeqEmu.traceSO m ([empty]) where
   t = SInt Nothing 0
   m = SeqEmu.fixMem [t] $ \[rd] -> do
     c <- counter $ SInt (Just 3) 0
@@ -211,12 +211,12 @@ test_mem_delay = SeqEmu.traceSO ([empty]) m where
 test_cpu_net = do
   ([(a,b,c,d)], o) <- CPU.cpu $ [0]
   return $ o ++ [a,b,c,d]
-test_cpu_emu =  SeqEmu.traceSO ([mem]) m where
+test_cpu_emu =  SeqEmu.traceSO m ([mem]) where
   t = SInt Nothing 0
   m = SeqEmu.fixMem ([t]) CPU.cpu
   mem = Map.fromList $ [(n,n+1) | n <- [0..2]]
 
--- test_cpu_emu' =  SeqEmu.traceSO mem m where
+-- test_cpu_emu' =  SeqEmu.traceSO m mem where
 --   typ = SInt Nothing 0
 --   m = SeqEmu.fixMem' (typ,typ) $ \memo -> do
 --     ([memi],o) <- CPU.cpu [memo]

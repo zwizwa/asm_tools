@@ -198,8 +198,8 @@ tick m si = (so, o) where
 -- The second value corresponds to the time instance associated to the
 -- first active clock pulse, when registers are latched for the first
 -- time.
-ticks :: io -> (io -> M (io, t)) -> [t]
-ticks io0 mf = t io0 s0 where
+ticks :: (io -> M (io, t)) -> io -> [t]
+ticks mf io0 = t io0 s0 where
   s0 = reset (mf io0) -- probe with first state input
   t io s  = o : t io' s' where
     (s', (io', o)) = f s
@@ -207,7 +207,7 @@ ticks io0 mf = t io0 s0 where
 
 -- Special case: emulate input.
 iticks :: (i -> M o) -> [i] -> [o]
-iticks mf is0 = ticks is0 mf' where
+iticks mf is0 = ticks mf' is0 where
   mf' (i:is) = do
     o <- mf i
     return (is, o)
@@ -233,8 +233,8 @@ inject = fmap (constant . (SInt Nothing))
 -- These are tied to the probe and inject functions.  They are a bit
 -- clumsy.  Maybe best to keep that separated?  Actual use will
 -- indicate.
-traceSO :: Traversable f => io -> (io -> M (io, f (R S))) -> [f Int]
-traceSO io0 mf = ticks io0 mf' where
+traceSO :: Traversable f => (io -> M (io, f (R S))) -> io -> [f Int]
+traceSO mf io0 = ticks mf' io0 where
   mf' io = mf io >>= probe'
 
 traceIO :: (Functor f, Traversable f') => (f (R S) -> M (f' (R S))) -> [f Int] -> [f' Int]
@@ -243,7 +243,7 @@ traceIO mf is = iticks mf' is' where
   is' = map inject is
 
 traceO :: Traversable f => M (f (R S)) -> [f Int]
-traceO m = traceSO () (\() -> do o <- m; return ((), o))
+traceO m = traceSO (\() -> do o <- m; return ((), o)) ()
 
 
 -- Implement memory as a threaded computation.
