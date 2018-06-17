@@ -217,7 +217,7 @@ iticks mf is0 = ticks mf' is0 where
 -- functions are provided to convert to and from Int.  Signals can be
 -- collected in a bus, represented by a Traversable.
 probe :: Traversable f => f (R S) -> M (f Int)
-probe frs = sequence $ fmap (val . unR) frs
+probe = sequence . (fmap (val . unR))
 
 -- Convenient special case for state threading.
 probe' :: Traversable f => (t, f (R S)) -> M (t, f Int)
