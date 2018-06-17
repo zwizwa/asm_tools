@@ -122,7 +122,7 @@ printSeqEmu :: SeqEmu.M (SeqEmu.R S) -> IO ()
 printSeqEmu src = do
   let src' = src >> return ((),[]) -- API stub
       r0 = SeqEmu.reset src'
-      f  = SeqEmu.toTick src'
+      f  = SeqEmu.tick src'
   putStrLn "init: "
   printl $ mapToList $ r0
   putStrLn "post: "

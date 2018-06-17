@@ -12,6 +12,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE TupleSections #-}
 --{-# LANGUAGE DeriveTraversable #-}
 --{-# LANGUAGE DeriveAnyClass #-}
 
@@ -161,48 +162,42 @@ makeRegNum = do
   modify $ appRegNum (+ 1)
   return n
 
+-- Perform a single clock cycle.  Note that the state monad is used to
+-- incrementally build up a dictionary of registers.  It is _not_ used
+-- to thread register state from one machine tick to another.  That
+-- action is performed expicitly in the traceState function.
+runEmu :: M t -> RegIn -> (t, RegTypes, RegVals)
 runEmu m i = (v, ts, so) where
   (v, (_, ts, so)) = runState (runReaderT (unM m) i) (0, Map.empty, Map.empty)
 
--- While output register state is a map to allow post-processing,
--- input register state is represented more abstractly as a function
--- to allow probing.
-stateIn si r = si ! r
+-- To perform a simulation, we need two things.  Both are built on runEmu.
 
--- The convention is that Seq programs we want to emulate will have
--- the type (M (t, f S)), which is rendered to (t, f Int) when
--- interpreted.
-
--- The user-defined type t is there mostly to provide abstract
--- external state threading in traceIO, but might be useful for other
--- things.
-toBus rs = sequence $ fmap (val . unR) rs
-toOut (t, rs) = do is <- toBus rs; return (t, is)
-
--- Generic render function.  Produces concrete update function.
--- Here t is some other type threaded through the Monad.
--- FIXME: This can be further collapsed by exposing toOut.
-toTick :: Traversable f => M (t, f (R S)) -> RegVals -> (RegVals, (t, f Int))
-toTick m si = (so, (t, o)) where
-  ((t, o), _, so) = runEmu (m >>= toOut) $ stateIn si
-
-
--- Without initial values encoding in types, we need to probe the
--- program to obtain them.  Ideally, initial state probing would be a
--- separate interpretation instance of Seq, but probing with 0 inputs
--- is adequate until it becomes a problem in future refactoring.
-probe _ = 0
-
+-- a) The initial register state.  Registers and their types and
+--    initial values are embedded inside the program.  To get them
+--    out, we exectue the program once with all registeres set to 0.
+reset :: M t -> Map RegNum RegVal
 reset m = s0 where
-  (_, types, _) = runEmu m probe
+  (_, types, _) = runEmu m $ const 0
   s0 = Map.map init types
   init (sz,r0) = r0
 
--- Render signal sequence produced by a state-parameterized Seq.hs
--- program. Abstract user state is threaded explicitly in this
--- function, which is simpler than extending the M state to contain
--- the extra type parameter.
+-- b) The register update function.  Two assumptions are made: an
+--    arbitrary output is produced to allow user extension, along side
+--    a "bus" of signals, which will be translated into a bus of
+--    concrete Integers.
+tick :: Traversable f => M (t, f (R S)) -> RegVals -> (RegVals, (t, f Int))
+tick m si = (so, (t, o)) where
+  ((t, o), _, so) = runEmu (m >>= toOut) (si !)
+  toOut (t, rs) = fmap (t,) $ toBus rs
+  -- FIXME: move toBus into m
+  toBus rs = sequence $ fmap (val . unR) rs
 
+-- Run a simulation of a Seq machine, incorporating user-provided
+-- state threading.
+--
+-- This explicit representation was chosen in favor of extening M with
+-- a user-parameterizable state.
+--
 -- Note that the first value returned corresponds to the reset state
 -- of the registers and any combinatorial results computed from that.
 -- The second value corresponds to the time instance associated to the
@@ -214,7 +209,13 @@ traceState io0 mf = t io0 s0 where
   s0 = reset (mf io0) -- probe with first state input
   t io s  = o : t io' s' where
     (s', (io', o)) = f s
-    f = toTick $ mf io
+    f = tick $ mf io
+  -- We can't do anything with internal representations, so convert
+  -- them to Int.
+  mf' io = do
+    (io', frs) <- mf io
+    frs' <- sequence $ fmap (val . unR) frs
+    return (io', frs')
 
 -- Special case: Implement input via traceIO by using io to contain
 -- the input list.
