@@ -164,8 +164,7 @@ makeRegNum = do
 
 -- Perform a single clock cycle.  Note that the state monad is used to
 -- incrementally build up a dictionary of registers.  It is _not_ used
--- to thread register state from one machine tick to another.  That
--- action is performed expicitly in the traceState function.
+-- to thread register state from one machine tick to another.
 runEmu :: M t -> RegIn -> (t, RegTypes, RegVals)
 runEmu m i = (v, ts, so) where
   (v, (_, ts, so)) = runState (runReaderT (unM m) i) (0, Map.empty, Map.empty)
@@ -207,40 +206,44 @@ ticks io0 mf = t io0 s0 where
     f = tick $ mf io
 
 -- Special case: emulate input.
-iticks :: Functor f => (f (R S) -> M t) -> [f Int] -> [t]
+iticks :: (i -> M o) -> [i] -> [o]
 iticks mf is0 = ticks is0 mf' where
   mf' (i:is) = do
-    o <- mf $ fmap (constant . (SInt Nothing)) i
+    o <- mf i
     return (is, o)
 
 
--- Since we can't do anything with internal representations, this
--- function is provided to derefence outputs to Int.  By convention, a
--- bus is represented by a Traversable.
+-- Since we can't do anything with internal representations, these0
+-- functions are provided to convert to and from Int.  Signals can be
+-- collected in a bus, represented by a Traversable.
 probe :: Traversable f => f (R S) -> M (f Int)
 probe frs = sequence $ fmap (val . unR) frs
 
+-- Convenient special case for state threading.
+probe' :: Traversable f => (t, f (R S)) -> M (t, f Int)
+probe' (t,b) = fmap (t,) $ probe b
 
--- FIXME: remove this function.  Keep similation general, and insert
--- probe manually.
-traceState :: Traversable f => io -> (io -> M (io, f (R S))) -> [f Int]
-traceState io0 mf = ticks io0 mf' where
+-- Same, but pure, and in the other direction, for inputs.  
+inject :: Functor f => (f Int) -> (f (R S))
+inject = fmap (constant . (SInt Nothing))
+
+
+
+
+-- These are tied to the probe and inject functions.  They are a bit
+-- clumsy.  Maybe best to keep that separated?  Actual use will
+-- indicate.
+traceSO :: Traversable f => io -> (io -> M (io, f (R S))) -> [f Int]
+traceSO io0 mf = ticks io0 mf' where
   mf' io = mf io >>= probe'
-  probe' (t,b) = fmap (t,) $ probe b
-    
 
--- Special case: Implement input via traceState by using io to contain
--- the input list.
-trace :: (Functor f, Traversable f') =>
-  (f (R S) -> M (f' (R S))) -> [f Int] -> [f' Int]
-trace mf is0 = traceState is0 mf' where
-  mf' (i:is) = do
-    o <- mf $ fmap (constant . (SInt Nothing)) i
-    return (is, o)
+traceIO :: (Functor f, Traversable f') => (f (R S) -> M (f' (R S))) -> [f Int] -> [f' Int]
+traceIO mf is = iticks mf' is' where
+  mf' is = mf is >>= probe
+  is' = map inject is
 
--- Version without external state
-trace' :: Traversable f => M (f (R S)) -> [f Int]
-trace' m = traceState () (\() -> do o <- m; return ((), o))
+traceO :: Traversable f => M (f (R S)) -> [f Int]
+traceO m = traceSO () (\() -> do o <- m; return ((), o))
 
 
 -- Implement memory as a threaded computation.
