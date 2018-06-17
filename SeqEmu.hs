@@ -185,39 +185,51 @@ reset m = s0 where
 --    arbitrary output is produced to allow user extension, along side
 --    a "bus" of signals, which will be translated into a bus of
 --    concrete Integers.
-tick :: Traversable f => M (t, f (R S)) -> RegVals -> (RegVals, (t, f Int))
-tick m si = (so, (t, o)) where
-  ((t, o), _, so) = runEmu (m >>= toOut) (si !)
-  toOut (t, rs) = fmap (t,) $ toBus rs
-  -- FIXME: move toBus into m
-  toBus rs = sequence $ fmap (val . unR) rs
+tick :: M t -> RegVals -> (RegVals, t)
+tick m si = (so, o) where
+  (o, _, so) = runEmu m (si !)
 
--- Run a simulation of a Seq machine, incorporating user-provided
--- state threading.
---
--- This explicit representation was chosen in favor of extening M with
--- a user-parameterizable state.
---
--- Note that the first value returned corresponds to the reset state
+
+-- The simluation is then the initialization and threading of the
+-- update function.  Do it a little more general by allowing
+-- user-provided state threading.
+
+-- The first value in the output list corresponds to the reset state
 -- of the registers and any combinatorial results computed from that.
 -- The second value corresponds to the time instance associated to the
 -- first active clock pulse, when registers are latched for the first
 -- time.
-
-traceState :: Traversable f => io -> (io -> M (io, f (R S))) -> [f Int]
-traceState io0 mf = t io0 s0 where
+ticks :: io -> (io -> M (io, t)) -> [t]
+ticks io0 mf = t io0 s0 where
   s0 = reset (mf io0) -- probe with first state input
   t io s  = o : t io' s' where
     (s', (io', o)) = f s
     f = tick $ mf io
-  -- We can't do anything with internal representations, so convert
-  -- them to Int.
-  mf' io = do
-    (io', frs) <- mf io
-    frs' <- sequence $ fmap (val . unR) frs
-    return (io', frs')
 
--- Special case: Implement input via traceIO by using io to contain
+-- Special case: emulate input.
+iticks :: Functor f => (f (R S) -> M t) -> [f Int] -> [t]
+iticks mf is0 = ticks is0 mf' where
+  mf' (i:is) = do
+    o <- mf $ fmap (constant . (SInt Nothing)) i
+    return (is, o)
+
+
+-- Since we can't do anything with internal representations, this
+-- function is provided to derefence outputs to Int.  By convention, a
+-- bus is represented by a Traversable.
+probe :: Traversable f => f (R S) -> M (f Int)
+probe frs = sequence $ fmap (val . unR) frs
+
+
+-- FIXME: remove this function.  Keep similation general, and insert
+-- probe manually.
+traceState :: Traversable f => io -> (io -> M (io, f (R S))) -> [f Int]
+traceState io0 mf = ticks io0 mf' where
+  mf' io = mf io >>= probe'
+  probe' (t,b) = fmap (t,) $ probe b
+    
+
+-- Special case: Implement input via traceState by using io to contain
 -- the input list.
 trace :: (Functor f, Traversable f') =>
   (f (R S) -> M (f' (R S))) -> [f Int] -> [f' Int]
