@@ -130,11 +130,14 @@ data Op1 = INV
 inv :: forall m r. Seq m r => r S -> m (r S)
 inv = op1 INV
 
-data Op2 = ADD | AND | XOR | SLL | SLR | CONC | EQU
+data Op2 = ADD | MUL | AND | OR | XOR | SLL | SLR | CONC | EQU
   deriving Show
 
 add :: forall m r. Seq m r => r S -> r S -> m (r S)
 add = op2 ADD
+
+mul :: forall m r. Seq m r => r S -> r S -> m (r S)
+mul = op2 MUL
 
 equ :: forall m r. Seq m r => r S -> r S -> m (r S)
 equ = op2 EQU
@@ -144,6 +147,9 @@ band = op2 AND
 
 bxor :: forall m r. Seq m r => r S -> r S -> m (r S)
 bxor = op2 XOR
+
+bor :: forall m r. Seq m r => r S -> r S -> m (r S)
+bor = op2 OR
 
 sll :: forall m r. Seq m r => r S -> r S -> m (r S)
 sll = op2 SLL

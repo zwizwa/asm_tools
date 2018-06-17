@@ -9,6 +9,7 @@
 module SeqLib where
 import Seq
 import Control.Monad
+import Control.Applicative
 
 
 -- Special fixReg case: single register, with register as output
@@ -19,7 +20,7 @@ reg t f = do fixReg [t] $ \[r] -> do r' <- f r ; return ([r'], r)
 -- Some simple building blocks
 
 inc :: Seq m r => r S -> m (r S)
-inc c = add c (int 1)
+inc c = add c 1
 
 counter :: Seq m r => SType -> m (r S)
 counter t = reg t inc
@@ -33,12 +34,8 @@ edge d = do
   d0 <- delay d
   d `bxor` d0
 
-bit b = do
-  band b (int 1)
+bit b = band b 1
 
-
-int :: forall m r. Seq m r => Int -> r S
-int v = constant (SInt Nothing v)
 
 
 -- A test of completeness is to implement a clock synchronizer.
@@ -78,3 +75,38 @@ shiftReg t i = do
     r_shift <- conc r_drop i
     return $ ([r_shift], (r, r_shift))
 
+
+integral :: Seq m r => r S -> m (r S)
+integral x = do
+  t <- stype x
+  reg t $ add x
+
+
+-- Multi-argument versions
+sum :: Seq m r => [r S] -> m (r S)
+sum = reduce ADD
+
+reduce :: Seq m r => Op2 -> [r S] -> m (r S)
+reduce ADD [] = return 0
+reduce MUL [] = return 1  -- maybe introduce this?
+reduce XOR [] = return 0
+reduce AND [] = return $ -1
+reduce OR  [] = return 0
+reduce opc [] = error $ "reduce: no identity element for " ++ show opc
+reduce opc [a] = return a
+reduce opc [a,b]  = (op2 opc) a b
+reduce opc (a:as) = (reduce opc as) >>= (op2 opc) a
+
+
+-- Lifted versions.  Note this is not the same as liftA2 because the
+-- operation is not pure.
+liftOp2 :: forall m r. Seq m r =>
+  (r S -> r S -> m (r S)) ->
+  (m (r S)) -> (m (r S)) -> (m (r S))
+liftOp2 f a b = do
+  a' <- a
+  b' <- b
+  f a' b'
+
+add' :: Seq m r => (m (r S)) -> (m (r S)) -> (m (r S))
+add' = liftOp2 add

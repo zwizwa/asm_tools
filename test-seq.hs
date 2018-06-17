@@ -1,6 +1,7 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE Arrows #-}
 
 
 -- Is it possible to capture enough of a synchronous state machine to
@@ -46,6 +47,10 @@ import Data.Map.Lazy (empty, foldrWithKey, insert)
 import qualified Data.Map.Lazy as Map
 import qualified Control.Applicative as Applicative
 import Control.Applicative (ZipList(..))
+import Control.Category
+import Prelude hiding((.),id)
+import Control.Arrow
+import Control.Monad
 import Data.List
 -- import Data.Functor.Apply
 
@@ -132,7 +137,7 @@ mapToList = foldrWithKey f [] where f k v t = (k,v):t
 
 square = do
   c <- counter $ SInt (Just 3) 0
-  slr c (int 2) >>= bit
+  bit =<< slr c 2
 
 test_counter = SeqEmu.trace' $  do
   c1 <- counter $ SInt (Just 1) 0
@@ -152,7 +157,7 @@ test_fixReg = SeqEmu.trace' fixReg2
 
 -- For testing, outputs need to be collected in lists.
 test_edge = SeqEmu.trace' $ do
-  e <- square >>= edge
+  e <- edge =<< square
   return [e]
 
 -- Clock synchronizer
@@ -167,7 +172,7 @@ test_sync = SeqEmu.trace f is where
 
 -- Bare bones memFix test.
 dummy_mem ([_]) = do       -- memory's output
-  let z = int 0
+  let z = 0
   return ([(z, z, z, z)],  -- memory's input
           [])              -- test program empty output bus
 test_mem :: [[Int]]
@@ -259,4 +264,30 @@ print_hdl src = do
   putStr $ MyHDL.gen ports inl
   return ()
   
+
+-- Just types.  Kleisli composition can be done without wrapping using
+-- (>=>). I don't really see the point in using the Category or Arrow
+-- abstraction.
+
+
+-- Non-wrapped kleisli composition    
+test_arrow0 :: Seq m r => r S -> m (r S)
+test_arrow0 = integral >=> integral
+
+-- Wrapped, with (.) from Control.Category
+test_arrow1 :: Seq m r => r S -> m (r S)
+test_arrow1 = runKleisli $ i . i where i = Kleisli integral
+
+-- With some Arrow syntax
+test_arrow2 :: forall m r. Seq m r => r S -> m (r S)
+test_arrow2 = runKleisli a where
+  integral' = Kleisli (integral :: r S -> m (r S))
+  a = proc x -> do
+    x' <- integral' . integral' -< x
+    id -< x'
+
+-- Can also be used to create "expressions".
+test_arrow3 :: forall m r. Seq m r => r S -> m (r S)
+test_arrow3 x = (add x <=< add x) x
+
 
