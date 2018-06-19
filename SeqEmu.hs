@@ -13,6 +13,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE ExistentialQuantification #-}
 --{-# LANGUAGE DeriveTraversable #-}
 --{-# LANGUAGE DeriveAnyClass #-}
 
@@ -33,14 +34,14 @@ import Prelude hiding(zipWith)
 
 
 -- Main interpretation monad for Seq
-newtype M t = M { unM :: ReaderT RegIn (State CompState) t } deriving
+newtype M t = M { runM :: ReaderT RegIn (State CompState) t } deriving
   (Functor, Applicative, Monad,
    MonadReader RegIn,
    MonadState CompState)
 type RegNum    = Int
 type ConstVal  = Int
 type RegVal    = Int
-type RegType   = (Size, RegVal)
+data RegType   = IntReg Size RegVal | IntMem MemState
 -- Keep these two separate
 type RegVals   = Map RegNum RegVal
 type RegTypes  = Map RegNum RegType
@@ -48,10 +49,26 @@ type RegTypes  = Map RegNum RegType
 type RegIn = RegNum -> RegVal
 type CompState = (RegNum, RegTypes, RegVals)
 
+
+-- EDIT: This is for later.  Make memories explicit.
+
+-- To support composable state threading, the "value" of a register is
+-- relaxed to an existential type.
+data AbsReg = 
+  forall s. (AbsRegOps s) => Signal { 
+    stateInit   :: s, 
+    stateUpdate :: s -> M s
+  }
+class AbsRegOps s where
+  dumpAbsReg :: s -> String
+
+
+
+
 -- Primitive state manipulations
-appRegNum f (n,t,v) = (f n, t, v) ; getRegNum = do (n,_,_) <- get ; return n
-appTypes  f (n,t,v) = (n, f t, v) ; getTypes  = do (_,t,_) <- get ; return t
-appVals   f (n,t,v) = (n, t, f v)
+appRegNum f (n, t, v) = (f n, t, v) ; getRegNum = do (n, _, _) <- get ; return n
+appTypes  f (n, t, v) = (n, f t, v) ; getTypes  = do (_, t, _) <- get ; return t
+appVals   f (n, t, v) = (n, t, f v)
 
 data R t = R { unR :: Signal } -- phantom wrapper
 data Signal = Reg Int
@@ -64,7 +81,7 @@ instance Seq M R where
   -- undriven signal
   signal (SInt sz r0) = do
     r <- makeRegNum
-    modify $ appTypes $ insert r (sz, r0)
+    modify $ appTypes $ insert r $ IntReg sz r0
     return $ R $ Reg  r
 
   constant (SInt sz r0) =
@@ -107,6 +124,7 @@ instance Seq M R where
   connect _ _ = error "SeqEmu does not support connect"
 
 
+
 -- This can happen due to []'s applicative functor.
 insert' tag = Map.insertWithKey err where
   err k v v_old = error $ tag ++ "double insert: (k,v,v_old)=" ++ show (k,v,v_old)
@@ -117,8 +135,13 @@ val' (Val sz v) = return ((sz, v), v) -- Set reset value to actual value
 val' (Reg r) = do
   v <- asks $ \regs -> regs r
   ts <- getTypes
-  let (sz, r0) = ts ! r
-  return ((sz, r0), v)
+  case ts ! r of
+    IntReg sz r0 ->
+      return ((sz, r0), v)
+    IntMem s ->
+      error "FIXME: val'"
+
+      
 styp = (fmap fst) . val'
 
 
@@ -156,7 +179,8 @@ f2 SLL = shiftL
 f2 SLR = shiftR
 
 f3 IF c a b = if c /= 0 then a else b
-  
+
+makeRegNum :: M Int  
 makeRegNum = do
   n <- getRegNum
   modify $ appRegNum (+ 1)
@@ -167,7 +191,7 @@ makeRegNum = do
 -- to thread register state from one machine tick to another.
 runEmu :: M t -> RegIn -> (t, RegTypes, RegVals)
 runEmu m i = (v, ts, so) where
-  (v, (_, ts, so)) = runState (runReaderT (unM m) i) (0, Map.empty, Map.empty)
+  (v, (_, ts, so)) = runState (runReaderT (runM m) i) (0, Map.empty, Map.empty)
 
 -- To perform a simulation, we need two things.  Both are built on runEmu.
 
@@ -178,7 +202,7 @@ reset :: M t -> Map RegNum RegVal
 reset m = s0 where
   (_, types, _) = runEmu m $ const 0
   s0 = Map.map init types
-  init (sz,r0) = r0
+  init (IntReg sz r0) = r0  -- FIXME: map
 
 -- b) The register update function.  Two assumptions are made: an
 --    arbitrary output is produced to allow user extension, along side
@@ -191,7 +215,8 @@ tick m si = (so, o) where
 
 -- The simluation is then the initialization and threading of the
 -- update function.  Do it a little more general by allowing
--- user-provided state threading.
+-- user-provided state threading, which e.g. is used to implement
+-- memories.
 
 -- The first value in the output list corresponds to the reset state
 -- of the registers and any combinatorial results computed from that.
@@ -205,15 +230,21 @@ ticks mf io0 = t io0 s0 where
     (s', (io', o)) = f s
     f = tick $ mf io
 
+-- Note: this is effectively a second state monad.  Currently it is
+-- not very clear how to best abstract this:
+-- a) explicit ticks function
+-- b) parameterize M with extra state
+-- c) use a custom monad stack, write M as a transformer
+
+
+
 -- Special case: emulate input.
 iticks :: (i -> M o) -> [i] -> [o]
 iticks mf is0 = ticks mf' is0 where
-  mf' (i:is) = do
-    o <- mf i
-    return (is, o)
+  mf' (i:is) = fmap (is,) $ mf i
 
 
--- Since we can't do anything with internal representations, these0
+-- Since we can't do anything with internal representations, these
 -- functions are provided to convert to and from Int.  Signals can be
 -- collected in a bus, represented by a Traversable.
 probe :: Traversable f => f (R S) -> M (f Int)
@@ -223,7 +254,7 @@ probe = sequence . (fmap (val . unR))
 probe' :: Traversable f => (t, f (R S)) -> M (t, f Int)
 probe' (t,b) = fmap (t,) $ probe b
 
--- Same, but pure, and in the other direction, for inputs.  
+-- The reverse for inputs, but pure.
 inject :: Functor f => (f Int) -> (f (R S))
 inject = fmap (constant . (SInt Nothing))
 
@@ -231,8 +262,9 @@ inject = fmap (constant . (SInt Nothing))
 
 
 -- These are tied to the probe and inject functions.  They are a bit
--- clumsy.  Maybe best to keep that separated?  Actual use will
--- indicate.
+-- clumsy.  I expect these to become trivial once a good runtime state
+-- composition mechanism is in place.
+
 traceSO :: Traversable f => (io -> M (io, f (R S))) -> io -> [f Int]
 traceSO mf io0 = ticks mf' io0 where
   mf' io = mf io >>= probe'
@@ -298,6 +330,55 @@ fixMem t user s = fixReg t comb where
     return (o', (s', x))
 
 
+-- FIXME: conceptual error: The RegVal needs to be changed to
+-- accomodate other things than Int.
+
+-- -- Memory state is stored in a IntMem dictionary.
+-- fixMem' :: 
+--   (Zip f, Traversable f) =>
+--   f SType -> (f (R S) -> M (f (R S, R S, R S, R S), o)) -> M o
+
+-- fixMem' t user = fixReg t comb where
+
+--   -- FIXME: It's weird to have these two phases intermixed:
+--   -- default+type creation and readout.  For some reason they show up
+--   -- here directly, making this obvious.  Maybe split this into
+--   -- separate phases?
+--   mems = sequence $ fmap mkMem t
+--   mkMem _ = do
+--     r <- makeRegNum
+--     modify $ appTypes $ insert r $ IntMem Map.empty
+--     IntMem memState <- asks $ \regs -> regs r
+--     let memUpdate s' = modify $ appVals $ insert' "SeqEmu.fixMem: " r s'
+--     return (memState, memUpdate)
+
+--   -- Input/Output are named from memory's perspecitive: o is the
+--   -- memory's read port data register.  The memory enable, address and
+--   -- data input is implemented as a combinatorial network to provide
+--   -- single cycle read acces.
+--   comb o = do
+--     mems' <- mems
+--     let s = fmap fst mems'
+--         u = fmap snd mems'
+
+--     -- Apply user combinatorial network (o->i)
+--     -- x is just an output we pass along for generic threading.
+--     (i', x) <- user o
+
+--     -- Apply each memory's combinatorial network (i->o)
+--     so' <- sequence $ zipWith mem i' s
+--     let s' = fmap fst so'
+--         o' = fmap snd so'
+
+--     sequence_ $ zipWith (.) u s'
+
+--     return (o', x)
+
+
+
+
+
+
 
 -- For constants.
 instance Num (R S) where
@@ -314,3 +395,9 @@ num1 f (R (Val sza a)) =
   R $ Val sza $ f a
 num2 f (R (Val sza a)) (R (Val szb b)) =
   R $ Val (sz sza szb) $ f a b
+
+
+
+
+
+
