@@ -69,6 +69,8 @@ class AbsRegOps s where
 appRegNum f (n, t, v, m) = (f n, t, v, m) ; getRegNum = do (n, _, _, _) <- get ; return n
 appTypes  f (n, t, v, m) = (n, f t, v, m) ; getTypes  = do (_, t, _, _) <- get ; return t
 appVals   f (n, t, v, m) = (n, t, f v, m)
+appMems   f (n, t, v, m) = (n, t, v, f m) ; getMems   = do (_, _, _, m) <- get ; return m
+
 
 data R t = R { unR :: Signal } -- phantom wrapper
 data Signal = Reg Int
@@ -327,51 +329,54 @@ fixMem t user s = fixReg t comb where
     return (o', (s', x))
 
 
--- FIXME: conceptual error: The RegVal needs to be changed to
--- accomodate other things than Int.
+-- Memory state is stored in a IntMem dictionary.
+fixMem' :: 
+  (Zip f, Traversable f) =>
+  f SType -> (f (R S) -> M (f (R S, R S, R S, R S), o)) -> M o
+fixMem' t user = fixReg t comb where
 
--- -- Memory state is stored in a IntMem dictionary.
--- fixMem' :: 
---   (Zip f, Traversable f) =>
---   f SType -> (f (R S) -> M (f (R S, R S, R S, R S), o)) -> M o
+  -- Input/Output are named from memory's perspecitive: o is the
+  -- memory's read port data register.  The memory enable, address and
+  -- data input is implemented as a combinatorial network to provide
+  -- single cycle read acces.
+  comb o = do
+    -- Get memory contents and write functions
+    mems <- sequence $ fmap (\_ -> memory) t
+    let s = fmap fst mems
+        w = fmap snd mems
 
--- fixMem' t user = fixReg t comb where
+    -- Apply user combinatorial network (o->i)
+    (i', v) <- user o
 
---   -- FIXME: It's weird to have these two phases intermixed:
---   -- default+type creation and readout.  For some reason they show up
---   -- here directly, making this obvious.  Maybe split this into
---   -- separate phases?
---   mems = sequence $ fmap mkMem t
---   mkMem _ = do
---     r <- makeRegNum
---     modify $ appTypes $ insert r $ IntMem Map.empty
---     IntMem memState <- asks $ \regs -> regs r
---     let memUpdate s' = modify $ appVals $ insert' "SeqEmu.fixMem: " r s'
---     return (memState, memUpdate)
+    -- Apply each memory's combinatorial network (i->o)
+    so' <- sequence $ zipWith mem i' s
+    let s' = fmap fst so'
+        o' = fmap snd so'
 
---   -- Input/Output are named from memory's perspecitive: o is the
---   -- memory's read port data register.  The memory enable, address and
---   -- data input is implemented as a combinatorial network to provide
---   -- single cycle read acces.
---   comb o = do
---     mems' <- mems
---     let s = fmap fst mems'
---         u = fmap snd mems'
+    -- Store memory contents in state monad.
+    sequence_ $ zipWith ($) w s'
 
---     -- Apply user combinatorial network (o->i)
---     -- x is just an output we pass along for generic threading.
---     (i', x) <- user o
-
---     -- Apply each memory's combinatorial network (i->o)
---     so' <- sequence $ zipWith mem i' s
---     let s' = fmap fst so'
---         o' = fmap snd so'
-
---     sequence_ $ zipWith (.) u s'
-
---     return (o', x)
+    return (o', v)
 
 
+-- FIXME: Generalize to abstract IO peripherals.
+-- FIXME: It's weird to have these two phases intermixed:
+-- default+type creation and readout.  For some reason they show up
+-- here directly, making this obvious.  Maybe split this into
+-- separate phases?
+
+memory = do
+  -- Reserve a register number for each memory.
+  r <- makeRegNum
+  -- Annotate it as a memory to distinguish it from IntReg.
+  modify $ appTypes $ insert r IntMem
+  -- Place the contents in a dedicated location to not interfere with
+  -- integer register implementation.  Memories are empty at reset,
+  -- which at least forces initialization.
+  mems <- getMems
+  let memState = Map.findWithDefault Map.empty r mems
+      memUpdate s' = modify $ appMems $ insert' "SeqEmu.fixMem: " r s'
+  return (memState, memUpdate)
 
 
 
