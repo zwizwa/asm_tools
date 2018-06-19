@@ -58,11 +58,14 @@ type MemState = Map RegNum RegVal
 -- External state threading.  The state type can be fully hidden as an
 -- existential type, but the output needs to be dynamic so we can
 -- recover it.
-data ExtState = forall s. ExtStateOps s => ExtState (s, s -> M (s, Dynamic))
+data ExtState = forall s. Show s => ExtState (s, s -> M (s, Dynamic))
 class ExtStateOps s where
 
+instance Show ExtState where
+  show (ExtState (s,u)) = "ExtState " ++ show s
+  
 -- FIXME: not needed?
-instance (Zip f, Traversable f) => ExtStateOps (f MemState) where
+-- instance (Zip f, Traversable f) => ExtStateOps (f MemState) where
 
 -- Operations needed by the memory implementation:
 -- a) generate initial state
@@ -85,19 +88,22 @@ instance (Zip f, Traversable f) => ExtStateOps (f MemState) where
 
 
 -- Primitive state manipulations.  Combine these with 'modify'
-appRegNum    f (n, t, v, m) = (f n, t, v, m) ; getRegNum = do (n, _, _, _) <- get ; return n
-appTypes     f (n, t, v, m) = (n, f t, v, m) ; getTypes  = do (_, t, _, _) <- get ; return t
+appRegNum    f (n, t, v, m) = (f n, t, v, m) ; getRegNum    = do (n, _, _, _) <- get ; return n
+appTypes     f (n, t, v, m) = (n, f t, v, m) ; getTypes     = do (_, t, _, _) <- get ; return t
 appVals      f (n, t, v, m) = (n, t, f v, m)
-appExtStates f (n, t, v, m) = (n, t, v, f m)
+appExtStates f (n, t, v, m) = (n, t, v, f m) ; getExtStates = do (_, _, _, m) <- get ; return m
 
 -- Similar, but monadic f, and specialized to one of the external state objects.
-modifyExtState r f = do
-  (n, t, v, es) <- get
-  let e = es ! r
+-- modifyExtState :: ()
+modifyExtState r def f = do
+  es <- getExtStates
+  let e = Map.findWithDefault def r es
   (e', o) <- f e
-  put (n, t, v, insert r e' es)
+  modify $ appExtStates $ insert r e'
   return o
   
+
+
   
 
 
@@ -218,37 +224,47 @@ makeRegNum = do
 -- incrementally build up a dictionary of registers.  It is _not_ used
 -- to thread register state from one machine tick to another.
 runEmu :: M a -> RegIn -> ExtStates -> (a, RegTypes, RegVals, ExtStates)
-runEmu m regsenv memsi = (v, regtypes, regso, memso) where
-  state =  (0, Map.empty, Map.empty, memsi)
-  (v, (_, regtypes, regso, memso)) = runState (runReaderT (runM m) regsenv) state
+runEmu m regsenv extsi = (v, regtypes, regso, extso) where
+  state =  (0, Map.empty, Map.empty, extsi)
+  (v, (_, regtypes, regso, extso)) = runState (runReaderT (runM m) regsenv) state
 
 -- To perform a simulation, we need two things.  Both are built on runEmu.
 
--- a) The initial register state.  Registers and their types and
---    initial values are embedded inside the program.  To get them
---    out, we exectue the program once with all registeres set to 0.
-reset :: M a -> (Map RegNum RegVal, ExtStates)
-reset m = (s0, es0') where
+-- a) The initial state.  Registers and their types and initial values
+--    are embedded inside the program, as are external state
+--    interfaces.  To get them out, we exectue the program once with
+--    fake input.  External state is encoded explicitly.
+reset :: M a -> (RegVals, ExtStates)
+reset m = (r0, e0) where
+  
+  -- Run program once with fake input, to obtain just the type
+  -- information.
+  (_, types, _, _) = runEmu m (const 0) Map.empty
 
-  -- FIXME: compute register and external state init.
+  -- Registers and external state are implemented differently, but are
+  -- stored in the same type map.
+  (regTypes, extTypes) = Map.partition isRegType types
+  isRegType (IntReg _ _) = True
+  isRegType (ExtReg _) = False
+
+  r0 = Map.map initReg regTypes
+  initReg (IntReg size initVal) = initVal
+
+  e0 = Map.map initExt extTypes
+  initExt (ExtReg v) = v
   
-  -- Always start with empty external state.  FIXME: es0' might be
-  -- "dirty" due to probe.  I.e. not the reset value, but the first
-  -- computed value.
-  -- FIXME!
-  -- es0 = fmap extStateReset es0'
-  
-  (_, types, _, es0') = runEmu m (const 0) Map.empty
-  s0 = Map.map initReg types
-  initReg (IntReg sz r0) = r0  -- FIXME: map
 
 -- b) The register update function.  Two assumptions are made: an
 --    arbitrary output is produced to allow user extension, along side
 --    a "bus" of signals, which will be translated into a bus of
 --    concrete Integers.
 tick :: M a -> (RegVals, ExtStates) -> ((RegVals, ExtStates), a)
-tick m (si,mi) = ((so,mo), o) where
-  (o, _, so, mo) = runEmu m (si !) mi
+tick m (ri, ei) = ((ro, eo), o) where
+  (o, _, ro, eo) = runEmu m (ri `fetch`) ei
+
+fetch map key = Map.findWithDefault def key map where
+  --def = error $ "Can't find key: " ++ show key ++ " in " ++ (show $ Map.keys map)
+  def = 0
 
 
 -- The simluation is then the initialization and threading of the
@@ -375,37 +391,40 @@ fixMem t user s = fixReg t comb where
     return (o', (s', x))
 
 fixMem' :: 
-  forall f o. (Zip f, Traversable f, Typeable o) =>
+  (Zip f, Traversable f, Typeable o, Show (f MemState)) =>
   f SType -> (f (R S) -> M (f (R S, R S, R S, R S), o)) -> M o
 
 fixMem' t user = m where
-  update :: f MemState -> M (f MemState, Dynamic)
   update s = do
     (s', o) <- fixMem t user s
     return (s', toDyn $ Just o)
 
   s0 = fmap (\_ -> Map.empty) t
+  es0 = ExtState (s0, update)
 
   m = do
     -- To make the existential types work, we somehow need to
-    -- constraint the s parameter in the initial state and the state
+    -- constrain the s parameter in the initial state and the state
     -- update to be the same.  This is done by bundling them as
     -- (s, s -> M s) associated to a register number.
     r <- makeRegNum
+    -- update s0  -- remove this
+
+    -- FIXME: below doesn't actually run update.
     
     -- This needs to be done in two places:
     -- The "type", has the initial value and the update function.
-    modify $ appTypes $ insert r $ ExtReg $ ExtState (s0, update)
-    
+    modify $ appTypes $ insert r $ ExtReg es0
+
     -- The "state", has the current value and a copy of the update
-    -- function reference.
-    o <- modifyExtState r $ \(ExtState (s, update')) -> do
-      (s', o) <- update' s
-      return (ExtState (s', update'), o)
+    -- function.
+    o <- modifyExtState r es0 $ \(ExtState (s, update)) -> do
+      (s', o) <- update s
+      return (ExtState (s', update), o)
 
     -- We are sure this type conversion succeeds because we can match
-    -- the register number.  To make this fail, replace the contents
-    -- of of ExtStates.
+    -- the register number.  In case somebody messes with the data
+    -- structure, this will fail as a match error.
     let Just o' = fromDyn o Nothing
     return o'
     

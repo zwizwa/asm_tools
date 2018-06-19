@@ -15,11 +15,11 @@ Library
     build-depends: base, containers, mtl, free, keys
     build-depends: base
 
-Test-Suite test-pru
-    build-depends: base, containers, mtl, free, keys
-    type:       exitcode-stdio-1.0
-    main-is:    test-pru.hs
-    build-depends: base
+-- Test-Suite test-pru
+--     build-depends: base, containers, mtl, free, keys
+--     type:       exitcode-stdio-1.0
+--     main-is:    test-pru.hs
+--     build-depends: base
 
 Test-Suite test-seq
     build-depends: base, containers, mtl, free, keys
@@ -27,9 +27,9 @@ Test-Suite test-seq
     main-is:    test-seq.hs
     build-depends: base
 
-Test-Suite test-edif
-    build-depends: base, mtl, parsec, sqlite-simple, free, containers
-    type:       exitcode-stdio-1.0
-    main-is:    test-edif.hs
-    build-depends: base
+-- Test-Suite test-edif
+--     build-depends: base, mtl, parsec, sqlite-simple, free, containers
+--     type:       exitcode-stdio-1.0
+--     main-is:    test-edif.hs
+--     build-depends: base
 

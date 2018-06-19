@@ -59,7 +59,7 @@ import Data.List
 main = do
 
   putStrLn "--- test_mem_delay2"
-  print $ take 10 $ test_mem_delay2
+  print $ test_mem_delay2
 
   
   putStrLn "--- counter SeqEmu.compile"
@@ -210,11 +210,13 @@ test_mem_delay = SeqEmu.traceSO m ([empty]) where
     return ([(1, 0, c, 0)], [c, rd])
 
 -- wEn, wAddr, wData, rAddr
-test_mem_delay2 = SeqEmu.trace m where
+test_mem_delay2 = (s0, out) where
+  s0 = SeqEmu.reset m
+  out = take 10 $ SeqEmu.trace m
   t = SInt Nothing 0
   m = SeqEmu.fixMem' [t] $ \[rd] -> do
-    c <- counter $ SInt (Just 3) 0
-    return ([(1, 0, c, 0)], [c, rd])
+      c <- counter $ SInt (Just 3) 0
+      return ([(1, 0, c, 0)], [c, rd])
 
 
     
