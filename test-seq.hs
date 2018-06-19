@@ -98,6 +98,9 @@ main = do
   putStrLn "--- test_mem_delay"
   print $ take 10 $ test_mem_delay
 
+  putStrLn "--- test_mem_delay2"
+  print $ take 10 $ test_mem_delay2
+
   putStrLn "--- VCD"
   let vcd = VCD.toVCD "1ns" ([("d1",1),("d2",1),("d3",8)], transpose [[0,1,1,0,0],[1,0,0,1,0],[1,2,3,3,3]])
   putStr $ vcd
@@ -120,13 +123,13 @@ printSeqTerm src = do
 
 printSeqEmu :: SeqEmu.M (SeqEmu.R S) -> IO ()
 printSeqEmu src = do
-  let src' = src >> return ((),[]) -- API stub
-      r0 = SeqEmu.reset src'
-      f  = SeqEmu.tick src'
+  let src'    = src >> return ((),[]) -- API stub
+      s0      = SeqEmu.reset src'
+      f       = SeqEmu.tick src'
   putStrLn "init: "
-  printl $ mapToList $ r0
+  printl $ mapToList $ fst s0
   putStrLn "post: "
-  printl $ mapToList $ fst $ f r0
+  printl $ mapToList $ fst $ fst $ f s0
 
 
 
@@ -203,7 +206,18 @@ test_mem_delay = SeqEmu.traceSO m ([empty]) where
   m = SeqEmu.fixMem [t] $ \[rd] -> do
     c <- counter $ SInt (Just 3) 0
     return ([(1, 0, c, 0)], [c, rd])
+
 -- wEn, wAddr, wData, rAddr
+
+-- Input/output delay.
+test_mem_delay2 = SeqEmu.traceO m where
+  t = SInt Nothing 0
+  m = SeqEmu.fixMem' [t] $ \[rd] -> do
+    c <- counter $ SInt (Just 3) 0
+    return ([(1, 0, c, 0)], [c, rd])
+
+
+    
 
 -- Stub out what doesn't fit.  The idea is to find a way to gracefully
 -- have these two interpretations produce something useful: MyHDL code

@@ -47,10 +47,22 @@ type RegVals   = Map RegNum RegVal
 type RegTypes  = Map RegNum RegType
 -- More abstract, allows probing
 type RegIn = RegNum -> RegVal
-type CompState = (RegNum, RegTypes, RegVals, Mems)
-type Mems = Map RegNum MemState
+type CompState = (RegNum, RegTypes, RegVals, ExtStates)
+type ExtStates = Map RegNum ExtState
+
+-- External state: currently only memories.
+data ExtState = ExtState MemState deriving Show
+type MemState = Map RegNum RegVal
 
 -- EDIT: This is for later.  Make memories explicit.
+-- EDIT: It is needed to incorporate input machines.
+
+-- Operations needed by the memory implementation:
+-- a) generate initial state
+-- b) update
+
+-- Do this in two steps: implement the type refactoring just for a
+-- wrapped Mems.  Then make it existential.
 
 -- To support composable state threading, the "value" of a register is
 -- relaxed to an existential type.
@@ -71,6 +83,7 @@ appTypes  f (n, t, v, m) = (n, f t, v, m) ; getTypes  = do (_, t, _, _) <- get ;
 appVals   f (n, t, v, m) = (n, t, f v, m)
 appMems   f (n, t, v, m) = (n, t, v, f m) ; getMems   = do (_, _, _, m) <- get ; return m
 
+getMems :: M ExtStates
 
 data R t = R { unR :: Signal } -- phantom wrapper
 data Signal = Reg Int
@@ -188,18 +201,22 @@ makeRegNum = do
 -- Perform a single clock cycle.  Note that the state monad is used to
 -- incrementally build up a dictionary of registers.  It is _not_ used
 -- to thread register state from one machine tick to another.
-runEmu :: M t -> RegIn -> (t, RegTypes, RegVals)
-runEmu m i = (v, ts, so) where
-  (v, (_, ts, so, _)) = runState (runReaderT (runM m) i) (0, Map.empty, Map.empty, Map.empty)
+runEmu :: M a -> RegIn -> ExtStates -> (a, RegTypes, RegVals, ExtStates)
+runEmu m regsenv memsi = (v, regtypes, regso, memso) where
+  state =  (0, Map.empty, Map.empty, memsi)
+  (v, (_, regtypes, regso, memso)) = runState (runReaderT (runM m) regsenv) state
 
 -- To perform a simulation, we need two things.  Both are built on runEmu.
 
 -- a) The initial register state.  Registers and their types and
 --    initial values are embedded inside the program.  To get them
 --    out, we exectue the program once with all registeres set to 0.
-reset :: M t -> Map RegNum RegVal
-reset m = s0 where
-  (_, types, _) = runEmu m $ const 0
+reset :: M a -> (Map RegNum RegVal, ExtStates)
+reset m = (s0, m0') where
+  -- Always start with empty memories.
+  m0' = fmap (\_ -> ExtState Map.empty) m0
+  
+  (_, types, _, m0) = runEmu m (const 0) Map.empty
   s0 = Map.map init types
   init (IntReg sz r0) = r0  -- FIXME: map
 
@@ -207,9 +224,9 @@ reset m = s0 where
 --    arbitrary output is produced to allow user extension, along side
 --    a "bus" of signals, which will be translated into a bus of
 --    concrete Integers.
-tick :: M t -> RegVals -> (RegVals, t)
-tick m si = (so, o) where
-  (o, _, so) = runEmu m (si !)
+tick :: M a -> (RegVals, ExtStates) -> ((RegVals, ExtStates), a)
+tick m (si,mi) = ((so,mo), o) where
+  (o, _, so, mo) = runEmu m (si !) mi
 
 
 -- The simluation is then the initialization and threading of the
@@ -222,12 +239,11 @@ tick m si = (so, o) where
 -- The second value corresponds to the time instance associated to the
 -- first active clock pulse, when registers are latched for the first
 -- time.
-ticks :: (io -> M (io, t)) -> io -> [t]
-ticks mf io0 = t io0 s0 where
-  s0 = reset (mf io0) -- probe with first state input
-  t io s  = o : t io' s' where
-    (s', (io', o)) = f s
-    f = tick $ mf io
+ticks :: M a -> [a]
+ticks m = t s0 where
+  s0 = reset m -- probe with first state input
+  t s  = o : t s' where
+    (s', o) = tick m s
 
 -- Note: this is effectively a second state monad.  Currently it is
 -- not very clear how to best abstract this:
@@ -236,11 +252,16 @@ ticks mf io0 = t io0 s0 where
 -- c) use a custom monad stack, write M as a transformer
 
 
+-- FIXME: this broke after removing explicit state threading.  It will
+-- need the existential mechanism to be able to tuck away state.
 
 -- Special case: emulate input.
 iticks :: (i -> M o) -> [i] -> [o]
-iticks mf is0 = ticks mf' is0 where
-  mf' (i:is) = fmap (is,) $ mf i
+
+iticks = undefined
+
+-- iticks mf is0 = ticks mf' is0 where
+--   mf' (i:is) = fmap (is,) $ mf i
 
 
 -- Since we can't do anything with internal representations, these
@@ -265,8 +286,9 @@ inject = fmap (constant . (SInt Nothing))
 -- composition mechanism is in place.
 
 traceSO :: Traversable f => (io -> M (io, f (R S))) -> io -> [f Int]
-traceSO mf io0 = ticks mf' io0 where
-  mf' io = mf io >>= probe'
+traceSO = undefined
+-- traceSO mf io0 = ticks mf' io0 where
+--   mf' io = mf io >>= probe'
 
 traceIO :: (Functor f, Traversable f') => (f (R S) -> M (f' (R S))) -> [f Int] -> [f' Int]
 traceIO mf is = iticks mf' is' where
@@ -278,7 +300,6 @@ traceO m = traceSO (\() -> do o <- m; return ((), o)) ()
 
 
 -- Implement memory as a threaded computation.
-type MemState = Map RegNum RegVal
 type Mem = (R S, R S, R S, R S) -> MemState -> M (MemState, R S)
 mem :: Mem
 mem (wEn, wAddr, wData, rAddr) memState = do
@@ -374,8 +395,9 @@ memory = do
   -- integer register implementation.  Memories are empty at reset,
   -- which at least forces initialization.
   mems <- getMems
-  let memState = Map.findWithDefault Map.empty r mems
-      memUpdate s' = modify $ appMems $ insert' "SeqEmu.fixMem: " r s'
+  let memInit = ExtState Map.empty
+      ExtState memState = Map.findWithDefault memInit r mems
+      memUpdate s' = modify $ appMems $ insert' "SeqEmu.fixMem: " r $ ExtState s'
   return (memState, memUpdate)
 
 
