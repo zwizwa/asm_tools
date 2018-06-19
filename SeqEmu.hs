@@ -41,14 +41,14 @@ newtype M t = M { runM :: ReaderT RegIn (State CompState) t } deriving
 type RegNum    = Int
 type ConstVal  = Int
 type RegVal    = Int
-data RegType   = IntReg Size RegVal | IntMem MemState
+data RegType   = IntReg Size RegVal | IntMem
 -- Keep these two separate
 type RegVals   = Map RegNum RegVal
 type RegTypes  = Map RegNum RegType
 -- More abstract, allows probing
 type RegIn = RegNum -> RegVal
-type CompState = (RegNum, RegTypes, RegVals)
-
+type CompState = (RegNum, RegTypes, RegVals, Mems)
+type Mems = Map RegNum MemState
 
 -- EDIT: This is for later.  Make memories explicit.
 
@@ -66,9 +66,9 @@ class AbsRegOps s where
 
 
 -- Primitive state manipulations
-appRegNum f (n, t, v) = (f n, t, v) ; getRegNum = do (n, _, _) <- get ; return n
-appTypes  f (n, t, v) = (n, f t, v) ; getTypes  = do (_, t, _) <- get ; return t
-appVals   f (n, t, v) = (n, t, f v)
+appRegNum f (n, t, v, m) = (f n, t, v, m) ; getRegNum = do (n, _, _, _) <- get ; return n
+appTypes  f (n, t, v, m) = (n, f t, v, m) ; getTypes  = do (_, t, _, _) <- get ; return t
+appVals   f (n, t, v, m) = (n, t, f v, m)
 
 data R t = R { unR :: Signal } -- phantom wrapper
 data Signal = Reg Int
@@ -135,11 +135,8 @@ val' (Val sz v) = return ((sz, v), v) -- Set reset value to actual value
 val' (Reg r) = do
   v <- asks $ \regs -> regs r
   ts <- getTypes
-  case ts ! r of
-    IntReg sz r0 ->
-      return ((sz, r0), v)
-    IntMem s ->
-      error "FIXME: val'"
+  let IntReg sz r0 = ts ! r
+  return ((sz, r0), v)
 
       
 styp = (fmap fst) . val'
@@ -191,7 +188,7 @@ makeRegNum = do
 -- to thread register state from one machine tick to another.
 runEmu :: M t -> RegIn -> (t, RegTypes, RegVals)
 runEmu m i = (v, ts, so) where
-  (v, (_, ts, so)) = runState (runReaderT (runM m) i) (0, Map.empty, Map.empty)
+  (v, (_, ts, so, _)) = runState (runReaderT (runM m) i) (0, Map.empty, Map.empty, Map.empty)
 
 -- To perform a simulation, we need two things.  Both are built on runEmu.
 
