@@ -57,6 +57,11 @@ import Data.List
 
   
 main = do
+
+  putStrLn "--- test_mem_delay2"
+  print $ take 10 $ test_mem_delay2
+
+  
   putStrLn "--- counter SeqEmu.compile"
   printSeqEmu $ counter (SInt (Just 2) 0)
   
@@ -97,9 +102,6 @@ main = do
 
   putStrLn "--- test_mem_delay"
   print $ take 10 $ test_mem_delay
-
-  putStrLn "--- test_mem_delay2"
-  print $ take 10 $ test_mem_delay2
 
   putStrLn "--- VCD"
   let vcd = VCD.toVCD "1ns" ([("d1",1),("d2",1),("d3",8)], transpose [[0,1,1,0,0],[1,0,0,1,0],[1,2,3,3,3]])
@@ -208,9 +210,7 @@ test_mem_delay = SeqEmu.traceSO m ([empty]) where
     return ([(1, 0, c, 0)], [c, rd])
 
 -- wEn, wAddr, wData, rAddr
-
--- Input/output delay.
-test_mem_delay2 = SeqEmu.traceO m where
+test_mem_delay2 = SeqEmu.trace m where
   t = SInt Nothing 0
   m = SeqEmu.fixMem' [t] $ \[rd] -> do
     c <- counter $ SInt (Just 3) 0

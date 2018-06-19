@@ -32,6 +32,9 @@ import Prelude hiding(zipWith)
 -- import Data.Functor.Apply
 -- import Data.Functor.Rep
 
+import Data.Dynamic
+import Data.Typeable
+-- import Unsafe.Coerce -- fixme
 
 -- Main interpretation monad for Seq
 newtype M t = M { runM :: ReaderT RegIn (State CompState) t } deriving
@@ -41,7 +44,7 @@ newtype M t = M { runM :: ReaderT RegIn (State CompState) t } deriving
 type RegNum    = Int
 type ConstVal  = Int
 type RegVal    = Int
-data RegType   = IntReg Size RegVal | IntMem
+data RegType   = IntReg Size RegVal | ExtReg ExtState
 -- Keep these two separate
 type RegVals   = Map RegNum RegVal
 type RegTypes  = Map RegNum RegType
@@ -49,13 +52,17 @@ type RegTypes  = Map RegNum RegType
 type RegIn = RegNum -> RegVal
 type CompState = (RegNum, RegTypes, RegVals, ExtStates)
 type ExtStates = Map RegNum ExtState
-
--- External state: currently only memories.
-data ExtState = ExtState MemState deriving Show
 type MemState = Map RegNum RegVal
 
--- EDIT: This is for later.  Make memories explicit.
--- EDIT: It is needed to incorporate input machines.
+
+-- External state threading.  The state type can be fully hidden as an
+-- existential type, but the output needs to be dynamic so we can
+-- recover it.
+data ExtState = forall s. ExtStateOps s => ExtState (s, s -> M (s, Dynamic))
+class ExtStateOps s where
+
+-- FIXME: not needed?
+instance (Zip f, Traversable f) => ExtStateOps (f MemState) where
 
 -- Operations needed by the memory implementation:
 -- a) generate initial state
@@ -66,24 +73,33 @@ type MemState = Map RegNum RegVal
 
 -- To support composable state threading, the "value" of a register is
 -- relaxed to an existential type.
-data AbsReg = 
-  forall s. (AbsRegOps s) => Signal { 
-    stateInit   :: s, 
-    stateUpdate :: s -> M s
-  }
-class AbsRegOps s where
-  dumpAbsReg :: s -> String
+-- data AbsReg = 
+--   forall s. (AbsRegOps s) => Signal { 
+--     stateInit   :: s, 
+--     stateUpdate :: s -> M s
+--   }
+-- class AbsRegOps s where
+--   dumpAbsReg :: s -> String
 
 
 
 
--- Primitive state manipulations
-appRegNum f (n, t, v, m) = (f n, t, v, m) ; getRegNum = do (n, _, _, _) <- get ; return n
-appTypes  f (n, t, v, m) = (n, f t, v, m) ; getTypes  = do (_, t, _, _) <- get ; return t
-appVals   f (n, t, v, m) = (n, t, f v, m)
-appMems   f (n, t, v, m) = (n, t, v, f m) ; getMems   = do (_, _, _, m) <- get ; return m
+-- Primitive state manipulations.  Combine these with 'modify'
+appRegNum    f (n, t, v, m) = (f n, t, v, m) ; getRegNum = do (n, _, _, _) <- get ; return n
+appTypes     f (n, t, v, m) = (n, f t, v, m) ; getTypes  = do (_, t, _, _) <- get ; return t
+appVals      f (n, t, v, m) = (n, t, f v, m)
+appExtStates f (n, t, v, m) = (n, t, v, f m)
 
-getMems :: M ExtStates
+-- Similar, but monadic f, and specialized to one of the external state objects.
+modifyExtState r f = do
+  (n, t, v, es) <- get
+  let e = es ! r
+  (e', o) <- f e
+  put (n, t, v, insert r e' es)
+  return o
+  
+  
+
 
 data R t = R { unR :: Signal } -- phantom wrapper
 data Signal = Reg Int
@@ -212,13 +228,19 @@ runEmu m regsenv memsi = (v, regtypes, regso, memso) where
 --    initial values are embedded inside the program.  To get them
 --    out, we exectue the program once with all registeres set to 0.
 reset :: M a -> (Map RegNum RegVal, ExtStates)
-reset m = (s0, m0') where
-  -- Always start with empty memories.
-  m0' = fmap (\_ -> ExtState Map.empty) m0
+reset m = (s0, es0') where
+
+  -- FIXME: compute register and external state init.
   
-  (_, types, _, m0) = runEmu m (const 0) Map.empty
-  s0 = Map.map init types
-  init (IntReg sz r0) = r0  -- FIXME: map
+  -- Always start with empty external state.  FIXME: es0' might be
+  -- "dirty" due to probe.  I.e. not the reset value, but the first
+  -- computed value.
+  -- FIXME!
+  -- es0 = fmap extStateReset es0'
+  
+  (_, types, _, es0') = runEmu m (const 0) Map.empty
+  s0 = Map.map initReg types
+  initReg (IntReg sz r0) = r0  -- FIXME: map
 
 -- b) The register update function.  Two assumptions are made: an
 --    arbitrary output is produced to allow user extension, along side
@@ -284,6 +306,9 @@ inject = fmap (constant . (SInt Nothing))
 -- These are tied to the probe and inject functions.  They are a bit
 -- clumsy.  I expect these to become trivial once a good runtime state
 -- composition mechanism is in place.
+trace :: Traversable f => M (f (R S)) -> [f Int]
+trace mf = ticks $ mf >>= probe
+
 
 traceSO :: Traversable f => (io -> M (io, f (R S))) -> io -> [f Int]
 traceSO = undefined
@@ -349,35 +374,70 @@ fixMem t user s = fixReg t comb where
 
     return (o', (s', x))
 
-
--- Memory state is stored in a IntMem dictionary.
 fixMem' :: 
-  (Zip f, Traversable f) =>
+  forall f o. (Zip f, Traversable f, Typeable o) =>
   f SType -> (f (R S) -> M (f (R S, R S, R S, R S), o)) -> M o
-fixMem' t user = fixReg t comb where
 
-  -- Input/Output are named from memory's perspecitive: o is the
-  -- memory's read port data register.  The memory enable, address and
-  -- data input is implemented as a combinatorial network to provide
-  -- single cycle read acces.
-  comb o = do
-    -- Get memory contents and write functions
-    mems <- sequence $ fmap (\_ -> memory) t
-    let s = fmap fst mems
-        w = fmap snd mems
+fixMem' t user = m where
+  update :: f MemState -> M (f MemState, Dynamic)
+  update s = do
+    (s', o) <- fixMem t user s
+    return (s', toDyn $ Just o)
 
-    -- Apply user combinatorial network (o->i)
-    (i', v) <- user o
+  s0 = fmap (\_ -> Map.empty) t
 
-    -- Apply each memory's combinatorial network (i->o)
-    so' <- sequence $ zipWith mem i' s
-    let s' = fmap fst so'
-        o' = fmap snd so'
+  m = do
+    -- To make the existential types work, we somehow need to
+    -- constraint the s parameter in the initial state and the state
+    -- update to be the same.  This is done by bundling them as
+    -- (s, s -> M s) associated to a register number.
+    r <- makeRegNum
+    
+    -- This needs to be done in two places:
+    -- The "type", has the initial value and the update function.
+    modify $ appTypes $ insert r $ ExtReg $ ExtState (s0, update)
+    
+    -- The "state", has the current value and a copy of the update
+    -- function reference.
+    o <- modifyExtState r $ \(ExtState (s, update')) -> do
+      (s', o) <- update' s
+      return (ExtState (s', update'), o)
 
-    -- Store memory contents in state monad.
-    sequence_ $ zipWith ($) w s'
+    -- We are sure this type conversion succeeds because we can match
+    -- the register number.  To make this fail, replace the contents
+    -- of of ExtStates.
+    let Just o' = fromDyn o Nothing
+    return o'
+    
 
-    return (o', v)
+-- -- Memory state is stored in a ExtReg dictionary.
+-- fixMem' :: 
+--   (Zip f, Traversable f) =>
+--   f SType -> (f (R S) -> M (f (R S, R S, R S, R S), o)) -> M o
+-- fixMem' t user = fixReg t comb where
+
+--   -- Input/Output are named from memory's perspecitive: o is the
+--   -- memory's read port data register.  The memory enable, address and
+--   -- data input is implemented as a combinatorial network to provide
+--   -- single cycle read acces.
+--   comb o = do
+--     -- Get memory contents and write functions
+--     mems <- sequence $ fmap (\_ -> memory) t
+--     let s = fmap fst mems
+--         w = fmap snd mems
+
+--     -- Apply user combinatorial network (o->i)
+--     (i', v) <- user o
+
+--     -- Apply each memory's combinatorial network (i->o)
+--     so' <- sequence $ zipWith mem i' s
+--     let s' = fmap fst so'
+--         o' = fmap snd so'
+
+--     -- Store memory contents in state monad.
+--     sequence_ $ zipWith ($) w s'
+
+--     return (o', v)
 
 
 -- FIXME: Generalize to abstract IO peripherals.
@@ -386,19 +446,24 @@ fixMem' t user = fixReg t comb where
 -- here directly, making this obvious.  Maybe split this into
 -- separate phases?
 
-memory = do
-  -- Reserve a register number for each memory.
-  r <- makeRegNum
-  -- Annotate it as a memory to distinguish it from IntReg.
-  modify $ appTypes $ insert r IntMem
-  -- Place the contents in a dedicated location to not interfere with
-  -- integer register implementation.  Memories are empty at reset,
-  -- which at least forces initialization.
-  mems <- getMems
-  let memInit = ExtState Map.empty
-      ExtState memState = Map.findWithDefault memInit r mems
-      memUpdate s' = modify $ appMems $ insert' "SeqEmu.fixMem: " r $ ExtState s'
-  return (memState, memUpdate)
+-- memory :: M (ExtState, ExtState -> M ())
+-- memory = do
+--   -- Reserve a register number for each memory.
+--   r <- makeRegNum
+--   -- Annotate it as a memory to distinguish it from IntReg.
+--   modify $ appTypes $ insert r ExtReg
+--   -- Place the contents in a dedicated location to not interfere with
+--   -- integer register implementation.  Memories are empty at reset,
+--   -- which at least forces initialization.
+--   mems <- getMems
+--   let state = mems ! r  -- Map.findWithDefault memInit r mems
+--       -- memInit = ExtState Map.empty  -- FIXME
+--       update s' = modify $ appMems $ insert r s'
+--       -- modify $ appMems $ insert' "SeqEmu.fixMem: " r s'
+        
+--   return (state, update)
+
+
 
 
 
