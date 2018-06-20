@@ -90,9 +90,9 @@ main = do
   putStrLn "--- test_hdl_sync"
   print_hdl test_hdl_sync
 
-  putStrLn "--- test_fixReg"
-  print $ take 10 $ test_fixReg
-  printSeqTerm $ fixReg2
+  putStrLn "--- test_closeReg"
+  print $ take 10 $ test_closeReg
+  printSeqTerm $ closeReg2
   
   putStrLn "--- test_cpu_net"
   printSeqTerm $ test_cpu_net
@@ -150,14 +150,14 @@ test_counter = SeqEmu.trace $ do
   -- [] is a meta-language construct needed for trace
   return [c1, c2]
 
-fixReg2 = do
+closeReg2 = do
   let t = SInt Nothing 0
-  fixReg [t, t] $ \[a, b] -> do
+  closeReg [t, t] $ \[a, b] -> do
     a' <- add a 2
     b' <- add b 3
     return ([a', b'], [a, b])
 
-test_fixReg = SeqEmu.trace fixReg2
+test_closeReg = SeqEmu.trace closeReg2
 
 
 -- For testing, outputs need to be collected in lists.
@@ -175,7 +175,7 @@ test_sync = SeqEmu.itrace f is where
     return [i,o]
   
 
--- Bare bones memFix test.
+-- Bare bones closeMem test.
 dummy_mem ([_]) = do       -- memory's output
   let z = 0
   return ([(z, z, z, z)],  -- memory's input
@@ -183,15 +183,16 @@ dummy_mem ([_]) = do       -- memory's output
 test_mem :: [[Int]]
 test_mem = SeqEmu.trace m  where
   t = SInt Nothing 0
-  m = SeqEmu.fixMem ([t]) dummy_mem
+  m = SeqEmu.closeMem ([t]) dummy_mem
 
 
 -- After thinking a bit, I want this interface:
 
--- a) Do not put the memFix inside the code.  Memories are an external
---    thing, so keep them as abstract as possible.
+-- a) Do not put closeMem in the generic Seq.  Memories are an
+--    external thing, so keep them as abstract as possible.  SeqEmu is
+--    ok.
 --
--- b) Below uses a list, but allow a generic functor (done: Zip f)
+-- b) Allow to group memories in a functor (Traversable,Zip)
   
 dummy_mem2 ([mo1, mo2]) = do
   ([mi1],_) <- dummy_mem $ [mo1]
@@ -200,12 +201,12 @@ dummy_mem2 ([mo1, mo2]) = do
 
 test_mem2 = SeqEmu.trace m where
   t = SInt Nothing 0
-  m = SeqEmu.fixMem ([t,t]) dummy_mem2
+  m = SeqEmu.closeMem ([t,t]) dummy_mem2
 
 -- Input/output delay.
 test_mem_delay = SeqEmu.trace m  where
   t = SInt Nothing 0
-  m = SeqEmu.fixMem [t] $ \[rd] -> do
+  m = SeqEmu.closeMem [t] $ \[rd] -> do
     c <- counter $ SInt (Just 3) 0
     return ([(1, 0, c, 0)], [c, rd])
 
@@ -214,7 +215,7 @@ test_mem_delay2 = out where
   -- s0 = SeqEmu.reset m
   out = take 10 $ SeqEmu.trace m
   t = SInt Nothing 0
-  m = SeqEmu.fixMem [t] $ \[rd] -> do
+  m = SeqEmu.closeMem [t] $ \[rd] -> do
       c <- counter $ SInt (Just 3) 0
       return ([(1, 0, c, 0)], [c, rd])
 
@@ -229,7 +230,7 @@ test_cpu_net = do
   return $ o ++ [a,b,c,d]
 test_cpu_emu =  SeqEmu.trace m where
   t = SInt Nothing 0
-  m = SeqEmu.fixMem ([t]) CPU.cpu
+  m = SeqEmu.closeMem ([t]) CPU.cpu
   mem = Map.fromList $ [(n,n+1) | n <- [0..2]]
 
 

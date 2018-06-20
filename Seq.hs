@@ -179,9 +179,9 @@ if' = op3 IF
 -- List will do, but the interface is generic.  Note: liftA2 doesn't
 -- do the right thing on lists.
 
-fixReg :: (Zip f, Traversable f, Seq m r) =>
+closeReg :: (Zip f, Traversable f, Seq m r) =>
   f SType -> (f (r S) -> m (f (r S), o)) -> m o
-fixReg ts f = do
+closeReg ts f = do
   rs <- sequence $ fmap signal ts
   (rs', o) <- f rs
   sequence_ $ zipWith next rs rs'
@@ -189,7 +189,7 @@ fixReg ts f = do
 
 
 -- Note: it might be possible to avoid 'signal' and 'next' in Seq, and
--- replace it with fixReg.  Currently, the MyHDL uses it to bind
+-- replace it with closeReg.  Currently, the MyHDL uses it to bind
 -- outputs, but that can probably be solved differently.
 
 -- Can Num be implemented generically?

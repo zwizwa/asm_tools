@@ -12,9 +12,9 @@ import Control.Monad
 import Control.Applicative
 
 
--- Special fixReg case: single register, with register as output
+-- Special closeReg case: single register, with register as output
 reg :: Seq m r => SType -> (r S -> m (r S)) -> m (r S)
-reg t f = do fixReg [t] $ \[r] -> do r' <- f r ; return ([r'], r)
+reg t f = do closeReg [t] $ \[r] -> do r' <- f r ; return ([r'], r)
 
 
 -- Some simple building blocks
@@ -67,7 +67,7 @@ case' ((cond, whenTrue):cases) dflt = do
 -- Return old and new for max flex.
 shiftReg :: Seq m r => SType -> r S -> m (r S, r S)
 shiftReg t i = do
-  fixReg [t] $ \[r] -> do
+  closeReg [t] $ \[r] -> do
     t' <- stype i
     let SInt (Just r_bits) _ = t
         SInt (Just i_bits) _ = t'

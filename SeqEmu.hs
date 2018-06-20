@@ -20,21 +20,17 @@
 module SeqEmu where
 import Seq
 import Control.Monad.State
-import Control.Monad.Writer
 import Control.Monad.Reader
 import Control.Applicative
 import Data.Map.Lazy (Map, (!), lookup, empty, insert, fromList)
 import qualified Data.Map as Map
 import Data.Bits
 import Data.Functor.Compose
-import Data.Key hiding((!))
+import Data.Key(Zip(..),zipWith)
 import Prelude hiding(zipWith)
--- import Data.Functor.Apply
--- import Data.Functor.Rep
-
 import Data.Dynamic
 import Data.Typeable
--- import Unsafe.Coerce -- fixme
+import Data.Maybe
 
 -- Main interpretation monad for Seq
 newtype M t = M { runM :: ReaderT RegIn (State CompState) t } deriving
@@ -44,22 +40,22 @@ newtype M t = M { runM :: ReaderT RegIn (State CompState) t } deriving
 type RegNum    = Int
 type ConstVal  = Int
 type RegVal    = Int
-data RegType   = IntReg Size RegVal | ExtReg ExtState
--- Keep these two separate
-type RegVals   = Map RegNum RegVal
-type RegTypes  = Map RegNum RegType
--- More abstract, allows probing
+data StateType = IntReg Size RegVal | ProcessReg Process
+-- Dictionaries
+type RegVals    = Map RegNum RegVal
+type StateTypes = Map RegNum StateType
+type Processes  = Map RegNum Process
+-- More abstract than concrete Map allows probing
 type RegIn = RegNum -> RegVal
-type CompState = (RegNum, RegTypes, RegVals, ExtStates)
-type ExtStates = Map RegNum ExtState
+type CompState = (RegNum, StateTypes, RegVals, Processes)
+-- Memory state implementation
 type MemState = Map RegNum RegVal
 
 
--- External state threading.  The state type can be fully hidden as an
--- existential type, but the output needs to be dynamic so we can
--- recover it.
-data ExtState = forall s. ExtState (s, s -> M (s, Dynamic))
-class ExtStateOps s where
+-- Abstract external emulation processes with private state.  State
+-- can be hidden as existential type, but the output needs to be
+-- dynamic to be recoverable.  See closeProcess for the user interface.
+data Process = forall s. Process (s, s -> M (s, Dynamic))
 
 
 
@@ -67,15 +63,15 @@ class ExtStateOps s where
 appRegNum    f (n, t, v, e) = (f n, t, v, e) ; getRegNum    = do (n, _, _, _) <- get ; return n
 appTypes     f (n, t, v, e) = (n, f t, v, e) ; getTypes     = do (_, t, _, _) <- get ; return t
 appVals      f (n, t, v, e) = (n, t, f v, e)
-appExtStates f (n, t, v, e) = (n, t, v, f e) ; getExtStates = do (_, _, _, e) <- get ; return e
+appProcesses f (n, t, v, e) = (n, t, v, f e) ; getProcesses = do (_, _, _, e) <- get ; return e
 
 -- Similar, but monadic f, and specialized to one of the external state objects.
--- modifyExtState :: ()
-modifyExtState r def f = do
-  es <- getExtStates
-  let e = Map.findWithDefault def r es
-  (e', o) <- f e
-  modify $ appExtStates $ insert r e'
+-- modifyProcess :: ()
+modifyProcess r def f = do
+  ps <- getProcesses
+  let p = Map.findWithDefault def r ps
+  (p', o) <- f p
+  modify $ appProcesses $ insert r p'
   return o
   
 
@@ -196,7 +192,7 @@ makeRegNum = do
 -- Perform a single clock cycle.  Note that the state monad is used to
 -- incrementally build up a dictionary of registers.  It is _not_ used
 -- to thread register state from one machine tick to another.
-runEmu :: M a -> RegIn -> ExtStates -> (a, RegTypes, RegVals, ExtStates)
+runEmu :: M a -> RegIn -> Processes -> (a, StateTypes, RegVals, Processes)
 runEmu m regsenv extsi = (v, regtypes, regso, extso) where
   state =  (0, Map.empty, Map.empty, extsi)
   (v, (_, regtypes, regso, extso)) = runState (runReaderT (runM m) regsenv) state
@@ -207,7 +203,7 @@ runEmu m regsenv extsi = (v, regtypes, regso, extso) where
 --    are embedded inside the program, as are external state
 --    interfaces.  To get them out, we exectue the program once with
 --    fake input.  External state is encoded explicitly.
-reset :: M a -> (RegVals, ExtStates)
+reset :: M a -> (RegVals, Processes)
 reset m = (r0, e0) where
   
   -- Run program once with fake input, to obtain just the type
@@ -216,22 +212,22 @@ reset m = (r0, e0) where
 
   -- Registers and external state are implemented differently, but are
   -- stored in the same type map.
-  (regTypes, extTypes) = Map.partition isRegType types
-  isRegType (IntReg _ _) = True
-  isRegType (ExtReg _) = False
+  (regTypes, extTypes) = Map.partition isIntReg types
+  isIntReg (IntReg _ _) = True
+  isIntReg (ProcessReg _) = False
 
   r0 = Map.map initReg regTypes
   initReg (IntReg size initVal) = initVal
 
   e0 = Map.map initExt extTypes
-  initExt (ExtReg v) = v
+  initExt (ProcessReg v) = v
   
 
 -- b) The register update function.  Two assumptions are made: an
 --    arbitrary output is produced to allow user extension, along side
 --    a "bus" of signals, which will be translated into a bus of
 --    concrete Integers.
-tick :: M a -> (RegVals, ExtStates) -> ((RegVals, ExtStates), a)
+tick :: M a -> (RegVals, Processes) -> ((RegVals, Processes), a)
 tick m (ri, ei) = ((ro, eo), o) where
   (o, _, ro, eo) = runEmu m (ri !) ei
 
@@ -256,8 +252,8 @@ ticks m = t s0 where
 
 -- Special case: emulate input.
 iticks :: Typeable o => (i -> M o) -> [i] -> [o]
-iticks f is = ticks $ fixInput is f
-
+iticks f is = take' $ ticks $ closeInput is f where 
+  take' = (map fromJust) . (takeWhile isJust) 
 
 
 -- Since we can't do anything with internal representations, these
@@ -287,9 +283,10 @@ itrace mf is = iticks mf' is' where
   is' = map inject is
 
 
--- Generic external state threading
-fixExtState :: Typeable o => (f s -> M (f s, o)) -> f s -> M o
-fixExtState update init = do
+-- Generic external state threading + conversion to/from the internal
+-- Dynamic representation.
+closeProcess :: Typeable o => (s -> M (s, o)) -> s -> M o
+closeProcess update init = do
 
   -- The state type can remain hidden, but state value and state
   -- update function need to be stored together to be able to perform
@@ -298,29 +295,28 @@ fixExtState update init = do
   let update' s = do
         (s', o) <- update s
         return (s', toDyn $ Just o)
-      es0 = ExtState (init, update')
+      p0 = Process (init, update')
   
-  -- Type and ExtState data are indexed by a unique register number.
+  -- Type and state are indexed by a unique register number.
   r <- makeRegNum
   
-  -- Initial state is stored in the type dictionary.
-  modify $ appTypes $ insert r $ ExtReg es0
+  -- Initial state is stored in the types dictionary.
+  modify $ appTypes $ insert r $ ProcessReg p0
 
-  -- Compute update based on the current state.  Repack with update
-  -- function to do the same next time.
-  o <- modifyExtState r es0 $ \(ExtState (s, u)) -> do
+  -- Compute update using the update function bundled with current
+  -- state.  Repack with update function to do the same next time.
+  o <- modifyProcess r p0 $ \(Process (s, u)) -> do
     (s', o) <- u s
-    return (ExtState (s', u), o)
+    return (Process (s', u), o)
 
   -- Recover the value.  Because r is unique, this is guaranteed to
   -- work as long as state is derived from the initial state as in
   -- 'ticks'.
-  let Just o' = fromDyn o Nothing
-  return o'
+  return $ fromJust $ fromDyn o Nothing
 
 
 
--- Implement memory as a threaded computation.
+-- MemState <-> register interface
 type Mem = (R S, R S, R S, R S) -> MemState -> M (MemState, R S)
 mem :: Mem
 mem (wEn, wAddr, wData, rAddr) memState = do
@@ -344,49 +340,52 @@ mem (wEn, wAddr, wData, rAddr) memState = do
   return (memState', rData)
 
 
--- Couple memory access code to memory implementation.
--- Multiple memories are contained in a functor, similar to fixReg.
-fixMemReg :: 
-  (Zip f, Traversable f) =>
-  f SType ->
-  (f (R S) -> M (f (R S, R S, R S, R S), o)) ->
-  f MemState -> M (f MemState, o)
-fixMemReg t user s = fixReg t comb where
+-- Bind Seq code that manipulates memory interface registers, to
+-- memory implementation, closing feedback loops.  Multiple memories
+-- can be contained in a functor, similar to closeReg.
+closeMem :: 
+  forall f o. (Zip f, Traversable f, Typeable o) =>
+  f SType -> (f (R S) -> M (f (R S, R S, R S, R S), o)) -> M o
 
-  -- Input/Output are named from memory's perspecitive: o is the
+closeMem typ memAccess = mo where
+
+  -- closeReg closes the read register feedback
+  -- closeProcess closes the f MemState feedback (see also closeInput)
+  update :: f MemState -> M (f MemState, o)
+  update s = closeReg typ $ comb s
+  init     = fmap (\_ -> Map.empty) typ
+  mo       = closeProcess update init
+
+  -- Input/Output are named from memory's perspective: o is the
   -- memory's read port data register.  The memory enable, address and
   -- data input is implemented as a combinatorial network to provide
   -- single cycle read acces.
-  comb o = do
+  comb :: (f MemState) -> f (R S) -> M (f (R S), (f MemState, o))
+  comb s o = do
 
-    -- Apply user combinatorial network (o->i)
+    -- Apply memory access combinatorial network (o->i)
     -- x is just an output we pass along for generic threading.
-    (i', x) <- user o
+    (i, x) <- memAccess o
 
     -- Apply each memory's combinatorial network (i->o)
-    so' <- sequence $ zipWith mem i' s
+    so' <- sequence $ zipWith mem i s
     let s' = fmap fst so'
         o' = fmap snd so'
 
     return (o', (s', x))
 
--- Tuck away memory state in an ExtState slot
-fixMem :: 
-  (Zip f, Traversable f, Typeable o) =>
-  f SType -> (f (R S) -> M (f (R S, R S, R S, R S), o)) -> M o
-fixMem t user = fixExtState update init where
-  init   = fmap (\_ -> Map.empty) t
-  update = fixMemReg t user
 
 
--- Tuck away input stream in an ExtState slot
-fixInput :: 
+-- closeProcess closes input "list popping" feedback loop.
+closeInput :: 
   Typeable o =>
-  [i] -> (i -> M o) -> M o
-fixInput is f = fixExtState update is where
+  [i] -> (i -> M o) -> M (Maybe o)
+
+closeInput is f = closeProcess update is where
+  update [] = return ([], Nothing)
   update (i:is) = do
     o <- f i
-    return (is, o)
+    return (is, Just o)
 
 
 
