@@ -166,7 +166,7 @@ test_edge = SeqEmu.trace $ do
   return [e]
 
 -- Clock synchronizer
-test_sync = SeqEmu.traceIO f is where
+test_sync = SeqEmu.itrace f is where
   is = cycle [[v] | v <- [1,0,0,0,0,1,0,0]]
   f [i] = do
     o <- sync (SInt (Just 2) 0) i

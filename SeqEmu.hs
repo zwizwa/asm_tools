@@ -235,8 +235,6 @@ tick :: M a -> (RegVals, ExtStates) -> ((RegVals, ExtStates), a)
 tick m (ri, ei) = ((ro, eo), o) where
   (o, _, ro, eo) = runEmu m (ri !) ei
 
--- fetch map key = Map.findWithDefault def key map where
---   def = error $ "Can't find key: " ++ show key ++ " in " ++ (show $ Map.keys map)
 
 
 -- The simluation is then the initialization and threading of the
@@ -249,26 +247,18 @@ tick m (ri, ei) = ((ro, eo), o) where
 -- The second value corresponds to the time instance associated to the
 -- first active clock pulse, when registers are latched for the first
 -- time.
-ticks :: M a -> [a]
+ticks :: M o -> [o]
 ticks m = t s0 where
   s0 = reset m -- probe with first state input
   t s  = o : t s' where
     (s', o) = tick m s
 
--- Note: this is effectively a second state monad.  Currently it is
--- not very clear how to best abstract this:
--- a) explicit ticks function
--- b) parameterize M with extra state
--- c) use a custom monad stack, write M as a transformer
-
-
--- FIXME: this broke after removing explicit state threading.  It will
--- need the existential mechanism to be able to tuck away state.
 
 -- Special case: emulate input.
 iticks :: Typeable o => (i -> M o) -> [i] -> [o]
 iticks f is = ticks $ fixInput is f
--- iticks = undefined
+
+
 
 -- Since we can't do anything with internal representations, these
 -- functions are provided to convert to and from Int.  Signals can be
@@ -285,18 +275,14 @@ inject :: Functor f => (f Int) -> (f (R S))
 inject = fmap (constant . (SInt Nothing))
 
 
-
-
--- These are tied to the probe and inject functions.  They are a bit
--- clumsy.  I expect these to become trivial once a good runtime state
--- composition mechanism is in place.
+-- Bind probe, inject to ticks, iticks.
 trace :: Traversable f => M (f (R S)) -> [f Int]
 trace mf = ticks $ mf >>= probe
 
-traceIO ::
+itrace ::
   (Functor f, Traversable f', Typeable f, Typeable f') =>
   (f (R S) -> M (f' (R S))) -> [f Int] -> [f' Int]
-traceIO mf is = iticks mf' is' where
+itrace mf is = iticks mf' is' where
   mf' is = mf is >>= probe
   is' = map inject is
 
