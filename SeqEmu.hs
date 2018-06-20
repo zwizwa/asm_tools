@@ -64,34 +64,13 @@ class ExtStateOps s where
 instance Show ExtState where
   show (ExtState (s,u)) = "ExtState " ++ show s
   
--- FIXME: not needed?
--- instance (Zip f, Traversable f) => ExtStateOps (f MemState) where
-
--- Operations needed by the memory implementation:
--- a) generate initial state
--- b) update
-
--- Do this in two steps: implement the type refactoring just for a
--- wrapped Mems.  Then make it existential.
-
--- To support composable state threading, the "value" of a register is
--- relaxed to an existential type.
--- data AbsReg = 
---   forall s. (AbsRegOps s) => Signal { 
---     stateInit   :: s, 
---     stateUpdate :: s -> M s
---   }
--- class AbsRegOps s where
---   dumpAbsReg :: s -> String
-
-
 
 
 -- Primitive state manipulations.  Combine these with 'modify'
-appRegNum    f (n, t, v, m) = (f n, t, v, m) ; getRegNum    = do (n, _, _, _) <- get ; return n
-appTypes     f (n, t, v, m) = (n, f t, v, m) ; getTypes     = do (_, t, _, _) <- get ; return t
-appVals      f (n, t, v, m) = (n, t, f v, m)
-appExtStates f (n, t, v, m) = (n, t, v, f m) ; getExtStates = do (_, _, _, m) <- get ; return m
+appRegNum    f (n, t, v, e) = (f n, t, v, e) ; getRegNum    = do (n, _, _, _) <- get ; return n
+appTypes     f (n, t, v, e) = (n, f t, v, e) ; getTypes     = do (_, t, _, _) <- get ; return t
+appVals      f (n, t, v, e) = (n, t, f v, e)
+appExtStates f (n, t, v, e) = (n, t, v, f e) ; getExtStates = do (_, _, _, e) <- get ; return e
 
 -- Similar, but monadic f, and specialized to one of the external state objects.
 -- modifyExtState :: ()
@@ -101,9 +80,6 @@ modifyExtState r def f = do
   (e', o) <- f e
   modify $ appExtStates $ insert r e'
   return o
-  
-
-
   
 
 
@@ -260,11 +236,10 @@ reset m = (r0, e0) where
 --    concrete Integers.
 tick :: M a -> (RegVals, ExtStates) -> ((RegVals, ExtStates), a)
 tick m (ri, ei) = ((ro, eo), o) where
-  (o, _, ro, eo) = runEmu m (ri `fetch`) ei
+  (o, _, ro, eo) = runEmu m (ri !) ei
 
-fetch map key = Map.findWithDefault def key map where
-  --def = error $ "Can't find key: " ++ show key ++ " in " ++ (show $ Map.keys map)
-  def = 0
+-- fetch map key = Map.findWithDefault def key map where
+--   def = error $ "Can't find key: " ++ show key ++ " in " ++ (show $ Map.keys map)
 
 
 -- The simluation is then the initialization and threading of the
@@ -297,7 +272,6 @@ ticks m = t s0 where
 iticks :: (i -> M o) -> [i] -> [o]
 
 iticks = undefined
-
 -- iticks mf is0 = ticks mf' is0 where
 --   mf' (i:is) = fmap (is,) $ mf i
 
@@ -325,19 +299,43 @@ inject = fmap (constant . (SInt Nothing))
 trace :: Traversable f => M (f (R S)) -> [f Int]
 trace mf = ticks $ mf >>= probe
 
-
-traceSO :: Traversable f => (io -> M (io, f (R S))) -> io -> [f Int]
-traceSO = undefined
--- traceSO mf io0 = ticks mf' io0 where
---   mf' io = mf io >>= probe'
-
 traceIO :: (Functor f, Traversable f') => (f (R S) -> M (f' (R S))) -> [f Int] -> [f' Int]
 traceIO mf is = iticks mf' is' where
   mf' is = mf is >>= probe
   is' = map inject is
 
-traceO :: Traversable f => M (f (R S)) -> [f Int]
-traceO m = traceSO (\() -> do o <- m; return ((), o)) ()
+
+-- Generic external state threading
+fixExtState :: (Typeable o, Show (f s)) => (f s -> M (f s, o)) -> f s -> M o
+fixExtState update init = do
+
+  -- The state type can remain hidden, but state value and state
+  -- update function need to be stored together to be able to perform
+  -- the application.  The return value needs to come out again, so it
+  -- is wrapped as Dynamic.
+  let update' s = do
+        (s', o) <- update s
+        return (s', toDyn $ Just o)
+      es0 = ExtState (init, update')
+  
+  -- Type and ExtState data are indexed by a unique register number.
+  r <- makeRegNum
+  
+  -- Initial state is stored in the type dictionary.
+  modify $ appTypes $ insert r $ ExtReg es0
+
+  -- Compute update based on the current state.  Repack with update
+  -- function to do the same next time.
+  o <- modifyExtState r es0 $ \(ExtState (s, u)) -> do
+    (s', o) <- u s
+    return (ExtState (s', u), o)
+
+  -- Recover the value.  Because r is unique, this is guaranteed to
+  -- work as long as state is derived from the initial state as in
+  -- 'ticks'.
+  let Just o' = fromDyn o Nothing
+  return o'
+
 
 
 -- Implement memory as a threaded computation.
@@ -366,12 +364,12 @@ mem (wEn, wAddr, wData, rAddr) memState = do
 
 -- Couple memory access code to memory implementation.
 -- Multiple memories are contained in a functor, similar to fixReg.
-fixMem :: 
+fixMemReg :: 
   (Zip f, Traversable f) =>
   f SType ->
   (f (R S) -> M (f (R S, R S, R S, R S), o)) ->
   f MemState -> M (f MemState, o)
-fixMem t user s = fixReg t comb where
+fixMemReg t user s = fixReg t comb where
 
   -- Input/Output are named from memory's perspecitive: o is the
   -- memory's read port data register.  The memory enable, address and
@@ -390,99 +388,23 @@ fixMem t user s = fixReg t comb where
 
     return (o', (s', x))
 
-fixMem' :: 
+-- Tuck away memory state in an ExtState slot
+fixMem :: 
   (Zip f, Traversable f, Typeable o, Show (f MemState)) =>
   f SType -> (f (R S) -> M (f (R S, R S, R S, R S), o)) -> M o
-
-fixMem' t user = m where
-  update s = do
-    (s', o) <- fixMem t user s
-    return (s', toDyn $ Just o)
-
-  s0 = fmap (\_ -> Map.empty) t
-  es0 = ExtState (s0, update)
-
-  m = do
-    -- To make the existential types work, we somehow need to
-    -- constrain the s parameter in the initial state and the state
-    -- update to be the same.  This is done by bundling them as
-    -- (s, s -> M s) associated to a register number.
-    r <- makeRegNum
-    -- update s0  -- remove this
-
-    -- FIXME: below doesn't actually run update.
-    
-    -- This needs to be done in two places:
-    -- The "type", has the initial value and the update function.
-    modify $ appTypes $ insert r $ ExtReg es0
-
-    -- The "state", has the current value and a copy of the update
-    -- function.
-    o <- modifyExtState r es0 $ \(ExtState (s, update)) -> do
-      (s', o) <- update s
-      return (ExtState (s', update), o)
-
-    -- We are sure this type conversion succeeds because we can match
-    -- the register number.  In case somebody messes with the data
-    -- structure, this will fail as a match error.
-    let Just o' = fromDyn o Nothing
-    return o'
-    
-
--- -- Memory state is stored in a ExtReg dictionary.
--- fixMem' :: 
---   (Zip f, Traversable f) =>
---   f SType -> (f (R S) -> M (f (R S, R S, R S, R S), o)) -> M o
--- fixMem' t user = fixReg t comb where
-
---   -- Input/Output are named from memory's perspecitive: o is the
---   -- memory's read port data register.  The memory enable, address and
---   -- data input is implemented as a combinatorial network to provide
---   -- single cycle read acces.
---   comb o = do
---     -- Get memory contents and write functions
---     mems <- sequence $ fmap (\_ -> memory) t
---     let s = fmap fst mems
---         w = fmap snd mems
-
---     -- Apply user combinatorial network (o->i)
---     (i', v) <- user o
-
---     -- Apply each memory's combinatorial network (i->o)
---     so' <- sequence $ zipWith mem i' s
---     let s' = fmap fst so'
---         o' = fmap snd so'
-
---     -- Store memory contents in state monad.
---     sequence_ $ zipWith ($) w s'
-
---     return (o', v)
+fixMem t user = fixExtState update init where
+  init   = fmap (\_ -> Map.empty) t
+  update = fixMemReg t user
 
 
--- FIXME: Generalize to abstract IO peripherals.
--- FIXME: It's weird to have these two phases intermixed:
--- default+type creation and readout.  For some reason they show up
--- here directly, making this obvious.  Maybe split this into
--- separate phases?
-
--- memory :: M (ExtState, ExtState -> M ())
--- memory = do
---   -- Reserve a register number for each memory.
---   r <- makeRegNum
---   -- Annotate it as a memory to distinguish it from IntReg.
---   modify $ appTypes $ insert r ExtReg
---   -- Place the contents in a dedicated location to not interfere with
---   -- integer register implementation.  Memories are empty at reset,
---   -- which at least forces initialization.
---   mems <- getMems
---   let state = mems ! r  -- Map.findWithDefault memInit r mems
---       -- memInit = ExtState Map.empty  -- FIXME
---       update s' = modify $ appMems $ insert r s'
---       -- modify $ appMems $ insert' "SeqEmu.fixMem: " r s'
-        
---   return (state, update)
-
-
+-- Tuck away input stream in an ExtState slot
+fixInput :: 
+  (Zip f, Traversable f, Typeable o, Show (f (R S))) =>
+  [f (R S)] -> (f (R S) -> M o) -> M o
+fixInput is f = fixExtState update is where
+  update (i:is) = do
+    o <- f i
+    return (is, o)
 
 
 

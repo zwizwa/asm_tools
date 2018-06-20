@@ -144,7 +144,7 @@ square = do
   c <- counter $ SInt (Just 3) 0
   bit =<< slr c 2
 
-test_counter = SeqEmu.traceO $ do
+test_counter = SeqEmu.trace $ do
   c1 <- counter $ SInt (Just 1) 0
   c2 <- counter $ SInt (Just 3) 0
   -- [] is a meta-language construct needed for trace
@@ -157,11 +157,11 @@ fixReg2 = do
     b' <- add b 3
     return ([a', b'], [a, b])
 
-test_fixReg = SeqEmu.traceO fixReg2
+test_fixReg = SeqEmu.trace fixReg2
 
 
 -- For testing, outputs need to be collected in lists.
-test_edge = SeqEmu.traceO $ do
+test_edge = SeqEmu.trace $ do
   e <- edge =<< square
   return [e]
 
@@ -181,7 +181,7 @@ dummy_mem ([_]) = do       -- memory's output
   return ([(z, z, z, z)],  -- memory's input
           [])              -- test program empty output bus
 test_mem :: [[Int]]
-test_mem = SeqEmu.traceSO m ([empty]) where
+test_mem = SeqEmu.trace m  where
   t = SInt Nothing 0
   m = SeqEmu.fixMem ([t]) dummy_mem
 
@@ -198,12 +198,12 @@ dummy_mem2 ([mo1, mo2]) = do
   ([mi2],_) <- dummy_mem $ [mo2]
   return $ ([mi1, mi2],[])
 
-test_mem2 = SeqEmu.traceSO m ([empty, empty]) where
+test_mem2 = SeqEmu.trace m where
   t = SInt Nothing 0
   m = SeqEmu.fixMem ([t,t]) dummy_mem2
 
 -- Input/output delay.
-test_mem_delay = SeqEmu.traceSO m ([empty]) where
+test_mem_delay = SeqEmu.trace m  where
   t = SInt Nothing 0
   m = SeqEmu.fixMem [t] $ \[rd] -> do
     c <- counter $ SInt (Just 3) 0
@@ -214,7 +214,7 @@ test_mem_delay2 = (s0, out) where
   s0 = SeqEmu.reset m
   out = take 10 $ SeqEmu.trace m
   t = SInt Nothing 0
-  m = SeqEmu.fixMem' [t] $ \[rd] -> do
+  m = SeqEmu.fixMem [t] $ \[rd] -> do
       c <- counter $ SInt (Just 3) 0
       return ([(1, 0, c, 0)], [c, rd])
 
@@ -227,18 +227,10 @@ test_mem_delay2 = (s0, out) where
 test_cpu_net = do
   ([(a,b,c,d)], o) <- CPU.cpu $ [0]
   return $ o ++ [a,b,c,d]
-test_cpu_emu =  SeqEmu.traceSO m ([mem]) where
+test_cpu_emu =  SeqEmu.trace m where
   t = SInt Nothing 0
   m = SeqEmu.fixMem ([t]) CPU.cpu
   mem = Map.fromList $ [(n,n+1) | n <- [0..2]]
-
--- test_cpu_emu' =  SeqEmu.traceSO m mem where
---   typ = SInt Nothing 0
---   m = SeqEmu.fixMem' (typ,typ) $ \memo -> do
---     ([memi],o) <- CPU.cpu [memo]
---     return (memi, o)
---   mem = Map.fromList $ [(n,n+1) | n <- [0..5]]
-
 
 
 
