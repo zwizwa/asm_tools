@@ -58,12 +58,9 @@ type MemState = Map RegNum RegVal
 -- External state threading.  The state type can be fully hidden as an
 -- existential type, but the output needs to be dynamic so we can
 -- recover it.
-data ExtState = forall s. Show s => ExtState (s, s -> M (s, Dynamic))
+data ExtState = forall s. ExtState (s, s -> M (s, Dynamic))
 class ExtStateOps s where
 
-instance Show ExtState where
-  show (ExtState (s,u)) = "ExtState " ++ show s
-  
 
 
 -- Primitive state manipulations.  Combine these with 'modify'
@@ -269,12 +266,9 @@ ticks m = t s0 where
 -- need the existential mechanism to be able to tuck away state.
 
 -- Special case: emulate input.
-iticks :: (i -> M o) -> [i] -> [o]
-
-iticks = undefined
--- iticks mf is0 = ticks mf' is0 where
---   mf' (i:is) = fmap (is,) $ mf i
-
+iticks :: Typeable o => (i -> M o) -> [i] -> [o]
+iticks f is = ticks $ fixInput is f
+-- iticks = undefined
 
 -- Since we can't do anything with internal representations, these
 -- functions are provided to convert to and from Int.  Signals can be
@@ -299,14 +293,16 @@ inject = fmap (constant . (SInt Nothing))
 trace :: Traversable f => M (f (R S)) -> [f Int]
 trace mf = ticks $ mf >>= probe
 
-traceIO :: (Functor f, Traversable f') => (f (R S) -> M (f' (R S))) -> [f Int] -> [f' Int]
+traceIO ::
+  (Functor f, Traversable f', Typeable f, Typeable f') =>
+  (f (R S) -> M (f' (R S))) -> [f Int] -> [f' Int]
 traceIO mf is = iticks mf' is' where
   mf' is = mf is >>= probe
   is' = map inject is
 
 
 -- Generic external state threading
-fixExtState :: (Typeable o, Show (f s)) => (f s -> M (f s, o)) -> f s -> M o
+fixExtState :: Typeable o => (f s -> M (f s, o)) -> f s -> M o
 fixExtState update init = do
 
   -- The state type can remain hidden, but state value and state
@@ -390,7 +386,7 @@ fixMemReg t user s = fixReg t comb where
 
 -- Tuck away memory state in an ExtState slot
 fixMem :: 
-  (Zip f, Traversable f, Typeable o, Show (f MemState)) =>
+  (Zip f, Traversable f, Typeable o) =>
   f SType -> (f (R S) -> M (f (R S, R S, R S, R S), o)) -> M o
 fixMem t user = fixExtState update init where
   init   = fmap (\_ -> Map.empty) t
@@ -399,8 +395,8 @@ fixMem t user = fixExtState update init where
 
 -- Tuck away input stream in an ExtState slot
 fixInput :: 
-  (Zip f, Traversable f, Typeable o, Show (f (R S))) =>
-  [f (R S)] -> (f (R S) -> M o) -> M o
+  Typeable o =>
+  [i] -> (i -> M o) -> M o
 fixInput is f = fixExtState update is where
   update (i:is) = do
     o <- f i

@@ -210,8 +210,8 @@ test_mem_delay = SeqEmu.trace m  where
     return ([(1, 0, c, 0)], [c, rd])
 
 -- wEn, wAddr, wData, rAddr
-test_mem_delay2 = (s0, out) where
-  s0 = SeqEmu.reset m
+test_mem_delay2 = out where
+  -- s0 = SeqEmu.reset m
   out = take 10 $ SeqEmu.trace m
   t = SInt Nothing 0
   m = SeqEmu.fixMem [t] $ \[rd] -> do
