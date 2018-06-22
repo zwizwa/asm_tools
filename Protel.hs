@@ -23,28 +23,41 @@ import qualified Data.Map.Strict as Map
 -- () Net definitions.
 
 type Protel = ([Comp], [Net])
-type Net  = [String] -- [(Name,Pin)]
-type Comp = [String]
+type Net  = (Name, [Pin])
+type Pin  = (Name, Name)
+type Comp = [Name]
 type Name = String
-type Pin  = String
 
 crlf = do char '\r' ; char '\n'
 
-block begin end line = do
-  char begin ; crlf
-  lines <- many line
-  char end ; crlf
-  return lines
 
 line = do
   l <- many $ noneOf "[]()\n\r" ; crlf
   return l
 
+pin :: Parser Pin
+pin = do
+  compName <- many $ noneOf "-[]()\n\r"
+  char '-'
+  pinName <- line
+  return (compName, pinName)
+  
+
 net :: Parser Net
-net = block '(' ')' line 
+net = do
+  char '(' ; crlf
+  name <- line
+  lines <- many pin
+  char ')' ; crlf
+  return (name, lines)
+  
 
 comp :: Parser Comp
-comp = block '[' ']' line 
+comp = do
+  char '[' ; crlf
+  lines <- many line
+  char ']' ; crlf
+  return lines
 
 
 parseFile :: Parser Protel
