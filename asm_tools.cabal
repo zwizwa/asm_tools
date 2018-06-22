@@ -33,3 +33,4 @@ Test-Suite test-edif
     main-is:    test-edif.hs
     build-depends: base
 
+

@@ -6,6 +6,7 @@
 import EDIF
 import SE
 import CSV
+import Protel
 import System.Environment
 import Data.Foldable
 import Control.Monad.Free
@@ -39,6 +40,7 @@ main' [fileName] = do
 
       -- printl CSV.test
       test_csv
+      test_protel
 
 noTags (p, a) = (map snd p, a)
 
@@ -52,4 +54,16 @@ test_csv = do
   contents <- readFile f
   case readCSV f contents of
     Right table -> printl table
+    Left msg -> error msg
+
+-- Protel Netlist
+test_protel = do
+  let f = "/tmp/test.net"
+  contents <- readFile f
+  case readProtel f contents of
+    Right (comps,nets) -> do
+      putStrLn "protel components:"
+      printl comps
+      putStrLn "protel nets:"
+      printl nets
     Left msg -> error msg
