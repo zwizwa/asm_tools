@@ -31,6 +31,28 @@ table :: Parser Table
 table = sepBy record newline
 
 
+-- Cleanup.  This could go in the CSV parser, but it seems simpler to
+-- allow non-rectangular data in CSV, and have a separate
+-- table-checker. FIXME: Use Either instead of error.
+
+checkTable table = h : map checkRow rs where
+  (h:rs) = filter keep table
+  n = length h
+  checkRow r = case n == length r of
+    True -> r
+    False -> error $ "checkTable: bad row " ++ show (n, r)
+
+  -- Skip comments and blank lines
+  keep (('#':_):_) = False
+  keep [""] = False -- empties are ok, just drop them
+  keep _ = True
+
+    
+    
+
+
+
+
 readCSV :: String -> String -> Either String Table
 readCSV fileName contents =
   case parse table "table" contents of
