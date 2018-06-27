@@ -19,10 +19,7 @@ import qualified Data.Map.Lazy as Map
 import qualified Data.Set as Set
 
 -- A Fun is a map from input to output, together with a type
--- specification.  Both are parameterized by a configuration.
--- E.g. some ports can change from input to output.
-
-type FunFamily = Config -> Fun
+-- specification.
 type Fun = (FunType, FunImpl)
 type FunImpl  = Map Port Value -> Map Port Value
 type FunType = (Set Port, Set Port)
@@ -39,17 +36,16 @@ nports :: Net -> Set NPort
 nports (_, nodes) = Set.map fst nodes
 
 -- A semantics _instance_ assigns each NPort (not NPortType!) to a
--- particular Fun.
-interpret :: NPort -> Fun
-interpret = undefined
-
--- If we have a map from global configuration to configuration for
--- each function, we can construct a parameterized representation.
+-- particular Fun.  In general we would like to have a global
+-- configuration that can be decoded into a configuration for each
+-- NPort to associate a Fun on a component by component basis.
+type Semantics = NPort -> Fun
 
 -- The evaluation of a network can only be done relative to semantics.
 -- But it is important to note that given a semantics, we can
--- "flatten" everything into a single function.
-eval :: (NPort -> Fun) -> Net -> Fun
+-- "flatten" everything into a single function through signal
+-- propagagion.  This is the main function we're interested in.
+eval :: Semantics -> Net -> Fun
 eval = undefined
 
 -- In general this will need a way to perform proper "variable
@@ -59,10 +55,17 @@ rename :: (NPort, Port) -> Port
 rename (np,p) = np:p
 
 
--- Some temporary stubs for base types.
-type Config = ()   
+-- Some temporary stubs for base types.  The String types are
+-- identifiers that can be used for value retrieval in certain
+-- contexts.
 type Port = [String]
-type Value = Bool
 type NPort = String
 type NPortType = String
 
+-- Only support two-valued logic.
+type Value = Bool
+
+-- Configuration can be added later.  The idea is to create a family
+-- of representations.
+type FunFamily = Config -> Fun
+type Config = ()   
