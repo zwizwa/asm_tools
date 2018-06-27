@@ -43,6 +43,7 @@ import qualified SeqEmu
 import qualified MyHDL
 import qualified CPU
 import qualified VCD
+import qualified NetFun
 import Data.Map.Lazy (empty, foldrWithKey, insert)
 import qualified Data.Map.Lazy as Map
 import qualified Control.Applicative as Applicative

@@ -11,6 +11,8 @@ type Table = [Record]
 
 -- Parser
 
+-- FIXME: remove comments earlier
+
 quoted :: Parser Field
 quoted = do
   char '"'
@@ -27,15 +29,25 @@ field =  quoted <|> unquoted
 record :: Parser Record
 record  = sepBy field $ char ','
 
+comment :: Parser Record
+comment = do
+  char '#'
+  many $ noneOf "\n\r"
+  return [""]
+
 table :: Parser Table
-table = sepBy record newline
+table = do
+  t <- sepBy (comment <|> record) newline
+  -- eof
+  return t
 
 
 -- Cleanup.  This could go in the CSV parser, but it seems simpler to
 -- allow non-rectangular data in CSV, and have a separate
 -- table-checker. FIXME: Use Either instead of error.
 
-checkTable table = h : map checkRow rs where
+checkTable table = (h, rs') where
+  rs' = map checkRow rs
   (h:rs) = filter keep table
   n = length h
   checkRow r = case n == length r of
@@ -43,7 +55,7 @@ checkTable table = h : map checkRow rs where
     False -> error $ "checkTable: bad row " ++ show (n, r)
 
   -- Skip comments and blank lines
-  keep (('#':_):_) = False
+  -- keep (('#':_):_) = False
   keep [""] = False -- empties are ok, just drop them
   keep _ = True
 
