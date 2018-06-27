@@ -10,6 +10,17 @@
 -- It is possible to convert a network to a function as long as
 -- n-ports are functions.
 
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+--{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE FlexibleContexts #-}
+--{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveFunctor #-}
+--{-# LANGUAGE TupleSections #-}
+--{-# LANGUAGE ExistentialQuantification #-}
+
 
 module NetFun where
 
@@ -17,12 +28,17 @@ import Data.Map.Lazy (Map(..))
 import Data.Set (Set(..))
 import qualified Data.Map.Lazy as Map
 import qualified Data.Set as Set
+import Control.Monad.State
+import Control.Applicative
 
 -- A Fun is a map from input to output, together with a type
 -- specification.
-type Fun = (FunType, FunImpl)
+newtype Fun = Fun (FunType, FunImpl)
 type FunImpl  = Map Port Value -> Map Port Value
 type FunType = (Set Port, Set Port)
+
+instance Show Fun where
+  show (Fun (t, i)) = show t
 
 
 -- A Net is a set of Node.  A Node is a set of NPort Ports.  For each
@@ -69,3 +85,35 @@ type Value = Bool
 -- of representations.
 type FunFamily = Config -> Fun
 type Config = ()   
+
+
+-- Implementatation.  Algorithm is recursive refinement: evaluate when
+-- all function inputs are available, then propagate on function
+-- outputs.
+
+-- Take into account failure: our representation does not impose any
+-- constraints on how function semantics can be assigned to prots, so
+-- it is possible multiple drivers are present.
+
+type EvalState = ()
+
+newtype M t = M { runM :: StateT EvalState (Either String) t } deriving
+  (Functor, Applicative, Monad, MonadState EvalState)
+
+-- Start with a simpler type first.
+eval' :: Semantics -> Net -> FunImpl
+eval' sem net ins = outs where
+  outs = Map.empty
+
+printl :: Show s => [s] -> IO ()
+printl = sequence_ . (map print)
+
+test = print $ eval' sem net ins where
+  ins = Map.empty
+  sem _ = Fun (typ, impl)
+  typ = (typ_in, typ_out)
+  typ_in = Set.empty
+  typ_out = Set.empty
+  impl _ = Map.empty
+  net = (compType, Set.empty)
+  compType _ = "notype"

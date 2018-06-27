@@ -109,6 +109,8 @@ main = do
   putStr $ vcd
   writeFile "test.vcd" vcd
 
+  putStrLn "--- NetFun"
+  NetFun.test
 
 -- printSeqTerm :: Functor f => SeqTerm.M (f (SeqTerm.R S)) -> IO ()
 printSeqTerm :: SeqTerm.M [SeqTerm.R S] -> IO ()
