@@ -38,6 +38,8 @@ import Control.Monad.Reader
 import Control.Applicative
 import Data.Foldable
 import Data.Either
+import Data.Maybe
+-- import qualified Data.IntMap IntMap
 
 -- A Fun is a map from input to output.
 -- If the output is empty, it is assumed the input is incomplete.
@@ -102,10 +104,19 @@ type Config = ()
 -- constraints on how function semantics can be assigned to prots, so
 -- it is possible multiple drivers are present.
 
-type EvalState v = Map Int v
+type EvalState v = (Map Int v, Set Component)
 type EvalEnv v = (Semantics v, Map Int Net)
 nets :: M v (Map Int Net)
 nets = do (_,nets') <- ask ; return nets'
+
+modifyNetVals    f = modify (\(nv,cs) -> (f nv, cs))
+modifyComponents f = modify (\(nv,cs) -> (nv, f cs))
+
+getNetVals :: M v (Map Int v)
+getNetVals = do (nv,_) <- get ; return nv
+
+getComponents :: M v (Set Component)
+getComponents = do (_,cs) <- get ; return cs
 
 newtype M v t = M { runM :: ReaderT (EvalEnv v) (StateT (EvalState v) (Either String)) t } deriving
   (Functor, Applicative, Monad,
@@ -127,28 +138,72 @@ newtype M v t = M { runM :: ReaderT (EvalEnv v) (StateT (EvalState v) (Either St
 
 
 type Signals v = Map Pin v
-eval' :: Semantics v -> Netlist -> Signals v -> Either String (Signals v)
+
+eval' :: Show v => Semantics v -> Netlist -> Signals v -> Either String (Signals v)
 eval' sem netlist i = o where
-  -- Assign each net a unique id.
-  nets = Map.fromList $ zip [0..] $ toList netlist
+  -- Assign each net a unique id, to relate env and state
+  nets = Map.fromList $ zip [0..] $ Set.toList netlist
   env = (sem, nets)
-  o = case runStateT (runReaderT (runM meval') env) Map.empty of
+  initState = (Map.empty, Set.empty)
+  o = case runStateT (runReaderT (runM $ meval' i) env) initState of
         Left msg -> Left msg
-        Right ((), state) -> Right Map.empty
+        Right ((), (state, _)) -> Right Map.empty
 
-meval' :: M v ()
-meval' = return ()
+meval' :: Show v => Signals v -> M v ()
+meval' i = m where
+  m = do
+    sequence_ $ map setPin $ Map.toList i
+    return ()
+    
+  setPin (pin, val) = do
+    n <- pinNet pin
+    nv <- getNetVals
+    -- Something is wired wrong if the net already has a value.
+    case Map.lookup n nv of
+      Just val' ->
+        fail $ "pin already has value: " ++ show (pin, val, val')
+      Nothing -> do
+        modifyNetVals $ Map.insert n val
+        -- State has changed, so time to check if anything connected
+        -- to this net can now evaluate.  Try evaluation on all
+        -- components not yet marked as evaluated.
+        done <- getComponents
+        nets' <- nets 
+        let net = Set.toList $ fromJust $ Map.lookup n nets'
+            notDone c = not $ elem c done
+            comps = filter notDone $ map fst $ net
+        sequence_ $ map evalComp comps
+            
+  evalComp comp = do
+    nets' <- nets
+    let pins :: [Pin]
+        pins = filter isComp $ append $ toList nets'
+        isComp (c,_) = c == comp
 
--- A pin can only be in one net.
-net :: Pin -> M v (Int, Net)
-net pin = do
+    -- FIXME: Make this work first, then reduce algorithmic complexity
+    -- if it is too slow.  It's possible to do this incrementally,
+    -- e.g. by collecting all components in a todolist together with
+    -- the inputs they need, to make it easier to determine if they
+    -- can be evaluated.  It seems wasteful to recollect all inputs
+    -- for each check.
+
+    -- TODO:
+    -- . Collect all defined pins connected to this component
+    -- . Attempt evaluation
+    -- . Abort if no success
+    -- . Mark component as evaluated
+    -- . Recurse on output pins
+    return ()
+
+
+-- A pin can only be in one net.  FIXME: Implementation detail: maybe
+-- create a pin->net Map to avoid lookups?
+pinNet :: Pin -> M v Int
+pinNet pin = do
   nets' <- nets
   case Map.toList $ Map.filter (elem pin) nets' of
-    [kv] -> return $ kv
+    [(k,v)] -> return $ k
     nets -> fail $ "net: pin in zero or multiple nets: " ++ show (pin,nets)
-
-
-
 
 
 
