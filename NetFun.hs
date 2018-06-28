@@ -17,14 +17,11 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
---{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE TupleSections #-}
---{-# LANGUAGE ExistentialQuantification #-}
-
 
 module NetFun where
 
@@ -44,13 +41,13 @@ import Data.Maybe
 -- A Fun is a map from input to output.
 type Fun v = Map Port v -> Map Port v
 
--- Function inputs.
+-- Expected keys in the Fun input Map.  
 type FunIn = Set Port
 
+-- Note that the I/O signature is not encoded at the Haskell type
+-- level to allow for easily parameterizable semantics, e.g. some
+-- ports change between input and output based on a parameter.
 
--- It seems that FunType is not needed.  The necessary information can
--- be encoded in FunImpl: if not all inputs are available, then output
--- map is empty.
 
 -- Basic collection hierarchy.
 type Netlist = Set Net
@@ -79,49 +76,66 @@ type Semantics v = Component -> (Fun v, FunIn)
 -- But it is important to note that given a semantics, we can
 -- "flatten" everything into a single function through signal
 -- propagagion.  This is the main function we're interested in.
-eval :: Semantics v -> Netlist -> Fun v
-eval = undefined
 
--- In general this will need a way to perform proper "variable
--- renaming" for port identifiers.  .
-rename :: (Component, Port) -> Port
-rename (np,p) = np ++ ":" ++ p
+-- Evaluation can fail if the Netlist or Semantics are inconsistent.
+-- Part of the responsibility of this code is to identify those
+-- inconsistencies.
+
+eval :: Show v => Semantics v -> Netlist -> Signals v -> Either String (Signals v)
+type Signals v = Map Pin v
 
 
--- Some temporary stubs for base types.  The String types are
--- identifiers that can be used for value retrieval in certain
--- contexts.
-
--- Configuration can be added later.  The idea is to create a family
--- of representations.
-type FunFamily v = Config -> Fun v
+-- Configuration can be added later.  The idea is to be able to create
+-- a family of interpretations.
+type SemanticsFamily v = Config -> Semantics v
 type Config = ()   
 
 
--- Implementatation.  Algorithm is recursive refinement: evaluate when
--- all function inputs are available, then propagate on function
--- outputs.
+
+-- IMPLEMENTATION
+
+-- The evaluation algorithm uses recursive refinement: evaluate when
+-- all inputs to a component's semantics function are vailable, then
+-- propagate the effect of the new values.
 
 -- Take into account failure: our representation does not impose any
 -- constraints on how function semantics can be assigned to prots, so
 -- it is possible multiple drivers are present.
 
+-- The monad stack uses State, Reader and Either.  Components:
+type EvalState v = (Values v, InputWait, Signals v)
+type EvalEnv v = (Semantics v, Nets, InDeps)
 
-type EvalState v = (Map Int v, InputWait, Signals v)
-type EvalEnv v = (Semantics v, Map Int Net, InDeps)
-
--- Input dependencies of components.  Computed initially and saved in
--- the environment.  A copy of this is threaded, popping net ids when
--- they are defined.  When the set becomes empty, the component is
--- ready to evaluate.
-type InDeps    = Map Component (Map Int (Set Port))
-type InputWait = Map Component (Set Int)
-
--- FIXME: Map Int (Set Port) could be computed when needed.  Factor it
--- out first.
+newtype M v t = M { runM :: ReaderT (EvalEnv v) (StateT (EvalState v) (Either String)) t } deriving
+  (Functor, Applicative, Monad,
+   MonadReader (EvalEnv v),
+   MonadState (EvalState v))
 
 
-askNets   :: M v (Map Int Net)
+-- The netlist is indexed with NetKey to allow some data structures to
+-- be split up.
+type Nets     = Map NetKey Net
+type Values v = Map NetKey v
+type NetKey   = Int
+
+-- Besides the indexed netlist, the following data structures are used
+-- to guide evaluation.
+
+-- As net values gradually become available during evaluation, the Set
+-- of inputs a component is waiting for will shrink.  When it becomes
+-- empty, a component is ready to be evaluated.
+type InputWait = Map Component (Set NetKey)
+
+-- Once all inputs are available, the input :: (Map Port v) can be
+-- constructed.  The following index data structure is used in that
+-- process.  Note (Set Port) vs Port: it is possible that a Component
+-- has multiple ports connected to the same net.
+type InDeps = Map Component (Map NetKey (Set Port))
+
+
+-- State and environemnt access
+
+askNets   :: M v Nets
 askSem    :: M v (Semantics v)
 askInDeps :: M v InDeps
 
@@ -139,170 +153,173 @@ getNetVals = do (nv,_,_) <- get ; return nv
 getInputWait :: M v InputWait
 getInputWait = do (_,cs,_) <- get ; return cs
 
-newtype M v t = M { runM :: ReaderT (EvalEnv v) (StateT (EvalState v) (Either String)) t } deriving
-  (Functor, Applicative, Monad,
-   MonadReader (EvalEnv v),
-   MonadState (EvalState v))
 
--- Inner routine.
-
--- FIXME: type confusion about ins.  from the outside, we need to
--- drive pins, so the interpretation should reflect that.  this kind
--- of confusion is really typical, missing a layer of wrapping.  For
--- now eval' takes pins as input.
-
--- FIXME: this turned out to be really complicated.
-
--- Basic algorithm:
--- . for each input pin, find the corresponding net
--- . if net already has a value, raise an error
--- . set net value
-
-
--- FIXME: collect which pins are driven.  That information is
--- currently lost.
-
-type Signals v = Map Pin v
-
-eval' :: Show v => Semantics v -> Netlist -> Signals v -> Either String (Signals v)
-eval' semantics netlist ins = outs where
+-- Main evaluation entry point.  See above for type.
+eval semantics netlist ins = outs where
 
   -- Compute the initial state and environment.
-  (allNets, indeps) = evalInit semantics netlist
-  inputWait = Map.map Map.keysSet indeps
+  (allNets, inDeps, inputWait) = evalInit semantics netlist
 
   -- Recursively evaluate, starting at inputs
-  env = (semantics, allNets, indeps)
+  env = (semantics, allNets, inDeps)
   initState = (Map.empty, inputWait, Map.empty)
-  outs = case runStateT (runReaderT (runM $ meval' ins) env) initState of
+  outs = case runStateT (runReaderT (runM $ drivePins ins) env) initState of
            Left msg ->
              Left msg
            Right ((), (_, _, os)) ->
              Right os
 
--- This is complex enough to merit factoring out.
-evalInit semantics netlist = (allNets, indeps) where
+-- Mix semantics and netlist into data structures that are easier to use
+-- during evaluation.
+
+evalInit semantics netlist = (allNets, inDeps, inputWait) where
   
-  -- Assign each net a unique Int id, to relate env and state
-  allNets :: Map Int Net
+  -- Assign each net a unique NetKey, so we can split up the data
+  -- structures.
+  
+  allNets :: Map NetKey Net
   allNets = Map.fromList $ zip [0..] $ Set.toList netlist
 
-  -- Annotate each component with its input nets, identified by the
-  -- Int id, and annotated with the ports connected to that net.
-  -- Note: the latter could be factored out.
-  
-  indeps :: Map Component (Map Int (Set Port))
-  indeps = Map.fromSet indep allComps
-  allComps = Set.map fst $ Set.flatten netlist 
-  indep comp = inNets where
-    (_, inPorts) = semantics comp
+  -- The data structure that guides network recursion relates a
+  -- Component to the inputs its Fun needs.  There are two versions of
+  -- this: InDeps, which has additional Port information used to
+  -- prepare the Fun's input type, and InputWait, used to
+  -- incrementally keep track of whether all of a Component's input
+  -- nets have a value.
 
+  -- inputWait can be derivied directly from inDeps
+  inputWait :: Map Component (Set NetKey)
+  inputWait = Map.map Map.keysSet inDeps
+
+  -- inDeps is an annotation of each component with its input nets,
+  -- identified by the NetKey, and annotated with the ports connected
+  -- to that net.
+  
+  inDeps :: Map Component (Map NetKey (Set Port))
+  inDeps = Map.fromSet inDep allComps
+  allComps = Set.map fst $ Set.flatten netlist 
+  inDep comp = inNets where
+    
+    -- all of comp's pins
+    inNets :: Map NetKey (Set Port)
+    inNets = Map.filter (not . Set.null) $ Map.map inNet allNets
+
+    -- ... for a single network
+    inNet :: Net -> Set Port
+    inNet = Set.flatten . Set.map inPin
+
+    -- ... for a single pin in a network
+    -- isomophic to :: Pin -> Maybe Port, but easier to compose
     inPin :: Pin -> Set Port
     inPin (c, p) = case (c == comp) && (Set.member p inPorts) of
       True  -> Set.singleton p
       False -> Set.empty
-
-    inNet :: Net -> Set Port
-    inNet = Set.flatten . Set.map inPin
-      
-    inNets :: Map Int (Set Port)
-    inNets = Map.filter (not . Set.null) $ Map.map inNet allNets
+    (_, inPorts) = semantics comp
 
 
-meval' :: forall v. Show v => Signals v -> M v ()
-meval' i = m where
+
+
+
+drivePins :: forall v. Show v => Signals v -> M v ()
+drivePins i = m where
   m = do
     sequence_ $ map setPin $ Map.toList i
     return ()
     
 setPin (pin, val) = do
 
-  n <- pinNet pin
-  nv <- getNetVals
+  netKey <- pinNet pin
+  netVals <- getNetVals
   
-  case Map.lookup n nv of
+  case Map.lookup netKey netVals of
     
     Just val' ->
       -- Something is wired wrong if the net already has a value.
       fail $ "pin already has value: " ++ show (pin, val, val')
 
     Nothing -> do
-      -- One net has changed:
-      -- . Save change
-      -- . Get a list of components on this net
-      -- . Skip those that do not have a wait list
-      -- . The others _must_ have this net in their wait list!!
-      -- . Iterate over all the wait lists, removing this net
-      -- . If any wait list is empty, remove wait list and propagate component
-
-      modifyNetVals $ Map.insert n val
+      -- We're causing one net to change.  Save the change, and check
+      -- for each component connected to this net if action is needed.
+      modifyNetVals $ Map.insert netKey val
       nets <- askNets
-      
-      let checkComp comp = do
-            inputWait <- getInputWait
-            let Just inputSet = Map.lookup comp inputWait
-            case Set.null inputSet of
-              True ->
-                return ()
-              False -> do
-                let inputSet' = Set.delete n inputSet
-                modifyInputWait $ Map.insert comp inputSet' 
-                case Set.null inputSet' of
-                  False ->
-                    return ()
-                  True ->
-                    evalComp comp
-                    
-          Just net = Map.lookup n nets
+      let Just net = Map.lookup netKey nets
           netComps = Set.map fst net
-                    
-      sequence_ $ map checkComp $ toList netComps
-        
-
--- Precondition: all inputs are ready for evaluation.
--- Propagating component:
--- . Retreive all inputs
--- . Apply function
--- . Iterate over all outputs
-
--- This requires quite a bit of data structure shuffling.  Is there a
--- way to simplify that?
-
-evalComp :: forall v. Show v => Component -> M v ()
-evalComp comp = do
-
-  semantics <- askSem
-  indeps <- askInDeps
-  netvals <- getNetVals
-  
-  let indeps' :: Map Int (Set Port)
-      indeps' = fromJust $ Map.lookup comp indeps
-      input :: [Maybe (v, Set Port)]
-      input = toList $ Map.mapWithKey evalNet indeps'
-      evalNet n ports = fmap (,ports) $ Map.lookup n netvals
-      
-  case sequence input of
-    Nothing ->
-      fail $ "evalComp: inconsistency: inputs not ready: " ++ show (comp, input)
-    Just input' -> do
-      let ins :: Map Port v
-          ins = foldr addVal Map.empty input' 
-          addVal (v, portSet) m = Map.union m $ Map.fromSet (const v) portSet
-          (fun, _) = semantics comp
-          outs = fun ins
-          outs' = Map.mapKeys (comp,) outs
-      modifyOutputs $ Map.union outs'
-      meval' outs'
+      sequence_ $ map (checkComponent netKey) $ toList netComps
 
 
--- A pin can only be in one net.  FIXME: Implementation detail: maybe
--- create a pin->net Map to avoid lookups?
+-- A pin can only be in one net.  Allow for user error here, since it
+-- is possible to represent this inconsistency in the netlist data
+-- structure.
 pinNet :: Pin -> M v Int
 pinNet pin = do
   nets <- askNets
   case Map.toList $ Map.filter (elem pin) nets of
     [(k,v)] -> return $ k
     nets -> fail $ "net: pin in zero or multiple nets: " ++ show (pin,nets)
+
+
+-- Check if ready and if so, propagate.
+checkComponent netKey comp =  do
+  inputWait <- getInputWait
+  let Just wait = Map.lookup comp inputWait
+  case Set.null wait of
+    True ->
+      -- Skip components that are not waiting for input.  These have
+      -- either already been evaluated, or do not need evaluation to
+      -- begin with.
+      return ()
+    False -> do
+      -- Remove this net from the component's input wait set.
+      let wait' = Set.delete netKey wait
+      modifyInputWait $ Map.insert comp wait' 
+      case Set.null wait' of
+        False ->
+          -- Still waiting..
+          return ()
+        True ->
+          -- Propagate if done waiting.
+          evalComponent comp        
+
+-- Precondition: all inputs are ready for evaluation.  Evaluate and
+-- propagate through the network.
+evalComponent :: forall v. Show v => Component -> M v ()
+evalComponent comp = do
+
+  semantics <- askSem
+  netvals <- getNetVals
+  inDeps <- askInDeps
+  
+  let
+    -- What to provide to the Fun?
+    inDeps' :: Map NetKey (Set Port)
+    inDeps' = fromJust $ Map.lookup comp inDeps
+    
+    -- Compute list of input values, tagged with the ports they
+    -- should be applied to.
+    values :: [Maybe (v, Set Port)]
+    values = toList $ Map.mapWithKey evalNet inDeps'
+    evalNet :: NetKey -> (Set Port) -> Maybe (v, Set Port)
+    evalNet n ports = fmap (,ports) $ Map.lookup n netvals
+      
+    -- This pattern match succeeds because of the precondition: all
+    -- inputs should have values before evalComponent is invoked.
+    Just values' = sequence values
+
+    -- Rearrange inputs and compute outputs.
+    inputs :: Map Port v
+    inputs = foldr addVal Map.empty values'
+    addVal (v, portSet) m = Map.union m $ Map.fromSet (const v) portSet
+
+    -- Evaluate
+    (fun, _) = semantics comp
+    outputs = fun inputs
+
+    -- Keep track of which pins are asserted, and recurse.
+    outputs' = Map.mapKeys (comp,) outputs
+
+  modifyOutputs $ Map.union outputs'
+  drivePins outputs'
+
 
 
 
@@ -312,7 +329,7 @@ printl = sequence_ . (map print)
 
 
 
-test = print $ eval' sem netlist ins where
+test = print $ eval sem netlist ins where
 
   -- Input/output "connector" pins.
   in_pin  = ("conn","in")
@@ -332,6 +349,7 @@ test = print $ eval' sem netlist ins where
 
   -- Component u1 is assigned the inverter semantics.
   sem "u1"   = (inverter,         Set.fromList ["1"])
+  -- The connector doesn't have a behavior
   sem "conn" = (const Map.empty,  Set.fromList [])
     
   netlist = Set.fromList [n1,n2]
