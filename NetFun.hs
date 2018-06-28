@@ -121,11 +121,16 @@ type InputWait = Map Component (Set Int)
 -- out first.
 
 
-nets :: M v (Map Int Net)
-nets = do (_,nets',_) <- ask ; return nets'
+askNets   :: M v (Map Int Net)
+askSem    :: M v (Semantics v)
+askInDeps :: M v InDeps
 
-modifyNetVals    f = modify (\(nv,cs) -> (f nv, cs))
-modifyComponents f = modify (\(nv,cs) -> (nv, f cs))
+askNets   = do (_,nets',_)   <- ask ; return nets'
+askSem    = do (sem',_,_)    <- ask ; return sem'
+askInDeps = do (_,_,indeps') <- ask ; return indeps'
+
+modifyNetVals   f = modify (\(nv,cs) -> (f nv, cs))
+modifyInputWait f = modify (\(nv,cs) -> (nv, f cs))
 
 getNetVals :: M v (Map Int v)
 getNetVals = do (nv,_) <- get ; return nv
@@ -215,6 +220,9 @@ meval' i = m where
       Nothing -> do
         modifyNetVals $ Map.insert n val
 
+        inputWait <- getInputWait
+        nets <- askNets 
+
         -- One net has changed:
         -- . Get a list of components on this net
         -- . Skip those that do not have a wait list
@@ -222,34 +230,36 @@ meval' i = m where
         -- . Iterate over all the wait lists, removing this net
         -- . If any wait list is empty, remove wait list and propagate component
 
-        -- Propagating component:
-        -- . Retreive all inputs
-        -- . Apply function
-        -- . Iterate over all outputs
+        let net = fromJust $ Map.lookup n nets
+            netComps = Set.map fst net
+            checkComp comp = do
+              inputWait <- getInputWait
+              case Map.lookup comp inputWait of
+                Nothing ->
+                  return ()
+                Just waitSet -> do
+                  let waitSet' = Set.delete n waitSet
+                  case Set.null waitSet of
+                    False -> do
+                      modifyInputWait $ Map.insert comp waitSet'
+                      return ()
+                    True -> do
+                      modifyInputWait $ Map.delete comp
+                      evalComp comp
+        sequence_ $ map checkComp $ toList netComps
         
-        inputWait <- getInputWait
-        nets' <- nets 
-        let net = Set.toList $ fromJust $ Map.lookup n nets'
-            notDone c = Map.member n $ c inputWait
-            comps = filter notDone $ map fst $ net
-        sequence_ $ map evalComp comps
 
+  -- Precondition: all inputs are ready for evaluation.
+
+  -- Propagating component:
+  -- . Retreive all inputs
+  -- . Apply function
+  -- . Iterate over all outputs
+  
   evalComp comp = do
-    indeps <- Map.empty -- FIXME: remove
+    sem <- askSem
+    indeps <- askInDeps
     netvals <- getNetVals
-    waitList <- getWaitList
-    -- Check if all _previously missing_ input dependencies are there.
-    -- sequence it in the Maybe monad, shortcircuiting when inputs are
-    -- missing.
-
-    -- FIXME: this should also mark the ones that are available.  Do
-    -- it in two steps:
-
-    -- . remove dependencies that are found from the "wait list"
-    -- . the wait list should just be a set of integers
-    -- . the wait list needs to be partitioned according to what's available
-    -- . if mew wait list is empty, evaluate all inputs and compute, else just store
-    
     
     let inNetInfo = fromJust $ Map.lookup comp indeps
         input :: Maybe (Map Int (v, Set Port))
@@ -257,46 +267,26 @@ meval' i = m where
         evalNet n portSet = fmap (,portSet) $ Map.lookup n netvals
     case input of
       Nothing ->
-        -- Inputs are not ready yet
+        -- Inputs are not ready yet.  This is an error.
         return ()
       Just input' -> do
-        -- FIXME: All inputs are available, but input' only contains
-        -- the last missing ones.  It's easier to just redo the
-        -- computation for all input nets.
-        
         -- Shuffle to create ins, and apply
         let ins' = map makeMap $ toList input'
             makeMap (v, portSet) = Map.fromSet (const v) portSet
             ins :: Map Port v
             ins = foldr Map.union Map.empty ins'
-            (fun, _) = undefined -- FIXME: semantics
+            (fun, _) = sem comp
             outs = fun ins
-            -- TODO (see below.. i lost track)
-            -- FIXME: 
-            
-        return ()
-        
+        meval' $ Map.mapKeys (comp,) outs
 
-    -- TODO:
-    -- . use that as an initial state to gradually reduce to zero list
-    -- . remove component from todo list if done
-    
-
-    -- TODO:
-    -- . Collect all defined pins connected to this component
-    -- . Attempt evaluation
-    -- . Abort if no success
-    -- . Mark component as evaluated
-    -- . Recurse on output pins
-    return ()
 
 
 -- A pin can only be in one net.  FIXME: Implementation detail: maybe
 -- create a pin->net Map to avoid lookups?
 pinNet :: Pin -> M v Int
 pinNet pin = do
-  nets' <- nets
-  case Map.toList $ Map.filter (elem pin) nets' of
+  nets <- askNets
+  case Map.toList $ Map.filter (elem pin) nets of
     [(k,v)] -> return $ k
     nets -> fail $ "net: pin in zero or multiple nets: " ++ show (pin,nets)
 
