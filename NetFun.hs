@@ -107,7 +107,7 @@ type Config = ()
 -- it is possible multiple drivers are present.
 
 
-type EvalState v = (Map Int v, InputWait)
+type EvalState v = (Map Int v, InputWait, Signals v)
 type EvalEnv v = (Semantics v, Map Int Net, InDeps)
 
 -- Input dependencies of components.  Computed initially and saved in
@@ -129,14 +129,15 @@ askNets   = do (_,nets',_)   <- ask ; return nets'
 askSem    = do (sem',_,_)    <- ask ; return sem'
 askInDeps = do (_,_,indeps') <- ask ; return indeps'
 
-modifyNetVals   f = modify (\(nv,cs) -> (f nv, cs))
-modifyInputWait f = modify (\(nv,cs) -> (nv, f cs))
+modifyNetVals   f = modify (\(vs,ws,os) -> (f vs, ws, os))
+modifyInputWait f = modify (\(vs,ws,os) -> (vs, f ws, os))
+modifyOutputs   f = modify (\(vs,ws,os) -> (vs, ws, f os))
 
 getNetVals :: M v (Map Int v)
-getNetVals = do (nv,_) <- get ; return nv
+getNetVals = do (nv,_,_) <- get ; return nv
 
 getInputWait :: M v InputWait
-getInputWait = do (_,cs) <- get ; return cs
+getInputWait = do (_,cs,_) <- get ; return cs
 
 newtype M v t = M { runM :: ReaderT (EvalEnv v) (StateT (EvalState v) (Either String)) t } deriving
   (Functor, Applicative, Monad,
@@ -158,6 +159,8 @@ newtype M v t = M { runM :: ReaderT (EvalEnv v) (StateT (EvalState v) (Either St
 -- . set net value
 
 
+-- FIXME: collect which pins are driven.  That information is
+-- currently lost.
 
 type Signals v = Map Pin v
 
@@ -170,10 +173,12 @@ eval' semantics netlist ins = outs where
 
   -- Recursively evaluate, starting at inputs
   env = (semantics, allNets, indeps)
-  initState = (Map.empty, inputWait)
+  initState = (Map.empty, inputWait, Map.empty)
   outs = case runStateT (runReaderT (runM $ meval' ins) env) initState of
-           Left msg -> Left msg
-           Right ((), _s) -> Right Map.empty
+           Left msg ->
+             Left msg
+           Right ((), (_, _, os)) ->
+             Right os
 
 -- This is complex enough to merit factoring out.
 evalInit semantics netlist = (allNets, indeps) where
@@ -235,17 +240,17 @@ setPin (pin, val) = do
       
       let checkComp comp = do
             inputWait <- getInputWait
-            case Map.lookup comp inputWait of
-              Nothing ->
+            let Just inputSet = Map.lookup comp inputWait
+            case Set.null inputSet of
+              True ->
                 return ()
-              Just inputSet -> do
+              False -> do
                 let inputSet' = Set.delete n inputSet
+                modifyInputWait $ Map.insert comp inputSet' 
                 case Set.null inputSet' of
-                  False -> do
-                    modifyInputWait $ Map.insert comp inputSet'
+                  False ->
                     return ()
-                  True -> do
-                    modifyInputWait $ Map.delete comp
+                  True ->
                     evalComp comp
                     
           Just net = Map.lookup n nets
@@ -285,7 +290,9 @@ evalComp comp = do
           addVal (v, portSet) m = Map.union m $ Map.fromSet (const v) portSet
           (fun, _) = semantics comp
           outs = fun ins
-      meval' $ Map.mapKeys (comp,) outs
+          outs' = Map.mapKeys (comp,) outs
+      modifyOutputs $ Map.union outs'
+      meval' outs'
 
 
 -- A pin can only be in one net.  FIXME: Implementation detail: maybe
@@ -324,7 +331,8 @@ test = print $ eval' sem netlist ins where
         Map.empty
 
   -- Component u1 is assigned the inverter semantics.
-  sem "u1" = (inverter, Set.fromList ["1"])
+  sem "u1"   = (inverter,         Set.fromList ["1"])
+  sem "conn" = (const Map.empty,  Set.fromList [])
     
   netlist = Set.fromList [n1,n2]
   n1 = Set.fromList [("u1","1"), in_pin]
