@@ -270,18 +270,19 @@ evalComp comp = do
   indeps <- askInDeps
   netvals <- getNetVals
   
-  let inNetInfo = fromJust $ Map.lookup comp indeps
-      input :: Maybe (Map Int (v, Set Port))
-      input = sequence $ Map.mapWithKey evalNet inNetInfo
-      evalNet n portSet = fmap (,portSet) $ Map.lookup n netvals
+  let indeps' :: Map Int (Set Port)
+      indeps' = fromJust $ Map.lookup comp indeps
+      input :: [Maybe (v, Set Port)]
+      input = toList $ Map.mapWithKey evalNet indeps'
+      evalNet n ports = fmap (,ports) $ Map.lookup n netvals
       
-  case input of
+  case sequence input of
     Nothing ->
-      fail $ "evalComp: inconsistency: inputs not ready: " ++ show comp
+      fail $ "evalComp: inconsistency: inputs not ready: " ++ show (comp, input)
     Just input' -> do
       let ins :: Map Port v
-          ins = foldr Map.union Map.empty $ map makeMap $ toList input' 
-          makeMap (v, portSet) = Map.fromSet (const v) portSet
+          ins = foldr addVal Map.empty input' 
+          addVal (v, portSet) m = Map.union m $ Map.fromSet (const v) portSet
           (fun, _) = semantics comp
           outs = fun ins
       meval' $ Map.mapKeys (comp,) outs
