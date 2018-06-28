@@ -98,10 +98,14 @@ type NetVals v = Map NetName v
 -- transformation, keeping the network evaluation routine simple (One
 -- behavior per Component).
 
--- As for representation, curried Maps are convenient, but these could
--- just as well be functions to Maybe.
-type ComponentTransform = Map Component (Map Port (Component, Port))
+type ComponentTransform = Component -> Port -> Maybe (Component, Port)
 transformComponents :: ComponentTransform -> NetList -> NetList
+
+
+-- Another transformation is to create shorts.  Note that shorts
+-- cannot be modeled as functional semantics because they are
+-- relations.  The evaluator doesn't (can't ?) support those.
+shortNets :: Set (NetName, Set (NetName)) -> NetList -> NetList
 
 
 
@@ -110,26 +114,25 @@ transformComponents :: ComponentTransform -> NetList -> NetList
 
 -- IMPLEMENTATION
 
--- Component splitting is straightforward, so let's get this out of
--- the way first.  Factor out as traversal and core pin mapper.
-transformComponents cs net = Map.map (Set.map $ pinmap cs) net
+-- Component transformation and shorting are straightforward with the
+-- proper representation, so let's get those out of the way first.
 
--- Split the problem into nested mapping and the creation of a pinmap.
-pinmap :: ComponentTransform -> Pin -> Pin
-pinmap compMap pin@(comp,port) = pin' where
-  pin' = case Map.lookup comp compMap of
-    -- Component is not transformed at all.
-    Nothing -> pin
-    Just portMap ->
-      case Map.lookup port portMap of
-        -- Component is transformed, but not this port.  This allows
-        -- to keep the old component and section off only a part.
-        Nothing -> pin
-        -- Allow spec to rename the port and the component.  Note that
-        -- the component name needs to be unique wrt to the net.
-        -- FIXME: verify
-        Just pin' -> pin'
+transformComponents ctx net = net' where
+  net' = Map.map (Set.map f) net
+  f pin@(comp,port) =
+    case ctx comp port of
+      Nothing   -> pin
+      Just pin' -> pin'
 
+shortNets = flip $ foldr shortNets'
+
+shortNets' :: (NetName, Set NetName) -> NetList -> NetList
+shortNets' (name,netNames) netlist = netlist' where
+  netlist' = Map.insert name unionNet netlist0
+  netlist0 = foldr Map.delete netlist netNames
+  unionNet = foldr (Set.union . net) Set.empty netNames
+  net = fromJust . (flip Map.lookup netlist)
+  
 
 
 
