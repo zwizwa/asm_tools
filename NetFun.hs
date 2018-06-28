@@ -1,18 +1,15 @@
 -- Given component semantics, convert a netlist to a function.
 
--- Use terminology used in circuit netlist:
--- . a pin is identified by a component id and a port id
--- . a net is a set of pins
+-- This uses terminology that is common circuit design:
 -- . a netlist is a set of nets
--- . each component instance can be mapped to a behaviour/semantics
+-- . a net is a set of pins
+-- . a pin is identified by a component id and a port id
 
--- Note that this is different from "net" indicating network.  Also a
--- "netlist" isn't really a list, it is a set.
+-- ( Note that this is different from "net" indicating network.  Also
+-- a "netlist" isn't a List, it is a Set. )
 
-
-
--- It is possible to convert a network to a function as long as
--- n-ports are functions.
+-- When each component can be mapped to a behaviour/semantics, it is
+-- possible to (partially) evaluate a network's pins and/or nets.
 
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
@@ -39,18 +36,6 @@ import qualified Data.Map.Strict as Map
 import Control.Monad.State.Strict
 
 
-
--- A Fun is a map from input to output.
-type Fun v = Map Port v -> Map Port v
-
--- Expected keys in the Fun input Map.  
-type FunIn = Set Port
-
--- Note that the I/O signature is not encoded at the Haskell type
--- level to allow for easily parameterizable semantics, e.g. some
--- ports change between input and output based on a parameter.
-
-
 -- Basic collection hierarchy.  Note that nets need to be named to
 -- allow for information to be "tagged onto" the net, such as logic
 -- value after evaluation.
@@ -74,7 +59,19 @@ components = Set.map fst . Set.flatten . Set.fromList . toList
 
 
 
--- The evaluation of a network can be done based on Semantics.
+-- The evaluation of a network can be done based on Semantics.  This
+-- needs a description of the inputs and an abstract function to
+-- implement behavior.  A Fun is a map from input to output.
+
+type Semantics v = Component -> (Fun v, FunIn)
+type Fun v = Map Port v -> Map Port v
+type FunIn = Set Port
+
+-- Note that the I/O signature is not encoded at the Haskell type
+-- level to allow for easily parameterizable semantics, e.g. some
+-- ports change between input and output based on a parameter.
+
+
 
 -- Given a set of pins that are externally driven, compute the pins
 -- that will be asserted in response to this, together with the
@@ -91,13 +88,6 @@ eval :: Show v =>
 type PinVals v = Map Pin v
 type NetVals v = Map NetName v
 
-type Semantics v = Component -> (Fun v, FunIn)
-
-
--- Later we would like to parameterize Semantics, when components can
--- have multiple meanings, e.g. to implement I/O direction.
-type SemanticsFamily v = Config -> Semantics v
-type Config = ()   
 
 
 -- In a practical emulation, it is can be useful to split components
@@ -115,18 +105,46 @@ splitComponent :: ComponentSplitter -> NetList -> NetList
 
 
 
+
+
 -- IMPLEMENTATION
 
--- The evaluation algorithm uses recursive refinement: evaluate when
--- all inputs to a component's semantics function are vailable, then
--- propagate the effect of the new values.
+-- Component splitting is straightforward, so let's get this out of
+-- the way first.  Factor out as traversal and core pin mapper.
+splitComponent cs net = Map.map (Set.map $ pinmap cs) net
+
+-- Split the problem into nested mapping and the creation of a pinmap.
+pinmap :: ComponentSplitter -> Pin -> Pin
+pinmap compMap pin@(comp,port) = pin' where
+  pin' = case Map.lookup comp compMap of
+    -- Component is not split at all.
+    Nothing -> pin
+    Just portMap ->
+      case Map.lookup port portMap of
+        -- Component is split, but not this port.  This is very
+        -- conventient.  It allows to keep the old component and
+        -- section off only a part.
+        Nothing -> pin
+        -- Allow spec to rename the port and the component.  Note that
+        -- the component name needs to be unique wrt to the net.
+        -- FIXME: verify
+        Just pin' -> pin'
+
+
+
+
+-- The evaluation algorithm is abit more involved.
+
+-- Depth first refinement is used: evaluate when all inputs to a
+-- component's semantics function are vailable, then propagate the
+-- effect of the new values.
 
 -- Take into account failure: our representation does not impose any
 -- constraints on how function semantics can be assigned to prots, so
 -- it is possible multiple drivers are present.
 
 
--- Monad stack
+-- The Monad stack used during evaluation.
 
 type EvalState v = (NetVals v, InputWait, PinVals v)
 type EvalEnv v = (Semantics v, NetList, InDeps)
@@ -142,14 +160,14 @@ newtype M v t =
             MonadState (EvalState v))
 
 
--- These extra data structures are used to guide evaluation.
+-- These extra data structures guide evaluation.
 
 -- As net values gradually become available during evaluation, the Set
 -- of inputs a component is waiting for will shrink.  When it becomes
 -- empty, a component is ready to be evaluated.
 type InputWait = Map Component (Set NetName)
 
--- Once all inputs are available, the input :: (Map Port v) can be
+-- Once all inputs are available, the (Map Port v) input to Fun can be
 -- constructed.  The following index data structure is used in that
 -- process.  Note the use of (Set Port) instead of Port: it is
 -- possible that a Component has multiple ports connected to the same
@@ -157,19 +175,19 @@ type InputWait = Map Component (Set NetName)
 type InDeps = Map Component (Map NetName (Set Port))
 
 
--- State and environemnt access
+-- Monadic state and environemnt access boilerplate.
 
 askNetList :: M v NetList
 askSem     :: M v (Semantics v)
 askInDeps  :: M v InDeps
 
-askNetList   = do (_,nets',_)   <- ask ; return nets'
-askSem    = do (sem',_,_)    <- ask ; return sem'
-askInDeps = do (_,_,indeps') <- ask ; return indeps'
+askNetList = do (_,nets',_)   <- ask ; return nets'
+askSem     = do (sem',_,_)    <- ask ; return sem'
+askInDeps  = do (_,_,indeps') <- ask ; return indeps'
 
-modifyNetVals   f = modify (\(vs,ws,os) -> (f vs, ws, os))
-modifyInputWait f = modify (\(vs,ws,os) -> (vs, f ws, os))
-modifyOutputs   f = modify (\(vs,ws,os) -> (vs, ws, f os))
+modifyNetVals   f = modify (\(vs, ws, os) -> (f vs, ws, os))
+modifyInputWait f = modify (\(vs, ws, os) -> (vs, f ws, os))
+modifyOutputs   f = modify (\(vs, ws, os) -> (vs, ws, f os))
 
 getNetVals :: M v (NetVals v)
 getNetVals = do (nv,_,_) <- get ; return nv
@@ -236,11 +254,11 @@ evalInit semantics netlist = (inDeps, inputWait) where
 
 
 
-drivePins :: forall v. Show v => PinVals v -> M v ()
-drivePins i = sequence_ $ map setPin $ Map.toList i
+drivePins :: Show v => PinVals v -> M v ()
+drivePins i = sequence_ $ map drivePin $ Map.toList i
 
-setPin :: Show v => (Pin, v) -> M v ()
-setPin (pin, val) = do
+drivePin :: Show v => (Pin, v) -> M v ()
+drivePin (pin, val) = do
 
   netKey <- pinNet pin
   netVals <- getNetVals
@@ -294,6 +312,7 @@ checkComponent netKey comp =  do
           -- Propagate if done waiting.
           evalComponent comp        
 
+
 -- Precondition: all inputs are ready for evaluation.  Evaluate and
 -- propagate through the network.
 evalComponent :: forall v. Show v => Component -> M v ()
@@ -335,34 +354,10 @@ evalComponent comp = do
   drivePins outputs'
 
 
--- Component splitter.  Factor out as traversal and core pin mapper.
-splitComponent cs net = Map.map (Set.map $ pinmap cs) net
-
-
--- Split the problem into nested mapping and the creation of a pinmap.
-pinmap :: ComponentSplitter -> Pin -> Pin
-pinmap compMap pin@(comp,port) = pin' where
-  pin' = case Map.lookup comp compMap of
-    Nothing -> pin
-    Just portMap ->
-      case Map.lookup port portMap of
-        -- This is very conventient.  It allows to keep the old
-        -- component and section off only a part.
-        Nothing -> pin
-        -- Allow spec to rename the port and the component.  Note that
-        -- the component name needs to be unique.  FIXME: verify
-        Just pin' -> pin'
-
 
 
 
 -- TESTS
-
-
-printl :: Show s => [s] -> IO ()
-printl = sequence_ . (map print)
-
-
 
 test = print $ eval sem netlist ins where
 
