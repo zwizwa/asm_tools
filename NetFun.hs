@@ -72,39 +72,46 @@ components = Set.map fst . Set.flatten . Set.fromList . toList
 
 
 
--- Meaning is created by mapping individual components to functions.
--- Later we would like to parameterize this, when components can have
--- multiple meanings, e.g. to implement I/O direction.
-type Semantics v = Component -> (Fun v, FunIn)
 
--- The evaluation of a network can only be done relative to semantics.
--- But it is important to note that given a semantics, we can
--- "flatten" everything into a single function through signal
--- propagagion.  This is the main function we're interested in.
 
--- Evaluation can fail if the NetList or Semantics are inconsistent.
--- Part of the responsibility of this code is to identify those
--- inconsistencies.
+-- The evaluation of a network can be done based on Semantics.
 
--- Provide both net values and pin values as output.  Output PinVals
--- contains the pins that were asserted in response to the input
--- PinVals: they allow identifying the component that asserts the net.
--- NetVals contain less information, just which nets have a value and
--- which have not.
+-- Given a set of pins that are externally driven, compute the pins
+-- that will be asserted in response to this, together with the
+-- (partial) evaluation state of the nets.
+
+-- Either, because evaluation can fail if the NetList or Semantics are
+-- inconsistent.  Part of the responsibility of this code is to
+-- identify such inconsistencies in a design.
 
 eval :: Show v =>
-  Semantics v -> NetList
-  -> PinVals v -> Either String (PinVals v, NetVals v)
+  Semantics v -> NetList ->
+  PinVals v -> Either String (PinVals v, NetVals v)
 
 type PinVals v = Map Pin v
 type NetVals v = Map NetName v
 
+type Semantics v = Component -> (Fun v, FunIn)
 
 
--- Configuration can be added later.  The idea is to be able to create
--- a family of interpretations.
+-- Later we would like to parameterize Semantics, when components can
+-- have multiple meanings, e.g. to implement I/O direction.
 type SemanticsFamily v = Config -> Semantics v
 type Config = ()   
+
+
+-- In a practical emulation, it is can be useful to split components
+-- into subcomponents to be able to verify behavior for just a subset
+-- of the netlist.  The subcomponents can then each be associated with
+-- their own Semantics.  This manipulation is better performed as a
+-- (syntactic) netlist transformation, keeping the network evaluation
+-- routine simple (One behavior per Component).
+
+-- As for representation, curried Maps are convenient, but these could
+-- just as well be functions to Maybe.
+type ComponentSplitter = Map Component (Map Port (Component, Port))
+splitComponent :: ComponentSplitter -> NetList -> NetList
+
 
 
 
@@ -328,7 +335,28 @@ evalComponent comp = do
   drivePins outputs'
 
 
+-- Component splitter.  Factor out as traversal and core pin mapper.
+splitComponent cs net = Map.map (Set.map $ pinmap cs) net
 
+
+-- Split the problem into nested mapping and the creation of a pinmap.
+pinmap :: ComponentSplitter -> Pin -> Pin
+pinmap compMap pin@(comp,port) = pin' where
+  pin' = case Map.lookup comp compMap of
+    Nothing -> pin
+    Just portMap ->
+      case Map.lookup port portMap of
+        -- This is very conventient.  It allows to keep the old
+        -- component and section off only a part.
+        Nothing -> pin
+        -- Allow spec to rename the port and the component.  Note that
+        -- the component name needs to be unique.  FIXME: verify
+        Just pin' -> pin'
+
+
+
+
+-- TESTS
 
 
 printl :: Show s => [s] -> IO ()
