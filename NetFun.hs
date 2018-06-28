@@ -102,10 +102,11 @@ type ComponentTransform = Component -> Port -> Maybe (Component, Port)
 transformComponents :: ComponentTransform -> NetList -> NetList
 
 
--- Another transformation is to create shorts.  Note that shorts
--- cannot be modeled as functional semantics because they are
--- relations.  The evaluator doesn't (can't ?) support those.
-shortNets :: Set (NetName, Set (NetName)) -> NetList -> NetList
+-- Another transformation is to create shorts.  Shorts cannot be
+-- modeled by the evaluator (relations vs. functions).  Therefore
+-- implement them as a structural transformation.
+type Shorts = Map NetName (Set NetName)
+shortNets :: Shorts -> NetList -> NetList
 
 
 
@@ -124,16 +125,18 @@ transformComponents ctx net = net' where
       Nothing   -> pin
       Just pin' -> pin'
 
-shortNets = flip $ foldr shortNets'
+shortNets shorts nl = foldr short nl $ Map.toList shorts where
+  short :: (NetName, Set NetName) -> NetList -> NetList
+  short (name, netNames) netlist = netlist' where
+    netlist' = Map.insert name unionNet netlist0
+    netlist0 = foldr Map.delete netlist netNames
+    unionNet = foldr (Set.union . net) Set.empty netNames
+    net = fromJust . (flip Map.lookup netlist)
 
-shortNets' :: (NetName, Set NetName) -> NetList -> NetList
-shortNets' (name,netNames) netlist = netlist' where
-  netlist' = Map.insert name unionNet netlist0
-  netlist0 = foldr Map.delete netlist netNames
-  unionNet = foldr (Set.union . net) Set.empty netNames
-  net = fromJust . (flip Map.lookup netlist)
-  
-
+-- Alternative interface.  Keep name of first net in list.
+shortNets' :: [[NetName]] -> NetList -> NetList  
+shortNets' shorts = shortNets $ Map.fromList $ map tx shorts where
+  tx names@(name:_) = (name, Set.fromList names)
 
 
 -- The evaluation algorithm is abit more involved.
