@@ -210,75 +210,81 @@ meval' i = m where
     sequence_ $ map setPin $ Map.toList i
     return ()
     
-  setPin (pin, val) = do
-    n <- pinNet pin
-    nv <- getNetVals
-    -- Something is wired wrong if the net already has a value.
-    case Map.lookup n nv of
-      Just val' ->
-        fail $ "pin already has value: " ++ show (pin, val, val')
-      Nothing -> do
-        modifyNetVals $ Map.insert n val
+setPin (pin, val) = do
 
-        inputWait <- getInputWait
-        nets <- askNets 
+  n <- pinNet pin
+  nv <- getNetVals
+  
+  case Map.lookup n nv of
+    
+    Just val' ->
+      -- Something is wired wrong if the net already has a value.
+      fail $ "pin already has value: " ++ show (pin, val, val')
 
-        -- One net has changed:
-        -- . Get a list of components on this net
-        -- . Skip those that do not have a wait list
-        -- . The others _must_ have this net in their wait list!!
-        -- . Iterate over all the wait lists, removing this net
-        -- . If any wait list is empty, remove wait list and propagate component
+    Nothing -> do
+      -- One net has changed:
+      -- . Save change
+      -- . Get a list of components on this net
+      -- . Skip those that do not have a wait list
+      -- . The others _must_ have this net in their wait list!!
+      -- . Iterate over all the wait lists, removing this net
+      -- . If any wait list is empty, remove wait list and propagate component
 
-        let net = fromJust $ Map.lookup n nets
-            netComps = Set.map fst net
-            checkComp comp = do
-              inputWait <- getInputWait
-              case Map.lookup comp inputWait of
-                Nothing ->
-                  return ()
-                Just waitSet -> do
-                  let waitSet' = Set.delete n waitSet
-                  case Set.null waitSet of
-                    False -> do
-                      modifyInputWait $ Map.insert comp waitSet'
-                      return ()
-                    True -> do
-                      modifyInputWait $ Map.delete comp
-                      evalComp comp
-        sequence_ $ map checkComp $ toList netComps
+      modifyNetVals $ Map.insert n val
+      nets <- askNets
+      
+      let checkComp comp = do
+            inputWait <- getInputWait
+            case Map.lookup comp inputWait of
+              Nothing ->
+                return ()
+              Just inputSet -> do
+                let inputSet' = Set.delete n inputSet
+                case Set.null inputSet' of
+                  False -> do
+                    modifyInputWait $ Map.insert comp inputSet'
+                    return ()
+                  True -> do
+                    modifyInputWait $ Map.delete comp
+                    evalComp comp
+                    
+          Just net = Map.lookup n nets
+          netComps = Set.map fst net
+                    
+      sequence_ $ map checkComp $ toList netComps
         
 
-  -- Precondition: all inputs are ready for evaluation.
+-- Precondition: all inputs are ready for evaluation.
+-- Propagating component:
+-- . Retreive all inputs
+-- . Apply function
+-- . Iterate over all outputs
 
-  -- Propagating component:
-  -- . Retreive all inputs
-  -- . Apply function
-  -- . Iterate over all outputs
+-- This requires quite a bit of data structure shuffling.  Is there a
+-- way to simplify that?
+
+evalComp :: forall v. Show v => Component -> M v ()
+evalComp comp = do
+
+  semantics <- askSem
+  indeps <- askInDeps
+  netvals <- getNetVals
   
-  evalComp comp = do
-    sem <- askSem
-    indeps <- askInDeps
-    netvals <- getNetVals
-    
-    let inNetInfo = fromJust $ Map.lookup comp indeps
-        input :: Maybe (Map Int (v, Set Port))
-        input = sequence $ Map.mapWithKey evalNet inNetInfo
-        evalNet n portSet = fmap (,portSet) $ Map.lookup n netvals
-    case input of
-      Nothing ->
-        -- Inputs are not ready yet.  This is an error.
-        return ()
-      Just input' -> do
-        -- Shuffle to create ins, and apply
-        let ins' = map makeMap $ toList input'
-            makeMap (v, portSet) = Map.fromSet (const v) portSet
-            ins :: Map Port v
-            ins = foldr Map.union Map.empty ins'
-            (fun, _) = sem comp
-            outs = fun ins
-        meval' $ Map.mapKeys (comp,) outs
-
+  let inNetInfo = fromJust $ Map.lookup comp indeps
+      input :: Maybe (Map Int (v, Set Port))
+      input = sequence $ Map.mapWithKey evalNet inNetInfo
+      evalNet n portSet = fmap (,portSet) $ Map.lookup n netvals
+      
+  case input of
+    Nothing ->
+      fail $ "evalComp: inconsistency: inputs not ready: " ++ show comp
+    Just input' -> do
+      let ins :: Map Port v
+          ins = foldr Map.union Map.empty $ map makeMap $ toList input' 
+          makeMap (v, portSet) = Map.fromSet (const v) portSet
+          (fun, _) = semantics comp
+          outs = fun ins
+      meval' $ Map.mapKeys (comp,) outs
 
 
 -- A pin can only be in one net.  FIXME: Implementation detail: maybe
