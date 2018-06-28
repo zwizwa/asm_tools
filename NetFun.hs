@@ -90,17 +90,18 @@ type NetVals v = Map NetName v
 
 
 
--- In a practical emulation, it is can be useful to split components
--- into subcomponents to be able to verify behavior for just a subset
--- of the netlist.  The subcomponents can then each be associated with
--- their own Semantics.  This manipulation is better performed as a
--- (syntactic) netlist transformation, keeping the network evaluation
--- routine simple (One behavior per Component).
+-- In a practical emulation, it is can be useful to split or join
+-- components to be able to assign semantics at ta different
+-- granularity than what is encoded in the concrete circuit netlest.
+
+-- This manipulation is better performed as a (syntactic) netlist
+-- transformation, keeping the network evaluation routine simple (One
+-- behavior per Component).
 
 -- As for representation, curried Maps are convenient, but these could
 -- just as well be functions to Maybe.
-type ComponentSplitter = Map Component (Map Port (Component, Port))
-splitComponent :: ComponentSplitter -> NetList -> NetList
+type ComponentTransform = Map Component (Map Port (Component, Port))
+transformComponents :: ComponentTransform -> NetList -> NetList
 
 
 
@@ -111,19 +112,18 @@ splitComponent :: ComponentSplitter -> NetList -> NetList
 
 -- Component splitting is straightforward, so let's get this out of
 -- the way first.  Factor out as traversal and core pin mapper.
-splitComponent cs net = Map.map (Set.map $ pinmap cs) net
+transformComponents cs net = Map.map (Set.map $ pinmap cs) net
 
 -- Split the problem into nested mapping and the creation of a pinmap.
-pinmap :: ComponentSplitter -> Pin -> Pin
+pinmap :: ComponentTransform -> Pin -> Pin
 pinmap compMap pin@(comp,port) = pin' where
   pin' = case Map.lookup comp compMap of
-    -- Component is not split at all.
+    -- Component is not transformed at all.
     Nothing -> pin
     Just portMap ->
       case Map.lookup port portMap of
-        -- Component is split, but not this port.  This is very
-        -- conventient.  It allows to keep the old component and
-        -- section off only a part.
+        -- Component is transformed, but not this port.  This allows
+        -- to keep the old component and section off only a part.
         Nothing -> pin
         -- Allow spec to rename the port and the component.  Note that
         -- the component name needs to be unique wrt to the net.

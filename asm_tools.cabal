@@ -27,10 +27,12 @@ Test-Suite test-seq
     main-is:    test-seq.hs
     build-depends: base
 
-Test-Suite test-edif
-    build-depends: base, mtl, parsec, sqlite-simple, free, containers
-    type:       exitcode-stdio-1.0
-    main-is:    test-edif.hs
-    build-depends: base
+
+-- For this I only have proprietary test files.
+-- Test-Suite test-edif
+--     build-depends: base, mtl, parsec, sqlite-simple, free, containers
+--     type:       exitcode-stdio-1.0
+--     main-is:    test-edif.hs
+--     build-depends: base
 
 
