@@ -265,9 +265,9 @@ drivePins i = sequence_ $ map drivePin $ Map.toList i
 
 drivePin :: Show v => (Pin, v) -> M v ()
 drivePin (pin, val) = do
-
-  netKey <- pinNet pin
+  nets <- askNetList
   netVals <- getNetVals
+  let Right netKey = pinNet nets pin
   
   case Map.lookup netKey netVals of
     
@@ -288,12 +288,11 @@ drivePin (pin, val) = do
 -- A pin can only be in one net.  Allow for user error here, since it
 -- is possible to represent this inconsistency in the netlist data
 -- structure.
-pinNet :: Pin -> M v NetName
-pinNet pin = do
-  nets <- askNetList
+pinNet :: NetList -> Pin -> Either String NetName
+pinNet nets pin =
   case Map.toList $ Map.filter (elem pin) nets of
-    [(k,v)] -> return $ k
-    nets -> fail $ "pinNet: zero or multiple nets: " ++ show (pin, nets)
+    [(k,v)] -> Right k
+    nets -> Left $ "pinNet: zero or multiple nets: " ++ show (pin, nets)
 
 
 -- Check if ready and if so, propagate.
