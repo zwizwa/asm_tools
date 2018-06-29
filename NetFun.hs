@@ -35,7 +35,7 @@ import Data.Maybe
 import Data.Map.Strict (Map(..))
 import qualified Data.Map.Strict as Map
 import Control.Monad.State.Strict
-
+import SMap
 
 -- Basic collection hierarchy.  Note that nets need to be named to
 -- allow for information to be "tagged onto" the net, such as logic
@@ -126,10 +126,61 @@ transformComponents ctx net = net' where
       Nothing   -> pin
       Just pin' -> pin'
 
+
+
+
+
+
+
+-- An aliased netlist is just this:
+type NetList' = Map (Set NetName) Net
+aliasedNet :: NetList -> NetList'
+aliasedNet = Map.mapKeys Set.singleton
+
+-- How to perform lookup and merge?  Merge is easy, Take two nets,
+-- remove them, and insert a new net which unions the names and the
+-- contents.  Lookup involves set operations.
+
+-- Can this be reduced to implementing Eq for a newtype-wrapped Set?
+-- E.g. two sets are Eq if their intersection is not null.  This is
+-- not transitive: 
+
+
+
+
+-- mergeNets (Set NetName) -> (Set NetName) -> NetList' -> NetList'
+-- mergeNets n1 n2 nl = nl' where
+--   n
+--   nl' = undefined
+
+
+
+-- Lookup will need a way to promote a representative to
+-- the key (set).
+
+
+
+
+
+
+-- shortNets shorts netlist = undefined where
+  -- This is based on a morphism between these two functions
+  -- NetName -> Set NetName
+  -- Net -> Set Net (which can be flattened to Net)
+
+
+  -- One problem with just folding is that the names get lost.  One
+  -- way to solve this is to represent netnames as sets, and then
+  -- flatten them in a final step?
+  
+  
+
+  
+
 -- FIXME: I'm still not convinced this is entirely correct, since I
 -- had to fix the "origNL" bug.  Why is this hard to express at all?
 
-shortNets shorts origNL = foldr short origNL $ Map.toList shorts where
+shortNets shorts origNL =  foldr short origNL $ Map.toList shorts where
   short :: (NetName, Set NetName) -> NetList -> NetList
   short (name, netNames) netlist = netlist' where
 
