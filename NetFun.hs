@@ -35,7 +35,8 @@ import Data.Maybe
 import Data.Map.Strict (Map(..))
 import qualified Data.Map.Strict as Map
 import Control.Monad.State.Strict
-import SMap
+import qualified SetMap as SetMap
+import qualified Partition as Partition
 
 -- Basic collection hierarchy.  Note that nets need to be named to
 -- allow for information to be "tagged onto" the net, such as logic
