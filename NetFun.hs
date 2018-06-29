@@ -64,7 +64,7 @@ components = Set.map fst . Set.flatten . Set.fromList . toList
 -- needs a description of the inputs and an abstract function to
 -- implement behavior.  A Fun is a map from input to output.
 
-type Semantics v = Component -> (Fun v, FunIn)
+type Semantics v = Component -> (FunIn, Fun v)
 type Fun v = Map Port v -> Map Port v
 type FunIn = Set Port
 
@@ -126,13 +126,24 @@ transformComponents ctx net = net' where
       Nothing   -> pin
       Just pin' -> pin'
 
-shortNets shorts nl = foldr short nl $ Map.toList shorts where
+-- FIXME: I'm still not convinced this is entirely correct, since I
+-- had to fix the "origNL" bug.  Why is this hard to express at all?
+
+shortNets shorts origNL = foldr short origNL $ Map.toList shorts where
   short :: (NetName, Set NetName) -> NetList -> NetList
   short (name, netNames) netlist = netlist' where
-    netlist' = Map.insert name unionNet netlist0
-    netlist0 = foldr Map.delete netlist netNames
-    unionNet = foldr (Set.union . net) Set.empty netNames
-    net = fromJust . (flip Map.lookup netlist)
+
+    -- Note that the names are only valid in the original netlist.
+    net :: NetName -> Net
+    net name   = fromJust' (err name) $ Map.lookup name origNL
+    err name   = "shortNets: " ++ show name
+
+    shortedNet :: Net
+    shortedNet = foldr Set.union Set.empty $ Set.map net netNames
+
+    netlist0  = foldr Map.delete netlist netNames
+    netlist'  = Map.insert name shortedNet netlist0
+
 
 -- Alternative interface.  Keep name of first net in list.
 shortNets' :: [[NetName]] -> NetList -> NetList  
@@ -239,7 +250,7 @@ evalInit semantics netlist = (inDeps, inputWait) where
     inPin (c, p) = case (c == comp) && (Set.member p inPorts) of
       True  -> Set.singleton p
       False -> Set.empty
-    (_, inPorts) = semantics comp
+    (inPorts, _) = semantics comp
 
 
   -- and b) InputWait, used to incrementally keep track of whether all
@@ -328,7 +339,7 @@ evalComponent comp = do
   let
     -- What to provide to the Fun?
     inDeps' :: Map NetName (Set Port)
-    inDeps' = fromJust $ Map.lookup comp inDeps
+    inDeps' = fromJust' "inDeps" $ Map.lookup comp inDeps
     
     -- Compute list of input values, tagged with the ports they
     -- should be applied to.
@@ -347,7 +358,7 @@ evalComponent comp = do
     addVal (v, portSet) m = Map.union m $ Map.fromSet (const v) portSet
 
     -- Evaluate
-    (fun, _) = semantics comp
+    (_, fun) = semantics comp
     outputs = fun inputs
 
     -- Keep track of which pins are asserted, and recurse.
@@ -357,6 +368,9 @@ evalComponent comp = do
   drivePins outputs'
 
 
+-- Single case matchers with some failure message tagging.
+fromJust' e (Just v) = v
+fromJust' e Nothing = error $ e ++ ": fromJust' failed"
 
 
 
@@ -384,9 +398,9 @@ test = print $ eval sem netlist ins where
         m[]
 
   -- Component u1 is assigned the inverter semantics.
-  sem "u1"   = (inverter,    s["1"])
   -- The connector doesn't have a behavior
-  sem "conn" = (const $ m[], s[])
+  sem "u1"   = (s["1"], inverter)
+  sem "conn" = (s[],    const $ m[])
     
   netlist = m[("n1",n1),("n2",n2)]
   n1 = s[("u1","1"), in_pin]
