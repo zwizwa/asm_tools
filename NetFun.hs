@@ -19,6 +19,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 
 module NetFun where
 
@@ -83,7 +84,7 @@ type FunIn = Set Port
 
 eval :: Show v =>
   Semantics v -> NetList ->
-  PinVals v -> Either String (PinVals v, NetVals v)
+  PinVals v -> (PinVals v, NetVals v)
 
 type PinVals v = Map Pin v
 type NetVals v = Map NetName v
@@ -145,22 +146,13 @@ shortNets' shorts = shortNets $ Map.fromList $ map tx shorts where
 -- component's semantics function are vailable, then propagate the
 -- effect of the new values.
 
--- Take into account failure: our representation does not impose any
--- constraints on how function semantics can be assigned to prots, so
--- it is possible multiple drivers are present.
-
-
 -- The Monad stack used during evaluation.
 
 type EvalState v = (NetVals v, InputWait, PinVals v)
 type EvalEnv v = (Semantics v, NetList, InDeps)
 
 newtype M v t =
-  M { runM ::
-        ReaderT (EvalEnv v)
-       (StateT (EvalState v)
-       (Either String)) t
-    }
+  M { runM :: ReaderT (EvalEnv v) (State (EvalState v)) t }
   deriving (Functor, Applicative, Monad,
             MonadReader (EvalEnv v),
             MonadState (EvalState v))
@@ -203,7 +195,7 @@ getInputWait = do (_,cs,_) <- get ; return cs
 
 
 -- Main evaluation entry point.  See above for type.
-eval semantics netlist ins = rv' where
+eval semantics netlist ins = (pvs, nvs) where
 
   -- Compute the initial state and environment.
   (inDeps, inputWait) = evalInit semantics netlist
@@ -211,8 +203,8 @@ eval semantics netlist ins = rv' where
   initState = (Map.empty, inputWait, Map.empty)
 
   -- Recursively evaluate, starting at inputs
-  rv' = fmap rv $ runStateT (runReaderT (runM $ drivePins ins) env) initState
-  rv ((), (nvs, _, pvs)) = (pvs, nvs) 
+  ((), (nvs, _, pvs)) =
+    runState (runReaderT (runM $ drivePins ins) env) initState
 
 
 -- Compute run-time data structures.
@@ -267,13 +259,13 @@ drivePin :: Show v => (Pin, v) -> M v ()
 drivePin (pin, val) = do
   nets <- askNetList
   netVals <- getNetVals
-  let Right netKey = pinNet nets pin
+  let Just netKey = pinNet nets pin
   
   case Map.lookup netKey netVals of
     
     Just val' ->
       -- Something is wired wrong if the net already has a value.
-      fail $ "pin already has value: " ++ show (pin, val, val')
+      error $ "pin already has value: " ++ show (pin, val, val')
 
     Nothing -> do
       -- We're causing one net to change.  Save the change, and check
@@ -288,11 +280,17 @@ drivePin (pin, val) = do
 -- A pin can only be in one net.  Allow for user error here, since it
 -- is possible to represent this inconsistency in the netlist data
 -- structure.
-pinNet :: NetList -> Pin -> Either String NetName
+
+-- Not connected pins can happen when starting from components instead
+-- of nets.  Pins in multiple nets are a bad inconsistency and should
+-- just be an error.
+
+pinNet :: NetList -> Pin -> Maybe NetName
 pinNet nets pin =
   case Map.toList $ Map.filter (elem pin) nets of
-    [(k,v)] -> Right k
-    nets -> Left $ "pinNet: zero or multiple nets: " ++ show (pin, nets)
+    [] -> Nothing
+    [(k,v)] -> Just k
+    nets -> error $ "pinNet: multiple nets: " ++ show (pin, nets)
 
 
 -- Check if ready and if so, propagate.
@@ -366,28 +364,31 @@ evalComponent comp = do
 
 test = print $ eval sem netlist ins where
 
+  s = Set.fromList
+  m = Map.fromList
+
   -- Input/output "connector" pins.
   in_pin  = ("conn","in")
   out_pin = ("conn","out")
 
   -- We'll drive the input connector pin.
-  ins = Map.fromList [(in_pin, True)]
+  ins = m[(in_pin, True)]
 
   -- A single functional 2-port component, mapping the value of port
   -- "1" to port "2", negating it.
   inverter i =
     case Map.lookup "1" i of
       (Just v) ->  
-        Map.fromList [("2", not v)]
+        m[("2", not v)]
       Nothing ->
-        Map.empty
+        m[]
 
   -- Component u1 is assigned the inverter semantics.
-  sem "u1"   = (inverter,         Set.fromList ["1"])
+  sem "u1"   = (inverter,    s["1"])
   -- The connector doesn't have a behavior
-  sem "conn" = (const Map.empty,  Set.fromList [])
+  sem "conn" = (const $ m[], s[])
     
-  netlist = Map.fromList [("n1",n1),("n2",n2)]
-  n1 = Set.fromList [("u1","1"), in_pin]
-  n2 = Set.fromList [("u1","2"), out_pin]
+  netlist = m[("n1",n1),("n2",n2)]
+  n1 = s[("u1","1"), in_pin]
+  n2 = s[("u1","2"), out_pin]
 
