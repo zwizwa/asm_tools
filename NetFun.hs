@@ -11,6 +11,12 @@
 -- When each component can be mapped to a behaviour/semantics, it is
 -- possible to (partially) evaluate a network's pins and/or nets.
 
+-- TODO: A key insight that required some iteration is that:
+-- . partitions are the natural form of netlists
+-- . a strict order can produce representatives if needed
+-- . representatives are useful for temporary associations
+
+
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
