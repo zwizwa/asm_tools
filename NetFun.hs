@@ -41,13 +41,13 @@ import Data.Maybe
 import Data.Map.Strict (Map(..))
 import qualified Data.Map.Strict as Map
 import Control.Monad.State.Strict
-import qualified SetMap as SetMap
 import qualified Partition as Partition
+import Partition(Partition)
 
 -- Basic collection hierarchy.  Note that nets need to be named to
 -- allow for information to be "tagged onto" the net, such as logic
 -- value after evaluation.
-type NetList = Map NetName Net
+type NetList = Partition Pin
 type Net     = Set Pin
 type Pin     = (Component, Port)
 
@@ -56,12 +56,16 @@ type Pin     = (Component, Port)
 -- types.
 type Port      = String
 type Component = String
-type NetName   = String
+
+-- For intermediate processing, it is usuful to work in the
+-- Partition's quotient set, naming nets.
+type NetName   = Pin
+type NetList'  = Map NetName Net
 
 -- It is not necessary to define the component list seprately, as it
 -- can be derived directly from the graph:
 components :: NetList -> Set Component
-components = Set.map fst . Set.flatten . Set.fromList . toList
+components = Set.map fst . Set.flatten . Set.fromList . Partition.toList
 
 
 
@@ -89,10 +93,13 @@ type FunIn = Set Port
 -- inconsistent.  Part of the responsibility of this code is to
 -- identify such inconsistencies in a design.
 
+
 eval :: Show v =>
   Semantics v -> NetList ->
   PinVals v -> (PinVals v, NetVals v)
 
+-- Note: the NetVals output uses bet representatives.  It is not clear
+-- at this time if that is a good API.
 type PinVals v = Map Pin v
 type NetVals v = Map NetName v
 
@@ -110,13 +117,6 @@ type ComponentTransform = Component -> Port -> Maybe (Component, Port)
 transformComponents :: ComponentTransform -> NetList -> NetList
 
 
--- Another transformation is to create shorts.  Shorts cannot be
--- modeled by the evaluator (relations vs. functions).  Therefore
--- implement them as a structural transformation.
-type Shorts = Map NetName (Set NetName)
-shortNets :: Shorts -> NetList -> NetList
-
-
 
 
 
@@ -127,86 +127,13 @@ shortNets :: Shorts -> NetList -> NetList
 -- proper representation, so let's get those out of the way first.
 
 transformComponents ctx net = net' where
-  net' = Map.map (Set.map f) net
+  net' = Partition.map (Set.map f) net
   f pin@(comp,port) =
     case ctx comp port of
       Nothing   -> pin
       Just pin' -> pin'
 
-
-
-
-
-
-
--- An aliased netlist is just this:
-type NetList' = Map (Set NetName) Net
-aliasedNet :: NetList -> NetList'
-aliasedNet = Map.mapKeys Set.singleton
-
--- How to perform lookup and merge?  Merge is easy, Take two nets,
--- remove them, and insert a new net which unions the names and the
--- contents.  Lookup involves set operations.
-
--- Can this be reduced to implementing Eq for a newtype-wrapped Set?
--- E.g. two sets are Eq if their intersection is not null.  This is
--- not transitive: 
-
-
-
-
--- mergeNets (Set NetName) -> (Set NetName) -> NetList' -> NetList'
--- mergeNets n1 n2 nl = nl' where
---   n
---   nl' = undefined
-
-
-
--- Lookup will need a way to promote a representative to
--- the key (set).
-
-
-
-
-
-
--- shortNets shorts netlist = undefined where
-  -- This is based on a morphism between these two functions
-  -- NetName -> Set NetName
-  -- Net -> Set Net (which can be flattened to Net)
-
-
-  -- One problem with just folding is that the names get lost.  One
-  -- way to solve this is to represent netnames as sets, and then
-  -- flatten them in a final step?
-  
-  
-
-  
-
--- FIXME: I'm still not convinced this is entirely correct, since I
--- had to fix the "origNL" bug.  Why is this hard to express at all?
-
-shortNets shorts origNL =  foldr short origNL $ Map.toList shorts where
-  short :: (NetName, Set NetName) -> NetList -> NetList
-  short (name, netNames) netlist = netlist' where
-
-    -- Note that the names are only valid in the original netlist.
-    net :: NetName -> Net
-    net name   = fromJust' (err name) $ Map.lookup name origNL
-    err name   = "shortNets: " ++ show name
-
-    shortedNet :: Net
-    shortedNet = foldr Set.union Set.empty $ Set.map net netNames
-
-    netlist0  = foldr Map.delete netlist netNames
-    netlist'  = Map.insert name shortedNet netlist0
-
-
--- Alternative interface.  Keep name of first net in list.
-shortNets' :: [[NetName]] -> NetList -> NetList  
-shortNets' shorts = shortNets $ Map.fromList $ map tx shorts where
-  tx names@(name:_) = (name, Set.fromList names)
+shortNets = Partition.union
 
 
 -- The evaluation algorithm is abit more involved.
@@ -218,7 +145,7 @@ shortNets' shorts = shortNets $ Map.fromList $ map tx shorts where
 -- The Monad stack used during evaluation.
 
 type EvalState v = (NetVals v, InputWait, PinVals v)
-type EvalEnv v = (Semantics v, NetList, InDeps)
+type EvalEnv v = (Semantics v, NetList', InDeps)
 
 newtype M v t =
   M { runM :: ReaderT (EvalEnv v) (State (EvalState v)) t }
@@ -244,7 +171,7 @@ type InDeps = Map Component (Map NetName (Set Port))
 
 -- Monadic state and environemnt access boilerplate.
 
-askNetList :: M v NetList
+askNetList :: M v NetList'
 askSem     :: M v (Semantics v)
 askInDeps  :: M v InDeps
 
@@ -267,8 +194,8 @@ getInputWait = do (_,cs,_) <- get ; return cs
 eval semantics netlist ins = (pvs, nvs) where
 
   -- Compute the initial state and environment.
-  (inDeps, inputWait) = evalInit semantics netlist
-  env = (semantics, netlist, inDeps)
+  (inDeps, inputWait, netlist') = evalInit semantics netlist
+  env = (semantics, netlist', inDeps)
   initState = (Map.empty, inputWait, Map.empty)
 
   -- Recursively evaluate, starting at inputs
@@ -276,9 +203,13 @@ eval semantics netlist ins = (pvs, nvs) where
     runState (runReaderT (runM $ drivePins ins) env) initState
 
 
+
 -- Compute run-time data structures.
-evalInit :: Show v => Semantics v -> NetList -> (InDeps, InputWait)
-evalInit semantics netlist = (inDeps, inputWait) where
+evalInit :: Show v => Semantics v -> NetList -> (InDeps, InputWait, NetList')
+evalInit semantics netlist = (inDeps, inputWait, netlist') where
+
+  reps = Map.fromList . Partition.reps
+  netlist' = reps netlist
   
   -- The data structure that guides network recursion relates a
   -- Component to it's Fun's input dependencies.  There are two
@@ -296,7 +227,7 @@ evalInit semantics netlist = (inDeps, inputWait) where
     
     -- all of comp's pins
     inNets :: Map NetName (Set Port)
-    inNets = Map.filter (not . Set.null) $ Map.map inNet netlist
+    inNets = Map.filter (not . Set.null) $ Map.map inNet netlist'
 
     -- ... for a single network
     inNet :: Net -> Set Port
@@ -346,20 +277,20 @@ drivePin (pin, val) = do
       sequence_ $ map (checkComponent netKey) $ toList netComps
 
 
--- A pin can only be in one net.  Allow for user error here, since it
--- is possible to represent this inconsistency in the netlist data
--- structure.
+-- A pin can only be in one net.
 
 -- Not connected pins can happen when starting from components instead
--- of nets.  Pins in multiple nets are a bad inconsistency and should
--- just be an error.
+-- of nets, so handle that case with Maybe.  Pins in multiple nets are
+-- definitely an internal error of the Partitio laws, and should just
+-- be an error.
 
-pinNet :: NetList -> Pin -> Maybe NetName
+pinNet :: NetList' -> Pin -> Maybe NetName
 pinNet nets pin =
   case Map.toList $ Map.filter (elem pin) nets of
     [] -> Nothing
     [(k,v)] -> Just k
     nets -> error $ "pinNet: multiple nets: " ++ show (pin, nets)
+
 
 
 -- Check if ready and if so, propagate.
@@ -460,7 +391,7 @@ test = print $ eval sem netlist ins where
   sem "u1"   = (s["1"], inverter)
   sem "conn" = (s[],    const $ m[])
     
-  netlist = m[("n1",n1),("n2",n2)]
+  netlist = Partition.fromList $ [n1, n2]
   n1 = s[("u1","1"), in_pin]
   n2 = s[("u1","2"), out_pin]
 

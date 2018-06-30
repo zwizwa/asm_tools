@@ -15,15 +15,16 @@
 module Partition where
   
 import Data.Set(Set)
-import Prelude hiding (lookup)
+import Prelude hiding (lookup, insert, map, foldr)
 import qualified Data.Set as Set
+import qualified Data.List as List
 
 -- A partition is a set of disjoint sets.  When we refer to an element
 -- of (Partition a), we mean a type (Set a).  Represented as [(Set a)]
 -- instead of (Set (Set a)), because the outer set's operations would
 -- need (Ord (Set a)), and we just need foldr and map on the outer
 -- container.
-newtype Partition a = Partition [(Set a)]
+newtype Partition a = Partition { toList :: [(Set a)] }
 
 -- This is a "concrete" partition in that we do not use an abstract
 -- equivalence relation.  Two sets are equivalent if they have
@@ -37,17 +38,17 @@ disjoint a a' = Set.null $ Set.intersection a a'
 -- to operate on the quotient set, e.g. using representatives, and
 
 rep :: Ord e => Set e -> e
-rep s = foldr max e0 es where (e0:es) = Set.toList s
+rep s = List.foldr max e0 es where (e0:es) = Set.toList s
 
 reps :: Ord e => Partition e -> [(e, Set e)]
-reps (Partition p) = map tag' p where tag' s = (rep s, s)
+reps (Partition p) = List.map tag' p where tag' s = (rep s, s)
 
 -- b) those that change the partitioning / equivalence relation.
 
 -- Below, some routines are defined that generalize the quotient set
--- operations "insert", "remove", and "element" in such a way that if
--- the key sets used are proper partition elements they behave as
--- quotient set operations, but if they are not, they essentially
+-- operations "insert", "remove", "union" and "element" in such a way
+-- that if the key sets used are proper partition elements they behave
+-- as quotient set operations, but if they are not, they essentially
 -- generate a new partition + implement the operation on the
 -- transformed partition.
 
@@ -60,7 +61,7 @@ reps (Partition p) = map tag' p where tag' s = (rep s, s)
 -- an overlapping drop is added.
 
 coalesce :: Ord e => Set e -> Partition e -> (Set e, Partition e)
-coalesce keyset (Partition p) = foldr split (Set.empty, Partition []) p where
+coalesce keyset (Partition p) = List.foldr split (Set.empty, empty) p where
 
   split s (s', Partition p') =
     case overlap s keyset of
@@ -88,6 +89,14 @@ remove k m = snd $ coalesce k m
 element :: Ord e => Set e -> Partition e -> Bool
 element e m = not $ Set.null $ fst $ coalesce e m
 
+union :: Ord e => Partition e -> Partition e -> Partition e
+union a (Partition b) = List.foldr insert a b
 
-    
+-- Misc library
 
+empty = Partition []
+
+map f (Partition p) = Partition $ List.map f p
+
+fromList :: Ord e => [Set e] -> Partition e                      
+fromList = List.foldr insert empty
