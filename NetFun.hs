@@ -57,11 +57,6 @@ type Pin     = (Component, Port)
 type Port      = String
 type Component = String
 
--- For intermediate processing, it is usuful to work in the
--- Partition's quotient set, naming nets.
-type NetName   = Pin
-type NetList'  = Map NetName Net
-
 -- It is not necessary to define the component list seprately, as it
 -- can be derived directly from the graph:
 components :: NetList -> Set Component
@@ -98,11 +93,13 @@ eval :: Show v =>
   Semantics v -> NetList ->
   PinVals v -> (PinVals v, NetVals v)
 
--- Note: the NetVals output uses bet representatives.  It is not clear
--- at this time if that is a good API.
 type PinVals v = Map Pin v
-type NetVals v = Map NetName v
+type NetVals v = Map Net v
 
+-- Internally, we work with the quotient set, i.e. named nets.
+type NetVals' v = Map NetName v
+type NetName    = Pin
+type NetList'   = Map NetName Net
 
 
 -- In a practical emulation, it is can be useful to split or join
@@ -144,7 +141,7 @@ shortNets = Partition.union
 
 -- The Monad stack used during evaluation.
 
-type EvalState v = (NetVals v, InputWait, PinVals v)
+type EvalState v = (NetVals' v, InputWait, PinVals v)
 type EvalEnv v = (Semantics v, NetList', InDeps)
 
 newtype M v t =
@@ -183,7 +180,7 @@ modifyNetVals   f = modify (\(vs, ws, os) -> (f vs, ws, os))
 modifyInputWait f = modify (\(vs, ws, os) -> (vs, f ws, os))
 modifyOutputs   f = modify (\(vs, ws, os) -> (vs, ws, f os))
 
-getNetVals :: M v (NetVals v)
+getNetVals :: M v (NetVals' v)
 getNetVals = do (nv,_,_) <- get ; return nv
 
 getInputWait :: M v InputWait
@@ -199,8 +196,12 @@ eval semantics netlist ins = (pvs, nvs) where
   initState = (Map.empty, inputWait, Map.empty)
 
   -- Recursively evaluate, starting at inputs
-  ((), (nvs, _, pvs)) =
+  ((), (nvs', _, pvs)) =
     runState (runReaderT (runM $ drivePins ins) env) initState
+
+  -- Remove representation before returning result.
+  nvs = Map.mapKeys (fromJust . flip Map.lookup netlist') nvs'
+
 
 
 
@@ -365,7 +366,7 @@ fromJust' e Nothing = error $ e ++ ": fromJust' failed"
 
 -- TESTS
 
-test = print $ eval sem netlist ins where
+test = printit where
 
   s = Set.fromList
   m = Map.fromList
@@ -395,3 +396,12 @@ test = print $ eval sem netlist ins where
   n1 = s[("u1","1"), in_pin]
   n2 = s[("u1","2"), out_pin]
 
+
+  (pins, nets) = eval sem netlist ins where
+  printl = sequence_ . map print
+  
+  printit = do
+    putStrLn "--- pins"
+    printl $ Map.toList pins
+    putStrLn "--- nets"
+    printl $ Map.toList nets
