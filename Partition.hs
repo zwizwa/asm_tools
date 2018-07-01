@@ -15,7 +15,7 @@
 module Partition where
   
 import Data.Set(Set)
-import Prelude hiding (lookup, insert, map, foldr)
+import Prelude hiding (lookup, insert, map, foldr, filter)
 import qualified Data.Set as Set
 import qualified Data.List as List
 
@@ -100,3 +100,16 @@ map f (Partition p) = Partition $ List.map f p
 
 fromList :: Ord e => [Set e] -> Partition e                      
 fromList = List.foldr insert empty
+
+partition :: Ord e => (Set e -> Bool) -> Partition e -> (Partition e, Partition e)
+partition pred (Partition l) = (Partition t, Partition f) where
+  (t, f) = List.partition pred l
+
+filter :: Ord e => (Set e -> Bool)  -> Partition e -> Partition e
+filter pred (Partition l) = Partition l' where
+  l' = List.filter pred l
+
+-- unrep . rep == id, if argument is a partition element
+-- Precondition: element is a representative of some set,
+unrep :: Ord e => e -> Partition e -> Set e
+unrep e p = case toList $ filter (Set.member e) p of [s] -> s

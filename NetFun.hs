@@ -57,13 +57,6 @@ type Pin     = (Component, Port)
 type Port      = String
 type Component = String
 
--- It is not necessary to define the component list seprately, as it
--- can be derived directly from the graph:
-components :: NetList -> Set Component
-components = Set.map fst . Set.flatten . Set.fromList . Partition.toList
-
-
-
 
 
 -- The evaluation of a network can be done based on Semantics.  This
@@ -96,7 +89,8 @@ eval :: Show v =>
 type PinVals v = Map Pin v
 type NetVals v = Map Net v
 
--- Internally, we work with the quotient set, i.e. named nets.
+-- Internally, we work with the quotient set, i.e. named nets, where
+-- the name (representative) is taken as the minimum of the Pin set.
 type NetList'   = Map Pin Net   -- rep pin to netlist
 type INetList'  = Map Pin Pin   -- pin to rep pin
 -- Which allows to do things like tagging values to the partition
@@ -115,6 +109,26 @@ type ComponentTransform = Component -> Port -> Maybe (Component, Port)
 transformComponents :: ComponentTransform -> NetList -> NetList
 
 
+
+-- Small tools
+
+-- It is not necessary to define the component list seperately, as it
+-- can be derived directly from the graph:
+components :: NetList -> Set Component
+components = Set.map fst . pins
+
+pins :: NetList -> Set Pin
+pins = Set.flatten . Set.fromList . Partition.toList
+
+-- The set of a component's pins
+ports :: Component -> NetList -> Set Port
+ports c nl = Set.map snd $ Set.filter isComp $ pins nl where isComp (c',_) = c == c'
+
+-- Find connections between components
+connectedPorts :: NetList -> Pin -> Component -> Set Port
+connectedPorts nl pin comp = ports where
+  net = Partition.unrep pin nl
+  ports = Set.map snd $ Set.filter (\(c,_) -> c == comp) net
 
 
 
@@ -396,3 +410,6 @@ test = printit where
     printl $ Map.toList pins
     putStrLn "--- nets"
     printl $ Map.toList nets
+
+
+
