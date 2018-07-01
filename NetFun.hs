@@ -97,9 +97,10 @@ type PinVals v = Map Pin v
 type NetVals v = Map Net v
 
 -- Internally, we work with the quotient set, i.e. named nets.
-type NetVals' v = Map NetName v
-type NetName    = Pin
-type NetList'   = Map NetName Net
+type NetList'   = Map Pin Net   -- rep pin to netlist
+type INetList'  = Map Pin Pin   -- pin to rep pin
+-- Which allows to do things like tagging values to the partition
+type NetVals' v = Map Pin v     -- rep pin to value
 
 
 -- In a practical emulation, it is can be useful to split or join
@@ -142,7 +143,7 @@ shortNets = Partition.union
 -- The Monad stack used during evaluation.
 
 type EvalState v = (NetVals' v, InputWait, PinVals v)
-type EvalEnv v = (Semantics v, NetList', InDeps)
+type EvalEnv v = (Semantics v, NetList', INetList', InDeps)
 
 newtype M v t =
   M { runM :: ReaderT (EvalEnv v) (State (EvalState v)) t }
@@ -156,25 +157,27 @@ newtype M v t =
 -- As net values gradually become available during evaluation, the Set
 -- of inputs a component is waiting for will shrink.  When it becomes
 -- empty, a component is ready to be evaluated.
-type InputWait = Map Component (Set NetName)
+type InputWait = Map Component (Set Pin)
 
 -- Once all inputs are available, the (Map Port v) input to Fun can be
 -- constructed.  The following index data structure is used in that
 -- process.  Note the use of (Set Port) instead of Port: it is
 -- possible that a Component has multiple ports connected to the same
 -- net.
-type InDeps = Map Component (Map NetName (Set Port))
+type InDeps = Map Component (Map Pin (Set Port))
 
 
 -- Monadic state and environemnt access boilerplate.
 
-askNetList :: M v NetList'
-askSem     :: M v (Semantics v)
-askInDeps  :: M v InDeps
+askSem      :: M v (Semantics v)
+askNetList  :: M v NetList'
+askINetList :: M v INetList'
+askInDeps   :: M v InDeps
 
-askNetList = do (_,nets',_)   <- ask ; return nets'
-askSem     = do (sem',_,_)    <- ask ; return sem'
-askInDeps  = do (_,_,indeps') <- ask ; return indeps'
+askSem      = do (sem',_,_,_)    <- ask ; return sem'
+askNetList  = do (_,nets',_,_)   <- ask ; return nets'
+askINetList = do (_,_,inets',_)  <- ask ; return inets'
+askInDeps   = do (_,_,_,indeps') <- ask ; return indeps'
 
 modifyNetVals   f = modify (\(vs, ws, os) -> (f vs, ws, os))
 modifyInputWait f = modify (\(vs, ws, os) -> (vs, f ws, os))
@@ -191,8 +194,8 @@ getInputWait = do (_,cs,_) <- get ; return cs
 eval semantics netlist ins = (pvs, nvs) where
 
   -- Compute the initial state and environment.
-  (inDeps, inputWait, netlist') = evalInit semantics netlist
-  env = (semantics, netlist', inDeps)
+  (inDeps, inputWait, netlist', inetlist') = evalInit semantics netlist
+  env = (semantics, netlist', inetlist', inDeps)
   initState = (Map.empty, inputWait, Map.empty)
 
   -- Recursively evaluate, starting at inputs
@@ -206,11 +209,14 @@ eval semantics netlist ins = (pvs, nvs) where
 
 
 -- Compute run-time data structures.
-evalInit :: Show v => Semantics v -> NetList -> (InDeps, InputWait, NetList')
-evalInit semantics netlist = (inDeps, inputWait, netlist') where
+evalInit :: Show v => Semantics v -> NetList -> (InDeps, InputWait, NetList', INetList')
+evalInit semantics netlist = (inDeps, inputWait, netlist', inetlist') where
 
-  reps = Map.fromList . Partition.reps
-  netlist' = reps netlist
+  -- Quotient set representation
+  reps = Partition.reps netlist
+  netlist' = Map.fromList reps
+  inetlist' = Map.fromList $ concat
+    [[(pin,rpin) | pin <- Set.toList pins]  | (rpin,pins) <- reps]
   
   -- The data structure that guides network recursion relates a
   -- Component to it's Fun's input dependencies.  There are two
@@ -221,13 +227,13 @@ evalInit semantics netlist = (inDeps, inputWait, netlist') where
   -- readily available during the necessary traversal, avoiding a
   -- search during evaluation.
 
-  inDeps :: Map Component (Map NetName (Set Port))
+  inDeps :: Map Component (Map Pin (Set Port))
   inDeps = Map.fromSet inDep allComps
   allComps = components netlist 
   inDep comp = inNets where
     
     -- all of comp's pins
-    inNets :: Map NetName (Set Port)
+    inNets :: Map Pin (Set Port)
     inNets = Map.filter (not . Set.null) $ Map.map inNet netlist'
 
     -- ... for a single network
@@ -246,7 +252,7 @@ evalInit semantics netlist = (inDeps, inputWait, netlist') where
   -- and b) InputWait, used to incrementally keep track of whether all
   -- of a Component's input nets have a value.  The latter is a
   -- reduction of a).
-  inputWait :: Map Component (Set NetName)
+  inputWait :: Map Component (Set Pin)
   inputWait = Map.map Map.keysSet inDeps
 
   
@@ -258,9 +264,9 @@ drivePins i = sequence_ $ map drivePin $ Map.toList i
 
 drivePin :: Show v => (Pin, v) -> M v ()
 drivePin (pin, val) = do
-  nets <- askNetList
+  inets <- askINetList
   netVals <- getNetVals
-  let Just netKey = pinNet nets pin
+  let Just netKey = Map.lookup pin inets
   
   case Map.lookup netKey netVals of
     
@@ -276,21 +282,6 @@ drivePin (pin, val) = do
       let Just net = Map.lookup netKey nets
           netComps = Set.map fst net
       sequence_ $ map (checkComponent netKey) $ toList netComps
-
-
--- A pin can only be in one net.
-
--- Not connected pins can happen when starting from components instead
--- of nets, so handle that case with Maybe.  Pins in multiple nets are
--- definitely an internal error of the Partitio laws, and should just
--- be an error.
-
-pinNet :: NetList' -> Pin -> Maybe NetName
-pinNet nets pin =
-  case Map.toList $ Map.filter (elem pin) nets of
-    [] -> Nothing
-    [(k,v)] -> Just k
-    nets -> error $ "pinNet: multiple nets: " ++ show (pin, nets)
 
 
 
@@ -328,14 +319,14 @@ evalComponent comp = do
   
   let
     -- What to provide to the Fun?
-    inDeps' :: Map NetName (Set Port)
+    inDeps' :: Map Pin (Set Port)
     inDeps' = fromJust' "inDeps" $ Map.lookup comp inDeps
     
     -- Compute list of input values, tagged with the ports they
     -- should be applied to.
     values :: [Maybe (v, Set Port)]
     values = toList $ Map.mapWithKey evalNet inDeps'
-    evalNet :: NetName -> (Set Port) -> Maybe (v, Set Port)
+    evalNet :: Pin -> (Set Port) -> Maybe (v, Set Port)
     evalNet n ports = fmap (,ports) $ Map.lookup n netvals
       
     -- This pattern match succeeds because of the precondition: all
