@@ -51,6 +51,7 @@ contents edif = cont where
   [view]  = sub' cell  "view"      "netListView"
   [cont]  = sub  view  "contents"
 
+netlist :: SE -> [(String, (String, String))]
 netlist edif = table where
   grouped = map net nets
   table = concat $ map (\(n, ps) -> map (\p -> (n, p)) ps) grouped
