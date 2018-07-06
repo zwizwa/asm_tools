@@ -33,10 +33,10 @@ wait reg cycles = nops where
   cycles' = cycles - 1              -- account for ldi loop init
   (loops, extra) = divMod cycles' 2 -- div accounts for loop length
   nops = do
-    comment $ "begin: wait " ++ show cycles
+    comment $ "{ PruLib.wait " ++ show cycles
     wait  reg extra
     loop  reg loops
-    comment $ "end:   wait " ++ show cycles
+    comment $ "}"
   loop reg loops = do  
     ldi reg (I loops)        -- 1
     l <- label'
