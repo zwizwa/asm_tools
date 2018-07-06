@@ -11,6 +11,7 @@ module PruEmu(compile,compile'
              ,runEmu,logTrace,logTrace',stateTrace,tickTrace
              ,pseudo, loadm
              ,machineInit,machineInit0,machineInit'
+             ,rle
              ) where
 
 import Pru
@@ -320,3 +321,23 @@ logTrace tick = next where
     (s', w) = logTrace' tick s 1
 
 
+
+-- FIXME: Something to consider. It might be simpler to extend the
+-- main state with some existential types, remove the writer layer,
+-- and implement a different writer abstraction on top of the state
+-- layer.  This would also make it possible to make an "infinite"
+-- writer.
+
+
+
+-- Misc emulation tools
+
+-- Run length encoding
+rle :: Eq a => [a] -> [(a, Int)]
+rle [] = []
+rle (a : as) = f (a, 1) as where
+  f s [] = [s]
+  f s@(a', n) l@(a : as) = case a' == a of
+    True  -> f (a', n+1) as
+    False -> (s : rle l)
+    
