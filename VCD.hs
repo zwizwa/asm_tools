@@ -11,8 +11,11 @@ import Data.Char
 tags :: [Char]
 tags = map toEnum [33..126]
 
-toVCD :: (Eq a, Show a, Integral a) => String -> ([(String, Int)], [[a]]) -> String
-toVCD timescale (types, signals) = header ++ vars ++ vcd ++ end where
+newtype VCD = VCD { unVCD :: String }
+instance Show VCD where show = unVCD
+
+toVCD :: (Eq a, Show a, Integral a) => String -> ([(String, Int)], [[a]]) -> VCD
+toVCD timescale (types, signals) = VCD $ header ++ vars ++ vcd ++ end where
   n = length header
   header = concat $ [
     "$date October 21, 2015 $end\n",

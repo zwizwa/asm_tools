@@ -11,7 +11,7 @@
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 
-module MyHDL(gen) where
+module MyHDL(myhdl,MyHDL) where
 import Seq
 import qualified SeqExpr
 import qualified SeqTerm
@@ -38,9 +38,11 @@ type BlockState = (Int,Mode)
 type IndentLevel = Int
 data Mode = None | Seq | Comb deriving Eq
 
+newtype MyHDL = MyHDL { unMyHDL :: String }
+instance Show MyHDL where show = unMyHDL
 
-gen :: (Eq n, Show n) => [Op n] -> [(n, Expr n)] -> String
-gen ports bindings = str where
+myhdl :: (Eq n, Show n) => [Op n] -> [(n, Expr n)] -> MyHDL
+myhdl ports bindings = MyHDL str where
   m = mGen ports bindings
   (((), mode), str) =
     runReader (runWriterT (runStateT (runPrintMyHDL m) (0, None))) 0
