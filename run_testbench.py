@@ -11,9 +11,11 @@ import inspect
 import importlib.util
 from myhdl import *
 
+def make_out_signal():
+    # This makes it possible to gerate Verilog
+    return Signal(modbv(0)[32:])
 
-def testbench(module_filename):
-
+def load_module(module_filename):
     # Load the test bench module
     tb_spec = importlib.util.spec_from_file_location("tb", module_filename)
     tb = importlib.util.module_from_spec(tb_spec)
@@ -25,11 +27,20 @@ def testbench(module_filename):
     # The first two arguments are CLK and RST.  The rest are all
     # assumed to be integer outputs.
     out_ports = ports[2:]
-    CLK = Signal(int(0))
+    CLK = Signal(bool(False))
     RST = ResetSignal(1,0,True)
-    out_signals = [Signal(int(0)) for p in out_ports]
+    out_signals = [make_out_signal() for p in out_ports]
     signals = [CLK, RST] + out_signals
+
+    return tb, signals
+
+
+def inst_testbench(tb, signals):
+
     tb_inst = traceSignals(tb.module, *signals)
+    CLK = signals[0]
+    RST = signals[1]
+    out_signals = signals[2:]
 
     # Stimulation: just main clock.
     def clock():
@@ -53,6 +64,7 @@ def testbench(module_filename):
                     assert a == b
             else:
                 raise StopSimulation
+            n.next = n + 1
         insts += [out_check]
 
     # Otherwise just observe
@@ -68,7 +80,9 @@ def testbench(module_filename):
 
 if __name__ == '__main__':
     if sys.argv[1]:
-        Simulation(testbench(sys.argv[1])).run()
-    else:
-        print("need module argument")
-        exit(1)
+        tb, signals = load_module(sys.argv[1])
+        insts = inst_testbench(tb, signals)
+        Simulation(insts).run()
+        toVerilog(tb.module, *signals)
+        toVHDL(tb.module, *signals)
+

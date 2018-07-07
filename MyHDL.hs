@@ -191,35 +191,31 @@ f2 AND = "&"
 f2 EQU = "=="
 
 
-  
-
-
--- See run_testbench.py
-testbench :: (forall m r. Seq m r => m [r S]) -> TestBench
-testbench mod = TestBench module_py output_py where
-
-  -- Emulation
-  mod_emu :: SeqEmu.M [SeqEmu.R S]
-  mod_emu = mod
-
-  output :: [[Int]]
-  output = take 10 $ SeqEmu.trace mod_emu
-
-  -- Code gen
-  tb_term :: SeqTerm.M [SeqTerm.R S]
-  tb_term = tb
-
-  tb = do
-    -- FIXME: write a generic wrapper for this
+-- For run_testbench.py
+-- FIXME: generalize this to I/O?
+connectOut :: SeqTerm.M [SeqTerm.R S] -> SeqTerm.M [SeqTerm.R S]
+connectOut mod = do
     out'   <- mod
     stypes <- sequence $ fmap stype out'
     out    <- SeqTerm.io stypes
-    sequence_ $ [ connect o o' | (o,o') <- zip out out']
+    sequence_ $ zipWith connect out out'
     return out
-  
-  (ports, bindings) = SeqTerm.compile tb_term
+
+toPy :: SeqTerm.M [SeqTerm.R S] -> String
+toPy mod = module_py where  
+  (ports, bindings) = SeqTerm.compile $ connectOut mod
   module_py = show $ myhdl ports $ SeqExpr.inlined bindings
-  output_py = "\noutput = " ++ show output ++ "\n"
+
+-- See run_testbench.py
+testbench :: Int -> (forall m r. Seq m r => m [r S]) -> (TestBench, [[Int]])
+testbench n mod = (TestBench module_py output_py, output) where
+
+  -- Emulation
+  output = SeqEmu.trace mod
+  output_py = "\noutput = " ++ show (take n $ output) ++ "\n"
+
+  -- Code gen
+  module_py = toPy mod
 
   
 data TestBench = TestBench String String

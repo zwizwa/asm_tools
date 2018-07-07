@@ -180,9 +180,14 @@ f2 AND = (.&.)
 f2 XOR = xor
 f2 SLL = shiftL
 f2 SLR = shiftR
+f2 EQU = (\a b -> boolToInt $ a == b)
+f2 op  = error $ "f2: " ++ show op
 
 f3 IF c a b = if c /= 0 then a else b
 
+boolToInt True  = 1
+boolToInt False = 0         
+         
 makeRegNum :: M Int  
 makeRegNum = do
   n <- getRegNum
