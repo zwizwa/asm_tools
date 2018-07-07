@@ -10,11 +10,14 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE Rank2Types #-}
 
-module MyHDL(myhdl,MyHDL) where
+module MyHDL(myhdl,MyHDL,testbench) where
 import Seq
 import qualified SeqExpr
 import qualified SeqTerm
+import qualified SeqEmu
 import SeqTerm(Op(..),Term(..),NodeNum,Bindings)
 import SeqExpr(Expr,Term')
 import Control.Monad.State
@@ -187,3 +190,39 @@ f2 XOR = "^"
 f2 AND = "&"
 f2 EQU = "=="
 
+
+  
+
+
+-- See run_testbench.py
+testbench :: (forall m r. Seq m r => m [r S]) -> TestBench
+testbench mod = TestBench module_py output_py where
+
+  -- Emulation
+  mod_emu :: SeqEmu.M [SeqEmu.R S]
+  mod_emu = mod
+
+  output :: [[Int]]
+  output = take 10 $ SeqEmu.trace mod_emu
+
+  -- Code gen
+  tb_term :: SeqTerm.M [SeqTerm.R S]
+  tb_term = tb
+
+  tb = do
+    -- FIXME: write a generic wrapper for this
+    out'   <- mod
+    stypes <- sequence $ fmap stype out'
+    out    <- SeqTerm.io stypes
+    sequence_ $ [ connect o o' | (o,o') <- zip out out']
+    return out
+  
+  (ports, bindings) = SeqTerm.compile tb_term
+  module_py = show $ myhdl ports $ SeqExpr.inlined bindings
+  output_py = "\noutput = " ++ show output ++ "\n"
+
+  
+data TestBench = TestBench String String
+instance (Show TestBench) where
+  show (TestBench m o) = m ++ o
+  

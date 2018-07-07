@@ -13,6 +13,7 @@ from myhdl import *
 
 
 def testbench(module_filename):
+
     # Load the test bench module
     tb_spec = importlib.util.spec_from_file_location("tb", module_filename)
     tb = importlib.util.module_from_spec(tb_spec)
@@ -36,14 +37,34 @@ def testbench(module_filename):
             # Wait first, so we see the reset value of the registers
             # separately from the effect of the first clock edge.
             yield(delay(10))
-            p.CLK.next = not p.CLK
+            CLK.next = not CLK
 
-    # Observe outputs
-    @always_seq(CLK.posedge, reset=RST)
-    def obs():
-        print([s for s in out_signals])
 
-    return tb_inst, clock(), obs
+    insts = [tb_inst, clock()]
+
+    # If there is an output list, instantiate a verifier.
+    if hasattr(tb, "output"):
+        n = Signal(int(0))
+        @always_seq(CLK.posedge, reset=RST)
+        def out_check():
+            if n < len(tb.output):
+                print (out_signals, tb.output[n])
+                for (a,b) in zip(out_signals, tb.output[n]):
+                    assert a == b
+            else:
+                raise StopSimulation
+        insts += [out_check]
+
+    # Otherwise just observe
+    else:
+        print("No 'output' attribute to verify against.")
+        print("Printing output instead.")
+        @always_seq(CLK.posedge, reset=RST)
+        def out_print():
+            print([s for s in out_signals])
+        insts += [out_print]
+
+    return insts
 
 if __name__ == '__main__':
     if sys.argv[1]:

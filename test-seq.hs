@@ -105,9 +105,10 @@ main = do
   print $ take 10 $ test_mem_delay
 
   putStrLn "--- VCD"
-  let vcd = VCD.toVCD "1ns" ([("d1",1),("d2",1),("d3",8)], transpose [[0,1,1,0,0],[1,0,0,1,0],[1,2,3,3,3]])
-  putStr $ vcd
-  writeFile "test.vcd" vcd
+  let vcd = VCD.toVCD "1ns" ([("d1",1),("d2",1),("d3",8)],
+                             transpose [[0,1,1,0,0],[1,0,0,1,0],[1,2,3,3,3]])
+  putStr $ show vcd
+  writeFile "test.vcd" $ show vcd
 
   putStrLn "--- NetFun"
   NetFun.test
@@ -273,7 +274,7 @@ print_hdl src = do
   let inl = SeqExpr.inlined $ bindings
   putStr $ SeqExpr.sexp' inl
   putStrLn "-- MyHDL: "
-  putStr $ MyHDL.gen ports inl
+  putStr $ show $ MyHDL.myhdl ports inl
   return ()
   
 

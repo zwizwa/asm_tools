@@ -32,7 +32,7 @@ repl-test-edif: default.nix
 # Cabal is smarter about recompiling only part of the project for
 # incremental development.
 cabal-configure: default.nix
-	$(NIX_SHELL) --run "cabal configure"
+	$(NIX_SHELL) --run "cabal configure --disable-optimization"
 cabal-test: default.nix
 	$(NIX_SHELL) --run "cabal test --log=/dev/stdout"
 
