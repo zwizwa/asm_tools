@@ -197,6 +197,7 @@ driveNode n c = do
   tell [(n, c)]
   
 -- Compile to list of I/O ports and network map.
+compile :: M [R t] -> ([Op NodeNum], [(NodeNum, Term (Op NodeNum))])
 compile m = (map unR ports, cleanPorts nodes) where
   ((ports, nodes), nbNodes) = runState (runWriterT (unM m)) 0
 

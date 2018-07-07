@@ -1,8 +1,6 @@
 -- Simple print to MyHDL
 -- See also the S-expression printer in SeqExpr.hs
 
--- {-# LANGUAGE FlexibleInstances #-}
--- {-# LANGUAGE TypeSynonymInstances #-}
 -- {-# LANGUAGE MultiParamTypeClasses #-}
 -- {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -12,8 +10,10 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
 
-module MyHDL(myhdl,MyHDL,testbench) where
+module MyHDL(myhdl,MyHDL,testbench,fpga) where
 import Seq
 import qualified SeqExpr
 import qualified SeqTerm
@@ -44,13 +44,24 @@ data Mode = None | Seq | Comb deriving Eq
 newtype MyHDL = MyHDL { unMyHDL :: String }
 instance Show MyHDL where show = unMyHDL
 
-myhdl :: (Eq n, Show n) => [Op n] -> [(n, Expr n)] -> MyHDL
+-- Like Show, but generate a valid Python name from abstract node rep.
+-- Also put the other constraints here.
+class (Eq n, Show n) => Node n where
+  nodeName :: n -> String
+
+instance Node NodeNum where
+  nodeName n = "s" ++ show n
+
+instance Node String where
+  nodeName n = n
+  
+myhdl :: Node n => [Op n] -> [(n, Expr n)] -> MyHDL
 myhdl ports bindings = MyHDL str where
   m = mGen ports bindings
   (((), mode), str) =
     runReader (runWriterT (runStateT (runPrintMyHDL m) (0, None))) 0
 
-mGen :: (Eq n, Show n) => [Op n] -> [(n, Expr n)] -> PrintMyHDL ()
+mGen :: Node n => [Op n] -> [(n, Expr n)] -> PrintMyHDL ()
 mGen ports bindings = do
   let portNodes = map unNode ports
       unNode (Node _ n) = n
@@ -75,7 +86,7 @@ mGen ports bindings = do
     -- tell $ "# " ++ show (nodeRefcounts nodes) ++ "\n"
 
 blk n = "blk" ++ show n
-sig n = "s" ++ show n
+sig n = nodeName n
 
 defSignal (n, e) = do
   tab ; tell $ sig n ++ " = " ++ (sigSpec $ eType e) ++ "\n"
@@ -87,7 +98,7 @@ eType (Free (Compose t)) = SeqTerm.termType t
 eType (Pure n) = error "eType doesn't work on node references"
   
 
-assignment :: Show n => n -> (Expr n) -> PrintMyHDL ()
+assignment :: Node n => n -> (Expr n) -> PrintMyHDL ()
 assignment n e@(Free (Compose (Delay _ _))) = do
   need Seq
   assignment' n e
@@ -191,6 +202,7 @@ f2 AND = "&"
 f2 EQU = "=="
 
 
+
 -- For run_testbench.py
 -- FIXME: generalize this to I/O?
 connectOut :: SeqTerm.M [SeqTerm.R S] -> SeqTerm.M [SeqTerm.R S]
@@ -201,10 +213,33 @@ connectOut mod = do
     sequence_ $ zipWith connect out out'
     return out
 
+
+-- Don't write a Functor class for bindings.  If an ad-hoc functor
+-- composition shows up, it is often easier to factor out just the
+-- specialized mapping function.  Write the type first, then
+-- implementation is straightforward.
+
+mapBindings :: (a -> b) -> [(a, Term (Op a))] -> [(b, Term (Op b))]
+mapBindings f l = map f' l where
+  f' (name, term) = (f name, (fmap . fmap) f term)
+
+
 toPy :: SeqTerm.M [SeqTerm.R S] -> String
-toPy mod = module_py where  
+toPy mod = module_py where
+
   (ports, bindings) = SeqTerm.compile $ connectOut mod
-  module_py = show $ myhdl ports $ SeqExpr.inlined bindings
+  module_py = show $ myhdl ports' $ SeqExpr.inlined bindings'
+
+  -- Replace nodes with named nodes.
+  name :: NodeNum -> String
+  name n = Map.findWithDefault ("s" ++ show n) n namedPorts
+  namedPorts = Map.fromList $
+    [(n, "p" ++ show i) | (Node _ n, i) <- zip ports [0..]]
+  
+  ports'    = (map . fmap) name ports
+  bindings' = mapBindings  name bindings
+
+
 
 -- See run_testbench.py
 testbench :: Int -> (forall m r. Seq m r => m [r S]) -> (TestBench, [[Int]])
@@ -222,3 +257,25 @@ data TestBench = TestBench String String
 instance (Show TestBench) where
   show (TestBench m o) = m ++ o
   
+
+
+-- Alternative interface used for generating FPGA images.
+fpga :: ([String], [SeqTerm.R S] -> SeqTerm.M ()) -> MyHDL
+fpga (portNames, mod) = MyHDL module_py where
+
+  -- Assume all input are single pins.
+  pinType = (SInt (Just 1) 0)
+  mod' = do
+    io <- SeqTerm.io $ [pinType | _ <- portNames]
+    mod io ; return io
+    
+  (ports, bindings) = SeqTerm.compile mod'
+  module_py = show $ myhdl ports' $ SeqExpr.inlined bindings'
+
+  -- Assign names
+  ports'    = (map . fmap) name ports
+  bindings' = mapBindings  name bindings
+  name :: NodeNum -> String
+  name n = Map.findWithDefault ("s" ++ show n) n namedPorts
+  namedPorts = Map.fromList $
+    [(n, nm) | (Node _ n, ('_':nm)) <- zip ports portNames]

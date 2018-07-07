@@ -6,13 +6,9 @@ import Control.Monad
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax
 
-name :: Name -> ExpQ
-name n = [| ( $(lift (nameBase n ++ " = ")) ++ show $(varE n) ) |]
-
-
-nameFun m = m >>= nameFun'
-nameFun' :: Exp -> ExpQ
-nameFun' lambda@(LamE [ListP args] var) = expr where
+named m = m >>= named'
+named' :: Exp -> ExpQ
+named' lambda@(LamE [ListP args] var) = expr where
   expr = [| ( $(names) , $(return lambda) ) |]
   names = lift $ map name args
   name (VarP n) = nameBase n

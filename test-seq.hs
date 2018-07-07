@@ -307,9 +307,5 @@ test_arrow3 x = (add x <=< add x) x
 
 
 test_th = do
-  let a = 123
-  print $(name 'a)
-
-  let (n,f) = $(nameFun $ [| \[a,b,c] -> a |])
-  print n
-  print $ f [1,2,3]
+  let (n,f) = $(named [| \[a,b,c] -> a |])
+  print $ (n, f [1,2,3])
