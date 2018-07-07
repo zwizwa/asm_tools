@@ -278,4 +278,4 @@ fpga (portNames, mod) = MyHDL module_py where
   name :: NodeNum -> String
   name n = Map.findWithDefault ("s" ++ show n) n namedPorts
   namedPorts = Map.fromList $
-    [(n, nm) | (Node _ n, ('_':nm)) <- zip ports portNames]
+    [(n, nm) | (Node _ n, nm) <- zip ports portNames]
