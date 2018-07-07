@@ -2,6 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE Arrows #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 
 -- Is it possible to capture enough of a synchronous state machine to
@@ -53,9 +54,7 @@ import Prelude hiding((.),id)
 import Control.Arrow
 import Control.Monad
 import Data.List
--- import Data.Functor.Apply
-
-
+import Names
   
 main = do
 
@@ -112,6 +111,9 @@ main = do
 
   putStrLn "--- NetFun"
   NetFun.test
+
+  putStrLn "--- test_th"
+  test_th
 
 -- printSeqTerm :: Functor f => SeqTerm.M (f (SeqTerm.R S)) -> IO ()
 printSeqTerm :: SeqTerm.M [SeqTerm.R S] -> IO ()
@@ -304,3 +306,10 @@ test_arrow3 :: forall m r. Seq m r => r S -> m (r S)
 test_arrow3 x = (add x <=< add x) x
 
 
+test_th = do
+  let a = 123
+  print $(name 'a)
+
+  let (n,f) = $(nameFun $ [| \[a,b,c] -> a |])
+  print n
+  print $ f [1,2,3]
