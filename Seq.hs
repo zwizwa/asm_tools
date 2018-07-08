@@ -111,15 +111,20 @@ class (Monad m, Num (r S)) => Seq m r | r -> m where
 
   -- Combinatorial operations all create driven intermediate signals
   -- to make them fit better in a monadic language.
-  op1 :: Op1 -> r S -> m (r S)
-  op2 :: Op2 -> r S -> r S -> m (r S)
-  op3 :: Op3 -> r S -> r S -> r S -> m (r S)
+  op1 :: Op1 -> SeqOp1 m r
+  op2 :: Op2 -> SeqOp2 m r
+  op3 :: Op3 -> SeqOp3 m r
 
   -- Slices are special: there's a big difference between constant
   -- stlices (just wires) and dynamic slices (barrel shifter), so
   -- limit to constant slices only.  Upper bound can be Nothing, which
   -- takes all the upper bits.
   slice :: r S -> SSize -> NbBits -> m (r S)
+
+
+type SeqOp1 m r = r S -> m (r S)
+type SeqOp2 m r = r S -> r S -> m (r S)
+type SeqOp3 m r = r S -> r S -> r S -> m (r S)
 
 
 -- Primitives
@@ -133,37 +138,30 @@ inv = op1 INV
 data Op2 = ADD | MUL | AND | OR | XOR | SLL | SLR | CONC | EQU
   deriving Show
 
-add :: forall m r. Seq m r => r S -> r S -> m (r S)
-add = op2 ADD
+add  :: Seq m r => SeqOp2 m r 
+mul  :: Seq m r => SeqOp2 m r
+equ  :: Seq m r => SeqOp2 m r
+band :: Seq m r => SeqOp2 m r
+bxor :: Seq m r => SeqOp2 m r
+bor  :: Seq m r => SeqOp2 m r
+sll  :: Seq m r => SeqOp2 m r
+slr  :: Seq m r => SeqOp2 m r
+conc :: Seq m r => SeqOp2 m r
 
-mul :: forall m r. Seq m r => r S -> r S -> m (r S)
-mul = op2 MUL
-
-equ :: forall m r. Seq m r => r S -> r S -> m (r S)
-equ = op2 EQU
-
-band :: forall m r. Seq m r => r S -> r S -> m (r S)
+add  = op2 ADD
+mul  = op2 MUL
+equ  = op2 EQU
 band = op2 AND
-
-bxor :: forall m r. Seq m r => r S -> r S -> m (r S)
 bxor = op2 XOR
-
-bor :: forall m r. Seq m r => r S -> r S -> m (r S)
-bor = op2 OR
-
-sll :: forall m r. Seq m r => r S -> r S -> m (r S)
-sll = op2 SLL
-
-slr :: forall m r. Seq m r => r S -> r S -> m (r S)
-slr = op2 SLR
-
-conc :: forall m r. Seq m r => r S -> r S -> m (r S)
+bor  = op2 OR
+sll  = op2 SLL
+slr  = op2 SLR
 conc = op2 CONC
 
 data Op3 = IF
   deriving Show
 
-if' :: forall m r. Seq m r => r S -> r S -> r S -> m (r S)
+if' :: Seq m r => SeqOp3 m r
 if' = op3 IF  
 
 
