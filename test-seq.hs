@@ -276,7 +276,7 @@ print_hdl src = do
   let inl = SeqExpr.inlined $ bindings
   putStr $ SeqExpr.sexp' inl
   putStrLn "-- MyHDL: "
-  putStr $ show $ MyHDL.myhdl ports inl
+  putStr $ show $ MyHDL.myhdl "module" ports inl
   return ()
   
 

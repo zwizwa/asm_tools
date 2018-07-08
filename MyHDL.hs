@@ -55,20 +55,19 @@ instance Node NodeNum where
 instance Node String where
   nodeName n = n
   
-myhdl :: Node n => [Op n] -> [(n, Expr n)] -> MyHDL
-myhdl ports bindings = MyHDL str where
-  m = mGen ports bindings
+myhdl :: Node n => String -> [Op n] -> [(n, Expr n)] -> MyHDL
+myhdl name ports bindings = MyHDL str where
+  m = mGen name ports bindings
   (((), mode), str) =
     runReader (runWriterT (runStateT (runPrintMyHDL m) (0, None))) 0
 
-mGen :: Node n => [Op n] -> [(n, Expr n)] -> PrintMyHDL ()
-mGen ports bindings = do
+mGen :: Node n => String -> [Op n] -> [(n, Expr n)] -> PrintMyHDL ()
+mGen name ports bindings = do
   let portNodes = map unNode ports
       unNode (Node _ n) = n
       unNode (Const n) = error $ "mGen: Const in ports: " ++ show ports
       internalBindings = filter isInternal $ bindings
       isInternal (n,_) = not $ elem n portNodes
-      name = "module"
 
   tell $ "from myhdl import *\n"
   tell $ "def " ++ name ++ "("
@@ -203,7 +202,7 @@ f2 EQU = "=="
 
 
 
--- For run_testbench.py
+-- For run_myhdl.py
 -- FIXME: generalize this to I/O?
 connectOut :: SeqTerm.M [SeqTerm.R S] -> SeqTerm.M [SeqTerm.R S]
 connectOut mod = do
@@ -224,33 +223,33 @@ mapBindings f l = map f' l where
   f' (name, term) = (f name, (fmap . fmap) f term)
 
 
-toPy :: SeqTerm.M [SeqTerm.R S] -> String
-toPy mod = module_py where
+toPy :: String -> SeqTerm.M [SeqTerm.R S] -> String
+toPy name mod = module_py where
 
   (ports, bindings) = SeqTerm.compile $ connectOut mod
-  module_py = show $ myhdl ports' $ SeqExpr.inlined bindings'
+  module_py = show $ myhdl name ports' $ SeqExpr.inlined bindings'
 
   -- Replace nodes with named nodes.
-  name :: NodeNum -> String
-  name n = Map.findWithDefault ("s" ++ show n) n namedPorts
+  rename :: NodeNum -> String
+  rename n = Map.findWithDefault ("s" ++ show n) n namedPorts
   namedPorts = Map.fromList $
     [(n, "p" ++ show i) | (Node _ n, i) <- zip ports [0..]]
   
-  ports'    = (map . fmap) name ports
-  bindings' = mapBindings  name bindings
+  ports'    = (map . fmap) rename ports
+  bindings' = mapBindings  rename bindings
 
 
 
--- See run_testbench.py
-testbench :: Int -> (forall m r. Seq m r => m [r S]) -> (TestBench, [[Int]])
-testbench n mod = (TestBench module_py output_py, output) where
+-- See run_myhdl.py
+testbench :: String -> Int -> (forall m r. Seq m r => m [r S]) -> (TestBench, [[Int]])
+testbench name n mod = (TestBench module_py output_py, output) where
 
   -- Emulation
   output = SeqEmu.trace mod
   output_py = "\noutput = " ++ show (take n $ output) ++ "\n"
 
   -- Code gen
-  module_py = toPy mod
+  module_py = toPy name mod
 
   
 data TestBench = TestBench String String
@@ -260,8 +259,8 @@ instance (Show TestBench) where
 
 
 -- Alternative interface used for generating FPGA images.
-fpga :: ([String], [SeqTerm.R S] -> SeqTerm.M ()) -> MyHDL
-fpga (portNames, mod) = MyHDL module_py where
+fpga :: String -> ([String], [SeqTerm.R S] -> SeqTerm.M ()) -> MyHDL
+fpga name (portNames, mod) = MyHDL module_py where
 
   -- Assume all input are single pins.
   pinType = (SInt (Just 1) 0)
@@ -270,12 +269,12 @@ fpga (portNames, mod) = MyHDL module_py where
     mod io ; return io
     
   (ports, bindings) = SeqTerm.compile mod'
-  module_py = show $ myhdl ports' $ SeqExpr.inlined bindings'
+  module_py = show $ myhdl name ports' $ SeqExpr.inlined bindings'
 
   -- Assign names
-  ports'    = (map . fmap) name ports
-  bindings' = mapBindings  name bindings
-  name :: NodeNum -> String
-  name n = Map.findWithDefault ("s" ++ show n) n namedPorts
+  ports'    = (map . fmap) rename ports
+  bindings' = mapBindings  rename bindings
+  rename :: NodeNum -> String
+  rename n = Map.findWithDefault ("s" ++ show n) n namedPorts
   namedPorts = Map.fromList $
     [(n, nm) | (Node _ n, nm) <- zip ports portNames]
