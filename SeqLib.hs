@@ -171,3 +171,21 @@ instance Seq m r => Num (m (r S)) where
   abs    = error $ "TODO: abs"
   signum = error $ "TODO: signum"
   
+
+-- Note that this is not the whole story.
+-- The real issue is that a couple of interfaces are needed:
+--
+--    a ->   a -> m a
+--    a -> m a -> m a
+--  m a ->   a -> m a
+--  m a -> m a -> m a
+--
+-- So not clear how to make that into anything useful.  It seems the
+-- real solution is to use surface syntax that desugars into ANF.
+--
+-- So maybe create a 'lisp' on top of this.  Take s-expressions,
+-- perform macro substitution, and reduce to ANF before mapping onto
+-- the monadic form.
+
+
+
