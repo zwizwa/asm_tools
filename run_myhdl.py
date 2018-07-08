@@ -14,19 +14,23 @@ def make_out_signal():
     # This makes it possible to gerate Verilog
     return Signal(modbv(0)[32:])
 
-def load_module(hdl_modname, filename):
+def load_module(hdl_fun_name, filename):
     # Load the test bench module
-    tb_spec = importlib.util.spec_from_file_location("tb", filename)
-    tb = importlib.util.module_from_spec(tb_spec)
-    tb_spec.loader.exec_module(tb)
-    hdl_mod = getattr(tb, hdl_modname)
-    ports = inspect.getargspec(hdl_mod).args
+    spec  = importlib.util.spec_from_file_location(hdl_fun_name, filename)
+    modul = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modul)
+    # Python function to instantiate HDL module
+    hdl_fun = getattr(modul, hdl_fun_name)
+    ports = inspect.getargspec(hdl_fun).args
     print(ports)
+    output = False
+    if hasattr(modul, "output"):
+        output = modul.output
 
-    return tb, hdl_mod, ports
+    return hdl_fun, ports, output
 
 
-def inst_testbench(hdl_mod, ports, tb_output):
+def inst_testbench(hdl_fun, ports, tb_output):
 
     CLK = Signal(bool(False))
     RST = ResetSignal(1,0,True)
@@ -38,7 +42,7 @@ def inst_testbench(hdl_mod, ports, tb_output):
     # Note that for FPGA output, we assume 1-bit signals.
     out_signals = [Signal(modbv(0)[32:]) for _ in out_ports]
     signals = [CLK, RST] + out_signals
-    tb_inst = traceSignals(hdl_mod, *signals)
+    tb_inst = traceSignals(hdl_fun, *signals)
 
     # Generate main clock
     def clock():
@@ -62,28 +66,30 @@ def inst_testbench(hdl_mod, ports, tb_output):
 
     return [tb_inst, clock(), out_check]
 
+
+def load_and_run(hdl_fun_name, filename):
+
+    hdl_fun, ports, tb_output = load_module(hdl_fun_name, filename)
+
+    # Run it if it is a test bench
+    if tb_output:
+        insts = inst_testbench(hdl_fun, ports, tb_output)
+        Simulation(insts).run()
+        
+    # The first two arguments are CLK and RST.
+    out_ports = ports[2:]
+    # Which are special cases.
+    CLK = Signal(bool(False))
+    RST = ResetSignal(1,0,True)
+    # For FPGA output, we assume 1-bit signals.
+    out_signals = [Signal(modbv(0)[1:]) for _ in out_ports]
+    signals = [CLK, RST] + out_signals
+
+    # Generate code
+    toVerilog(hdl_fun, *signals)
+    toVHDL(hdl_fun, *signals)
+
+
 if __name__ == '__main__':
     if sys.argv[2]:
-        hdl_modname = sys.argv[1]
-        filename = sys.argv[2]
-
-        tb, hdl_mod, ports = load_module(hdl_modname, filename)
-
-        # Run it if it is a test bench
-        if hasattr(tb, "output"):
-            insts = inst_testbench(hdl_mod, ports, tb.output)
-            Simulation(insts).run()
-        
-        # The first two arguments are CLK and RST.
-        out_ports = ports[2:]
-        # Which are special cases.
-        CLK = Signal(bool(False))
-        RST = ResetSignal(1,0,True)
-        # For FPGA output, we assume 1-bit signals.
-        out_signals = [Signal(modbv(0)[1:]) for _ in out_ports]
-        signals = [CLK, RST] + out_signals
-
-        # Generate code
-        toVerilog(hdl_mod, *signals)
-        toVHDL(hdl_mod, *signals)
-
+        load_and_run(sys.argv[1], sys.argv[2])
