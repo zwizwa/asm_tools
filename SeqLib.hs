@@ -12,6 +12,14 @@ import Control.Monad
 import Control.Applicative
 
 
+-- Shortcuts for common type constructions.
+bits :: Int -> SType
+bits' n = SInt (Just n)
+bits n = bits' n 0
+
+bit = bits 1
+bit' = bits' 1
+
 -- Special closeReg case: single register, with register as output
 reg :: Seq m r => SType -> (r S -> m (r S)) -> m (r S)
 reg t f = do closeReg [t] $ \[r] -> do r' <- f r ; return ([r'], r)
@@ -34,7 +42,7 @@ edge d = do
   d0 <- delay d
   d `bxor` d0
 
-bit b = band b 1
+-- bit b = band b 1
 
 
 
@@ -66,11 +74,11 @@ case' ((cond, whenTrue):cases) dflt = do
 -- Shift register in terms of slice + conc.
 -- Return old and new for max flex.
 shiftReg :: Seq m r => SType -> r S -> m (r S, r S)
-shiftReg t i = do
-  closeReg [t] $ \[r] -> do
-    t' <- stype i
-    let SInt (Just r_bits) _ = t
-        SInt (Just i_bits) _ = t'
+shiftReg tr i = do
+  closeReg [tr] $ \[r] -> do
+    ti <- stype i
+    let SInt (Just r_bits) _ = tr
+        SInt (Just i_bits) _ = ti
     r_drop  <- slice r (Just $ r_bits - i_bits) 0
     r_shift <- conc r_drop i
     return $ ([r_shift], (r, r_shift))

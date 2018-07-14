@@ -10,10 +10,6 @@ import inspect
 import importlib.util
 from myhdl import *
 
-def make_out_signal():
-    # This makes it possible to gerate Verilog
-    return Signal(modbv(0)[32:])
-
 def load_module(hdl_fun_name, filename):
     # Load the test bench module
     spec  = importlib.util.spec_from_file_location(hdl_fun_name, filename)
@@ -23,26 +19,35 @@ def load_module(hdl_fun_name, filename):
     hdl_fun = getattr(modul, hdl_fun_name)
     ports = inspect.getargspec(hdl_fun).args
     print(ports)
-    output = False
-    if hasattr(modul, "output"):
-        output = modul.output
+    ins = False
+    outs = False
+    if hasattr(modul, "outs"):
+        outs = modul.outs
+    if hasattr(modul, "ins"):
+        ins = modul.ins
 
-    return hdl_fun, ports, output
+    return hdl_fun, ports, ins, outs
 
 
-def inst_testbench(hdl_fun, ports, tb_output):
+def inst_testbench(hdl_fun, ports, tb_input, tb_output):
+
+    nb_in = len(tb_input[0])
+    print("nb_in", nb_in)
 
     CLK = Signal(bool(False))
     RST = ResetSignal(1,0,True)
 
     # The first two arguments are CLK and RST.
-    out_ports = ports[2:]
+    io_ports = ports[2:]
 
     # Is this a good idea?  Limit the size so .v and .vhdl can be generated.
     # Note that for FPGA output, we assume 1-bit signals.
-    out_signals = [Signal(modbv(0)[32:]) for _ in out_ports]
-    signals = [CLK, RST] + out_signals
+    io_signals = [Signal(modbv(0)[1:]) for _ in io_ports]
+    signals = [CLK, RST] + io_signals
     tb_inst = traceSignals(hdl_fun, *signals)
+    
+    in_signals = io_signals[0:nb_in]
+    out_signals = io_signals[nb_in:]
 
     # Generate main clock
     def clock():
@@ -55,26 +60,40 @@ def inst_testbench(hdl_fun, ports, tb_output):
     # Verify output
     n = Signal(int(0))
     @always_seq(CLK.posedge, reset=RST)
-    def out_check():
-        if n < len(tb_output):
-            print (out_signals, tb_output[n])
-            for (a,b) in zip(out_signals, tb_output[n]):
-                assert a == b
+    def io():
+
+        if n < len(tb_input):
+            print ("i:", tb_input[n])
+            for (a,b) in zip(in_signals, tb_input[n]):
+                a.next = b
         else:
             raise StopSimulation
+
+        if n < len(tb_output):
+            #print (out_signals, tb_output[n])
+            print ("o:", tb_output[n])
+            for (a,b) in zip(out_signals, tb_output[n]):
+                #assert a == b
+                if (a != b):
+                    print ("FAIL","assert",a,"==",b)
+        else:
+            raise StopSimulation
+
         n.next = n + 1
 
-    return [tb_inst, clock(), out_check]
+    return [tb_inst, clock(), io]
 
 
 def load_and_run(hdl_fun_name, filename):
 
-    hdl_fun, ports, tb_output = load_module(hdl_fun_name, filename)
+    hdl_fun, ports, tb_input, tb_output = load_module(hdl_fun_name, filename)
 
     # Run it if it is a test bench
-    if tb_output:
-        insts = inst_testbench(hdl_fun, ports, tb_output)
+    if tb_input and tb_output:
+        insts = inst_testbench(hdl_fun, ports, tb_input, tb_output)
         Simulation(insts).run()
+    else:
+        print("not a testbench")
         
     # The first two arguments are CLK and RST.
     out_ports = ports[2:]

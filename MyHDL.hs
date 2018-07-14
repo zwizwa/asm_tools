@@ -15,6 +15,7 @@
 
 module MyHDL(myhdl,MyHDL,testbench,fpga) where
 import Seq
+import SeqLib
 import qualified SeqExpr
 import qualified SeqTerm
 import qualified SeqEmu
@@ -202,31 +203,25 @@ f2 EQU = "=="
 
 
 
+
 -- For run_myhdl.py
 -- FIXME: generalize this to I/O?
-connectOut :: SeqTerm.M [SeqTerm.R S] -> SeqTerm.M [SeqTerm.R S]
-connectOut mod = do
-    out'   <- mod
-    stypes <- sequence $ fmap stype out'
-    out    <- SeqTerm.io stypes
-    sequence_ $ zipWith connect out out'
-    return out
+type M = SeqTerm.M
+type R = SeqTerm.R
+connectIO :: [SType] -> ([R S] -> M [R S]) -> M [R S]
+connectIO inTyp mod = do
+  -- FIXME: assumes inputs are binary
+  in'    <- SeqTerm.io inTyp
+  out'   <- mod in'
+  stypes <- sequence $ fmap stype out'
+  out    <- SeqTerm.io stypes
+  sequence_ $ zipWith connect out out'
+  return $ in' ++ out
 
+toPy :: String -> [SType] -> ([R S] -> M [R S]) -> String
+toPy name inTyp mod = module_py where
 
--- Don't write a Functor class for bindings.  If an ad-hoc functor
--- composition shows up, it is often easier to factor out just the
--- specialized mapping function.  Write the type first, then
--- implementation is straightforward.
-
-mapBindings :: (a -> b) -> [(a, Term (Op a))] -> [(b, Term (Op b))]
-mapBindings f l = map f' l where
-  f' (name, term) = (f name, (fmap . fmap) f term)
-
-
-toPy :: String -> SeqTerm.M [SeqTerm.R S] -> String
-toPy name mod = module_py where
-
-  (ports, bindings) = SeqTerm.compile $ connectOut mod
+  (ports, bindings) = SeqTerm.compile $ connectIO inTyp mod
   module_py = show $ myhdl name ports' $ SeqExpr.inlined bindings'
 
   -- Replace nodes with named nodes.
@@ -240,26 +235,48 @@ toPy name mod = module_py where
 
 
 
--- See run_myhdl.py
-testbench :: String -> Int -> (forall m r. Seq m r => m [r S]) -> (TestBench, [[Int]])
-testbench name n mod = (TestBench module_py output_py, output) where
+
+data TestBench = TestBench String String String
+instance (Show TestBench) where
+  show (TestBench m i o) = m ++ i ++ o
+
+testbench ::
+  String
+  -> (forall m r. Seq m r => [r S] -> m [r S])
+  -> [[Int]]
+  -> (TestBench, [[Int]])
+testbench name mod input = (TestBench module_py input_py output_py, output) where
+
+  -- See run_myhdl.py
+  n = length input
+  nb_in = length $ head input
+
+  -- Types. Stick with just bits
+  inTyp = [bits 1 | _ <- [1..nb_in]]
+  conss = [(constant . (bits' 1)) | _ <- inTyp]
+  conss :: [Int -> SeqEmu.R S]
 
   -- Emulation
-  output = SeqEmu.trace mod
-  output_py = "\noutput = " ++ show (take n $ output) ++ "\n"
+  output = SeqEmu.iticks (SeqEmu.onInts conss mod) input
+  output_py = "\nouts = " ++ show (take n $ output) ++ "\n"
+  input_py  = "\nins  = " ++ show input ++ "\n"
 
   -- Code gen
-  module_py = toPy name mod
+  module_py = toPy name inTyp mod
 
-  
-data TestBench = TestBench String String
-instance (Show TestBench) where
-  show (TestBench m o) = m ++ o
+
+-- Don't write a Functor class for bindings.  If an ad-hoc functor
+-- composition shows up, it is often easier to factor out just the
+-- specialized mapping function.  Write the type first, then
+-- implementation is straightforward.
+mapBindings :: (a -> b) -> [(a, Term (Op a))] -> [(b, Term (Op b))]
+mapBindings f l = map f' l where
+  f' (name, term) = (f name, (fmap . fmap) f term)
   
 
 
 -- Alternative interface used for generating FPGA images.
-fpga :: String -> ([String], [SeqTerm.R S] -> SeqTerm.M ()) -> MyHDL
+fpga :: String -> ([String], [R S] -> M ()) -> MyHDL
 fpga name (portNames, mod) = MyHDL module_py where
 
   -- Assume all input are single pins.

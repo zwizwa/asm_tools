@@ -194,4 +194,40 @@ closeReg ts f = do
 
 
 
+-- Bit size operations.  The way bit sizes are combined is part of the
+-- semantics of the language, so it is defined here.
 
+-- Semantics of type annotation:
+-- Nothing: constants not specialized to fixed bit length.
+-- Just _:  specialized to bit length.  Once specialized, it has to match.
+
+-- FIXME: integrate this in the different interpretations.
+
+combine :: Maybe Int -> Maybe Int -> Either String (Maybe Int)
+combine a b = combine' (sizeError $ show (a,b)) a b
+
+combine' _ Nothing a = Right a
+combine' _ a Nothing = Right a
+combine' err a b =
+  case a == b of
+    True  -> Right a
+    False -> Left $ sizeError err
+
+op1size _ a = a
+
+op2size EQU a b = do
+  c <- combine' (show (EQU,a,b)) a b
+  return $ Just 1
+    
+op2size CONC Nothing  (Just b) = Right Nothing
+op2size CONC (Just a) (Just b) = Right $ Just $ a + b
+
+op2size o a b = combine' (show (o,a,b)) a b
+
+op3size IF c t f = sz c t f where
+  err             = show (IF,c,t,f)
+  sz (Just 1) t f = sz Nothing t f
+  sz Nothing t f  = combine' err t f
+  sz c t f        = Left $ sizeError err
+  
+sizeError = ("Seq.sizeError: " ++)

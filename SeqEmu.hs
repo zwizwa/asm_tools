@@ -79,8 +79,11 @@ modifyProcess r def f = do
 data R t = R { unR :: Signal } -- phantom wrapper
 data Signal = Reg Int
             | Val Size Int
+            deriving Show
 type Size = Maybe Int
 
+fromRight' (Right a) = a
+fromRight' (Left e) = error e
 
 instance Seq M R where
 
@@ -93,33 +96,34 @@ instance Seq M R where
   constant (SInt sz r0) =
     R $ Val sz r0
 
-  stype (R r) = do
-    (sz, r0) <- styp r
-    return $ SInt sz r0
+  stype (R r) = styp r
 
   slice (R a) u l = do
-    ((sa,_), va) <- val' a
-    return $ R $ sliceVal (sa,va) u l
+    v <- sval a
+    return $ R $ sliceVal v u l
 
   -- driven signals
   op1 o (R a) = do
-    ((sza,_), va) <- val' a
-    return $ R $ truncVal sza $ f1 o va
+    SInt sza va <- sval a
+    let sz = op1size o sza
+    return $ R $ truncVal sz $ f1 o va
   
   op2 o (R a) (R b) = do
-    ((sza,_),va) <- val' a
-    ((szb,_),vb) <- val' b
-    return $ R $ case o of
-      CONC ->
-        concVal (sza, va) (szb, vb)
-      _ ->
-        truncVal (sz sza szb) $ f2 o va vb
+    a'@(SInt sza va) <- sval a
+    b'@(SInt szb vb) <- sval b
+    -- Seq semantics determines size
+    let sz = fromRight' $ op2size o sza szb
+    return $ R $ truncVal sz $ case o of
+      CONC -> conc' a' b'
+      _    -> f2 o va vb
 
-  op3 o (R a) (R b) (R c) = do
-    ((sza,_),va) <- val' a
-    ((szb,_),vb) <- val' b
-    ((szc,_),vc) <- val' c
-    return $ R $ truncVal (sz sza (sz szb szc)) $ f3 o va vb vc
+  op3 IF (R c) (R t) (R f) = do
+    SInt szc vc <- sval c
+    SInt szt vt <- sval t
+    SInt szf vf <- sval f
+    let sz = fromRight' $ op3size IF szc szt szf
+        vr = if vc /= 0 then vt else vf
+    return $ R $ truncVal sz vr
 
   -- register drive
   next (R (Reg a)) (R b) = do
@@ -135,43 +139,41 @@ instance Seq M R where
 insert' tag = Map.insertWithKey err where
   err k v v_old = error $ tag ++ "double insert: (k,v,v_old)=" ++ show (k,v,v_old)
     
--- Value dereference & meta information.
-val  = (fmap snd) . val'
-val' (Val sz v) = return ((sz, v), v) -- Set reset value to actual value
-val' (Reg r) = do
+
+-- Convert internal representation to current and reset values.
+styp :: Signal -> M SType
+sval :: Signal -> M SType
+
+styp = (fmap fst) . sints
+sval = (fmap snd) . sints
+val v = do SInt _ v' <- sval v ; return v'
+
+sints (Val sz v) = do
+  let i = SInt sz v
+  return $ (i, i)
+sints (Reg r) = do
   v <- asks $ \regs -> regs r
   ts <- getTypes
-  let IntReg sz r0 = ts ! r
-  return ((sz, r0), v)
-
-      
-styp = (fmap fst) . val'
+  let IntReg sz v0 = ts ! r
+  return $ (SInt sz v0, SInt sz v)
 
 
 
-sz Nothing a = a
-sz a Nothing = a
-sz (Just a) (Just b) = Just $ max a b
+combineSize a b = fromRight' $ combine a b
+
 
 truncVal Nothing v     = Val Nothing v
-truncVal sz@(Just b) v = Val sz $ v .&. mask b
+truncVal sz@(Just b) v = Val sz $ v .&. ((shiftL 1 b) - 1)
 
-mask b = (shiftL 1 b) - 1
-
-concVal (sza,va) (szb, vb) = 
-  case szb of
-    Nothing ->
-      error "conc: rightmost argument needs defined size"
-    Just szb' -> do
-      let sz = liftA2 (+) sza szb in
-        Val sz $ (shiftL va szb') .&. vb
+conc' (SInt _ va) (SInt (Just szb) vb) = (shiftL va szb) .|. vb
 
 -- Array slice.  This mimicks MyHDL's signal[upper:lower] construct.
 -- Upper can be left unspecified as Nothing, which means the entire
 -- signal is taken.
-sliceVal (sa,va) upper lower = truncVal sa' va' where
-  sa' = fmap (+ (- lower)) $ sz sa upper
-  va' = shiftR lower va
+sliceVal :: SType -> Maybe Int -> Int -> Signal
+sliceVal (SInt sa va) upper lower = truncVal sa' va' where
+  va' = shiftR va lower
+  sa'= fmap (lower +) upper
 
 f1 INV = complement
 
@@ -183,7 +185,6 @@ f2 SLR = shiftR
 f2 EQU = (\a b -> boolToInt $ a == b)
 f2 op  = error $ "f2: " ++ show op
 
-f3 IF c a b = if c /= 0 then a else b
 
 boolToInt True  = 1
 boolToInt False = 0         
@@ -260,32 +261,45 @@ iticks :: Typeable o => (i -> M o) -> [i] -> [o]
 iticks f is = take' $ ticks $ closeInput is f where 
   take' = (map fromJust) . (takeWhile isJust) 
 
-
--- Since we can't do anything with internal representations, these
--- functions are provided to convert to and from Int.  Signals can be
--- collected in a bus, represented by a Traversable.
-probe :: Traversable f => f (R S) -> M (f Int)
-probe = sequence . (fmap (val . unR))
-
--- Convenient special case for state threading.
-probe' :: Traversable f => (t, f (R S)) -> M (t, f Int)
-probe' (t,b) = fmap (t,) $ probe b
-
--- The reverse for inputs, but pure.
-inject :: Functor f => (f Int) -> (f (R S))
-inject = fmap (constant . (SInt Nothing))
+-- To be combined with iticks: instantiate integers at the correct bit
+-- size, and untag again for output.
+onInts ::
+  (Zip i, Traversable o) =>
+  i (Int -> R S)
+  -> (i (R S) -> M (o (R S)))
+  -> (i Int   -> M (o Int))
+onInts fromInts mod ints = do
+  let inSigs = zipWith ($) fromInts ints
+      toInt  = val . unR
+  outs <- mod inSigs
+  sequence $ fmap toInt outs
 
 
--- Bind probe, inject to ticks, iticks.
-trace :: Traversable f => M (f (R S)) -> [f Int]
-trace mf = ticks $ mf >>= probe
+-- -- Since we can't do anything with internal representations, these
+-- -- functions are provided to convert to and from Int.  Signals can be
+-- -- collected in a bus, represented by a Traversable.
+-- probe :: Traversable f => f (R S) -> M (f Int)
+-- probe = sequence . (fmap (val . unR))
 
-itrace ::
-  (Functor f, Traversable f', Typeable f, Typeable f') =>
-  (f (R S) -> M (f' (R S))) -> [f Int] -> [f' Int]
-itrace mf is = iticks mf' is' where
-  mf' is = mf is >>= probe
-  is' = map inject is
+-- -- Convenient special case for state threading.
+-- -- probe' :: Traversable f => (t, f (R S)) -> M (t, f Int)
+-- -- probe' (t,b) = fmap (t,) $ probe b
+
+-- -- The reverse for inputs, but pure.
+-- inject :: Functor f => (f Int) -> (f (R S))
+-- inject = fmap (constant . (SInt Nothing))
+
+
+-- -- Bind probe, inject to ticks, iticks.
+-- trace :: Traversable f => M (f (R S)) -> [f Int]
+-- trace mf = ticks $ mf >>= probe
+
+-- itrace ::
+--   (Functor f, Traversable f', Typeable f, Typeable f') =>
+--   (f (R S) -> M (f' (R S))) -> [f Int] -> [f' Int]
+-- itrace mf is = iticks mf' is' where
+--   mf' is = mf is >>= probe
+--   is' = map inject is
 
 
 -- Generic external state threading + conversion to/from the internal
@@ -410,7 +424,7 @@ instance Num (R S) where
 num1 f (R (Val sza a)) =
   R $ Val sza $ f a
 num2 f (R (Val sza a)) (R (Val szb b)) =
-  R $ Val (sz sza szb) $ f a b
+  R $ Val (combineSize sza szb) $ f a b
 
 
 

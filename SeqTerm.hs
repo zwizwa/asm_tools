@@ -112,14 +112,21 @@ instance Seq.Seq M R where
   stype (R op) = return $ opType op
 
   -- driven nodes
+
+  -- FIXME: use Seq.hs SType functions
+  -- This does not perform the necessary checks.
+  
   op1 o (R a) =
     fmap R $ driven $ Comb1 (combTypes [a]) o a
 
+  op2 o@Seq.EQU (R a) (R b) =
+    fmap R $ driven $ Comb2 (SInt (Just 1) 0) o a b
+    
   op2 o (R a) (R b) =
     fmap R $ driven $ Comb2 (combTypes [a,b]) o a b
 
-  op3 o (R a) (R b) (R c) =
-    fmap R $ driven $ Comb3 (combTypes [a,b,c]) o a b c
+  op3 o@Seq.IF (R a) (R b) (R c) =
+    fmap R $ driven $ Comb3 (combTypes [b,c]) o a b c
 
   slice (R a) b c =
     fmap R $ driven $ Slice (combTypes [a]) a b c
@@ -210,8 +217,4 @@ cleanPorts ports = ports' where
     case p `Set.member` s of
       True -> f s ns
       False -> (n : f (p `Set.insert` s) ns)
-
-
-
-
 
