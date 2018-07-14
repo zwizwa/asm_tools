@@ -32,23 +32,21 @@ def load_module(hdl_fun_name, filename):
 def inst_testbench(hdl_fun, ports, tb_input, tb_output):
 
     nb_in = len(tb_input[0])
-    print("nb_in", nb_in)
+    #print("nb_in", nb_in)
 
     CLK = Signal(bool(False))
     RST = ResetSignal(1,0,True)
 
-    # The first two arguments are CLK and RST.
-    io_ports = ports[2:]
+    # Inputs are assumed to be 1-bit signals.  We model them as
+    # registers, so first input vector determines reset values.
+    in_signals  = [Signal(modbv(v)[1:]) for v in tb_input[0]]
+    out_signals = [Signal(modbv(0)[1:]) for _ in tb_output[0]]
 
-    # Is this a good idea?  Limit the size so .v and .vhdl can be generated.
-    # Note that for FPGA output, we assume 1-bit signals.
-    io_signals = [Signal(modbv(0)[1:]) for _ in io_ports]
+    io_signals = in_signals + out_signals
     signals = [CLK, RST] + io_signals
+
     tb_inst = traceSignals(hdl_fun, *signals)
     
-    in_signals = io_signals[0:nb_in]
-    out_signals = io_signals[nb_in:]
-
     # Generate main clock
     def clock():
         for _ in range(30):
@@ -57,29 +55,25 @@ def inst_testbench(hdl_fun, ports, tb_input, tb_output):
             yield(delay(10))
             CLK.next = not CLK
 
-    # Verify output
+    # Connect inputs, verify outputs, print trace
     n = Signal(int(0))
     @always_seq(CLK.posedge, reset=RST)
     def io():
-
-        if n < len(tb_input):
-            print ("i:", tb_input[n])
-            for (a,b) in zip(in_signals, tb_input[n]):
-                a.next = b
-        else:
-            raise StopSimulation
-
-        if n < len(tb_output):
-            #print (out_signals, tb_output[n])
-            print ("o:", tb_output[n])
-            for (a,b) in zip(out_signals, tb_output[n]):
-                #assert a == b
-                if (a != b):
-                    print ("FAIL","assert",a,"==",b)
-        else:
-            raise StopSimulation
-
+        # Keep track of time.
         n.next = n + 1
+
+        print(n,tb_input[n],tb_output[n])
+
+        for (a,b) in zip(out_signals, tb_output[n]):
+            assert a == b
+
+        if n >= len(tb_output):
+            raise StopSimulation
+
+        # tb_input[0] is set at reset.  By induction this needs n+1
+        for (a,b) in zip(in_signals, tb_input[n+1]):
+            a.next = b
+
 
     return [tb_inst, clock(), io]
 
