@@ -38,9 +38,8 @@ newtype M t = M { runM :: ReaderT RegIn (State CompState) t } deriving
    MonadReader RegIn,
    MonadState CompState)
 type RegNum    = Int
-type ConstVal  = Int
 type RegVal    = Int
-data StateType = IntReg Size RegVal | ProcessReg Process
+data StateType = IntReg SType | ProcessReg Process
 -- Dictionaries
 type RegVals    = Map RegNum RegVal
 type StateTypes = Map RegNum StateType
@@ -78,7 +77,7 @@ modifyProcess r def f = do
 
 data R t = R { unR :: Signal } -- phantom wrapper
 data Signal = Reg Int
-            | Val Size Int
+            | Val SType
             deriving Show
 type Size = Maybe Int
 
@@ -90,11 +89,11 @@ instance Seq M R where
   -- undriven signal
   signal (SInt sz r0) = do
     r <- makeRegNum
-    modify $ appTypes $ insert r $ IntReg sz r0
+    modify $ appTypes $ insert r $ IntReg $ SInt sz r0
     return $ R $ Reg  r
 
   constant (SInt sz r0) =
-    R $ Val sz r0
+    R $ Val $ SInt sz r0
 
   stype (R r) = styp r
 
@@ -148,22 +147,21 @@ styp = (fmap fst) . sints
 sval = (fmap snd) . sints
 val v = do SInt _ v' <- sval v ; return v'
 
-sints (Val sz v) = do
-  let i = SInt sz v
+sints (Val i@(SInt sz v)) = do
   return $ (i, i)
 sints (Reg r) = do
   v <- asks $ \regs -> regs r
   ts <- getTypes
-  let IntReg sz v0 = ts ! r
-  return $ (SInt sz v0, SInt sz v)
+  let IntReg v0@(SInt sz _) = ts ! r
+  return $ (v0, SInt sz v)
 
 
 
 combineSize a b = fromRight' $ combine a b
 
 
-truncVal Nothing v     = Val Nothing v
-truncVal sz@(Just b) v = Val sz $ v .&. ((shiftL 1 b) - 1)
+truncVal Nothing v     = Val $ SInt Nothing v
+truncVal sz@(Just b) v = Val $ SInt sz $ v .&. ((shiftL 1 b) - 1)
 
 conc' (SInt _ va) (SInt (Just szb) vb) = (shiftL va szb) .|. vb
 
@@ -219,11 +217,11 @@ reset m = (r0, e0) where
   -- Registers and external state are implemented differently, but are
   -- stored in the same type map.
   (regTypes, extTypes) = Map.partition isIntReg types
-  isIntReg (IntReg _ _) = True
+  isIntReg (IntReg _) = True
   isIntReg (ProcessReg _) = False
 
   r0 = Map.map initReg regTypes
-  initReg (IntReg size initVal) = initVal
+  initReg (IntReg (SInt size initVal)) = initVal
 
   e0 = Map.map initExt extTypes
   initExt (ProcessReg v) = v
@@ -239,10 +237,7 @@ tick m (ri, ei) = ((ro, eo), o) where
 
 
 
--- The simluation is then the initialization and threading of the
--- update function.  Do it a little more general by allowing
--- user-provided state threading, which e.g. is used to implement
--- memories.
+-- Simulation is then the the unfold reset + tick.
 
 -- The first value in the output list corresponds to the reset state
 -- of the registers and any combinatorial results computed from that.
@@ -255,24 +250,21 @@ ticks m = t s0 where
   t s  = o : t s' where
     (s', o) = tick m s
 
-
--- Special case: emulate input.
+-- Input is implemented using extensible state threading...
 iticks :: Typeable o => (i -> M o) -> [i] -> [o]
 iticks f is = take' $ ticks $ closeInput is f where 
   take' = (map fromJust) . (takeWhile isJust) 
 
--- To be combined with iticks: instantiate integers at the correct bit
--- size, and untag again for output.
+-- ... which is most useful when standard types are converted to Int.
+-- For inputs, input width needs to be specified in that case.
 onInts ::
   (Zip i, Traversable o) =>
-  i (Int -> R S)
+  i (Int -> SType)
   -> (i (R S) -> M (o (R S)))
   -> (i Int   -> M (o Int))
-onInts fromInts mod ints = do
-  let inSigs = zipWith ($) fromInts ints
-      toInt  = val . unR
-  outs <- mod inSigs
-  sequence $ fmap toInt outs
+onInts typs mod ints = do
+  outs <- mod $ zipWith (\t i -> constant $ t i) typs ints
+  sequence $ fmap (val . unR) outs
 
 
 
@@ -387,7 +379,7 @@ closeInput is f = closeProcess update is where
 
 -- For constants.
 instance Num (R S) where
-  fromInteger i = R $ Val Nothing $ fromInteger i
+  fromInteger i = R $ Val $ SInt Nothing $ fromInteger i
   -- Implement the rest just for constants.
   (+) = num2 (+)
   (*) = num2 (*)
@@ -396,10 +388,10 @@ instance Num (R S) where
   negate = num1 negate
 
 -- Use Applicative?   Nope. not general enough.
-num1 f (R (Val sza a)) =
-  R $ Val sza $ f a
-num2 f (R (Val sza a)) (R (Val szb b)) =
-  R $ Val (combineSize sza szb) $ f a b
+num1 f (R (Val (SInt sza a))) =
+  R $ Val $ SInt sza $ f a
+num2 f (R (Val (SInt sza a))) (R (Val (SInt szb b))) =
+  R $ Val $ SInt (combineSize sza szb) $ f a b
 
 
 

@@ -253,8 +253,8 @@ testbench name mod input = (TestBench module_py input_py output_py, output) wher
 
   -- Types. Stick with just bits
   inTyp = [bits 1 | _ <- [1..nb_in]]
-  conss = [(constant . (bits' 1)) | _ <- inTyp]
-  conss :: [Int -> SeqEmu.R S]
+  conss = [bits' 1 | _ <- inTyp]
+  conss :: [Int -> SType]
 
   -- Emulation
   output = SeqEmu.iticks (SeqEmu.onInts conss mod) input

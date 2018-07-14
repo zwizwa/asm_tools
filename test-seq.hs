@@ -155,11 +155,12 @@ itrace ::
   forall f f'.  (Zip f, Traversable f', Typeable f, Typeable f') =>
   (f (SeqEmu.R S) -> SeqEmu.M (f' (SeqEmu.R S)))
   -> [f Int] -> [f' Int]
-itrace fm is = os where
+itrace fm is = itrace' typs fm is where
+  typs = fmap (\_ -> SInt Nothing) $ is !! 0
+-- More general
+itrace' typs fm is = os where
   os = SeqEmu.iticks fm' is
-  fm' = SeqEmu.onInts fromInts fm
-  fromInts = fmap (\_ -> constant . (SInt Nothing)) $ is !! 0
-  fromInts :: f (Int -> SeqEmu.R S)
+  fm' = SeqEmu.onInts typs fm
 
 trace m = itrace (\[] -> m) $ cycle [[]]
 
