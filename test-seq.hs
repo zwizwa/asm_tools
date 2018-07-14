@@ -54,6 +54,9 @@ import Prelude hiding((.),id)
 import Control.Arrow
 import Control.Monad
 import Data.List
+import Data.Key(Zip(..),zipWith)
+import Data.Typeable
+
 import Names
   
 main = do
@@ -146,11 +149,29 @@ mapToList = foldrWithKey f [] where f k v t = (k,v):t
 
 
 
+-- FIXME: This represents inputs without assigned bit length.  That
+-- doesn't work for concatenation.
+itrace ::
+  forall f f'.  (Zip f, Traversable f', Typeable f, Typeable f') =>
+  (f (SeqEmu.R S) -> SeqEmu.M (f' (SeqEmu.R S)))
+  -> [f Int] -> [f' Int]
+itrace fm is = os where
+  os = take (length is) $ SeqEmu.iticks fm' is
+  fm' = SeqEmu.onInts fromInts fm
+  fromInts = fmap (\_ -> constant . (SInt Nothing)) $ is !! 0
+  fromInts :: f (Int -> SeqEmu.R S)
+
+-- FIXE: can't have infinite in this setup, so pick a number.
+trace m = itrace (\[] -> m) $ replicate 1000 []
+
+
+
 square = do
   c <- counter $ SInt (Just 3) 0
-  bit =<< slr c 2
+  b <- slr c 2
+  band b 1
 
-test_counter = SeqEmu.trace $ do
+test_counter = trace $ do
   c1 <- counter $ SInt (Just 1) 0
   c2 <- counter $ SInt (Just 3) 0
   -- [] is a meta-language construct needed for trace
@@ -163,16 +184,16 @@ closeReg2 = do
     b' <- add b 3
     return ([a', b'], [a, b])
 
-test_closeReg = SeqEmu.trace closeReg2
+test_closeReg = trace closeReg2
 
 
 -- For testing, outputs need to be collected in lists.
-test_edge = SeqEmu.trace $ do
+test_edge = trace $ do
   e <- edge =<< square
   return [e]
 
 -- Clock synchronizer
-test_sync = SeqEmu.itrace f is where
+test_sync = itrace f is where
   is = cycle [[v] | v <- [1,0,0,0,0,1,0,0]]
   f [i] = do
     o <- sync (SInt (Just 2) 0) i
@@ -187,7 +208,7 @@ dummy_mem ([_]) = do       -- memory's output
   return ([(z, z, z, z)],  -- memory's input
           [])              -- test program empty output bus
 test_mem :: [[Int]]
-test_mem = SeqEmu.trace m  where
+test_mem = trace m  where
   t = SInt Nothing 0
   m = SeqEmu.closeMem ([t]) dummy_mem
 
@@ -205,12 +226,12 @@ dummy_mem2 ([mo1, mo2]) = do
   ([mi2],_) <- dummy_mem $ [mo2]
   return $ ([mi1, mi2],[])
 
-test_mem2 = SeqEmu.trace m where
+test_mem2 = trace m where
   t = SInt Nothing 0
   m = SeqEmu.closeMem ([t,t]) dummy_mem2
 
 -- Input/output delay.
-test_mem_delay = SeqEmu.trace m  where
+test_mem_delay = trace m  where
   t = SInt Nothing 0
   m = SeqEmu.closeMem [t] $ \[rd] -> do
     c <- counter $ SInt (Just 3) 0
@@ -219,7 +240,7 @@ test_mem_delay = SeqEmu.trace m  where
 -- wEn, wAddr, wData, rAddr
 test_mem_delay2 = out where
   -- s0 = SeqEmu.reset m
-  out = take 10 $ SeqEmu.trace m
+  out = take 10 $ trace m
   t = SInt Nothing 0
   m = SeqEmu.closeMem [t] $ \[rd] -> do
       c <- counter $ SInt (Just 3) 0
@@ -234,7 +255,7 @@ test_mem_delay2 = out where
 test_cpu_net = do
   ([(a,b,c,d)], o) <- CPU.cpu $ [0]
   return $ o ++ [a,b,c,d]
-test_cpu_emu =  SeqEmu.trace m where
+test_cpu_emu =  trace m where
   t = SInt Nothing 0
   m = SeqEmu.closeMem ([t]) CPU.cpu
   mem = Map.fromList $ [(n,n+1) | n <- [0..2]]

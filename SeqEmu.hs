@@ -275,31 +275,6 @@ onInts fromInts mod ints = do
   sequence $ fmap toInt outs
 
 
--- -- Since we can't do anything with internal representations, these
--- -- functions are provided to convert to and from Int.  Signals can be
--- -- collected in a bus, represented by a Traversable.
--- probe :: Traversable f => f (R S) -> M (f Int)
--- probe = sequence . (fmap (val . unR))
-
--- -- Convenient special case for state threading.
--- -- probe' :: Traversable f => (t, f (R S)) -> M (t, f Int)
--- -- probe' (t,b) = fmap (t,) $ probe b
-
--- -- The reverse for inputs, but pure.
--- inject :: Functor f => (f Int) -> (f (R S))
--- inject = fmap (constant . (SInt Nothing))
-
-
--- -- Bind probe, inject to ticks, iticks.
--- trace :: Traversable f => M (f (R S)) -> [f Int]
--- trace mf = ticks $ mf >>= probe
-
--- itrace ::
---   (Functor f, Traversable f', Typeable f, Typeable f') =>
---   (f (R S) -> M (f' (R S))) -> [f Int] -> [f' Int]
--- itrace mf is = iticks mf' is' where
---   mf' is = mf is >>= probe
---   is' = map inject is
 
 
 -- Generic external state threading + conversion to/from the internal
