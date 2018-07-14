@@ -156,15 +156,16 @@ itrace ::
   (f (SeqEmu.R S) -> SeqEmu.M (f' (SeqEmu.R S)))
   -> [f Int] -> [f' Int]
 itrace fm is = os where
-  os = take (length is) $ SeqEmu.iticks fm' is
+  is' = take limitTRACE is
+  os = take (length is') $ SeqEmu.iticks fm' is'
   fm' = SeqEmu.onInts fromInts fm
-  fromInts = fmap (\_ -> constant . (SInt Nothing)) $ is !! 0
+  fromInts = fmap (\_ -> constant . (SInt Nothing)) $ is' !! 0
   fromInts :: f (Int -> SeqEmu.R S)
 
--- FIXE: can't have infinite in this setup, so pick a number.
-trace m = itrace (\[] -> m) $ replicate 1000 []
+trace m = itrace (\[] -> m) $ replicate limitTRACE []
 
-
+-- FIXE: can't have infinite in this workaround setup, so pick a number.
+limitTRACE = 100
 
 square = do
   c <- counter $ SInt (Just 3) 0
