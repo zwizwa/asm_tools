@@ -18,7 +18,7 @@ def load_module(hdl_fun_name, filename):
     # Python function to instantiate HDL module
     hdl_fun = getattr(modul, hdl_fun_name)
     ports = inspect.getargspec(hdl_fun).args
-    print(ports)
+    #print(ports)
     ins = False
     outs = False
     if hasattr(modul, "outs"):
@@ -49,7 +49,7 @@ def inst_testbench(hdl_fun, ports, tb_input, tb_output):
     
     # Generate main clock
     def clock():
-        for _ in range(30):
+        for _ in range(1000):
             # Wait first, so we see the reset value of the registers
             # separately from the effect of the first clock edge.
             yield(delay(10))
@@ -67,7 +67,7 @@ def inst_testbench(hdl_fun, ports, tb_input, tb_output):
         for (a,b) in zip(out_signals, tb_output[n]):
             assert a == b
 
-        if n >= len(tb_output):
+        if n+1 >= len(tb_output):
             raise StopSimulation
 
         # tb_input[0] is set at reset.  By induction this needs n+1
