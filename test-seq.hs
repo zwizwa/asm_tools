@@ -38,6 +38,7 @@
 
 import Seq
 import SeqLib
+import SeqSyntax
 import qualified SeqTerm
 import qualified SeqExpr
 import qualified SeqEmu
@@ -117,6 +118,11 @@ main = do
 
   putStrLn "--- test_th"
   test_th
+
+  putStrLn "--- SeqSyntax test"
+  let stx = $(seqFile "example.seq")
+  print stx
+  
 
 -- printSeqTerm :: Functor f => SeqTerm.M (f (SeqTerm.R S)) -> IO ()
 printSeqTerm :: SeqTerm.M [SeqTerm.R S] -> IO ()
