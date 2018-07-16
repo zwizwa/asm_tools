@@ -11,7 +11,9 @@ module SeqLib where
 import Seq
 import Control.Monad
 import Control.Applicative
-
+import Data.Key(Zip(..),zipWith)
+import Prelude hiding (zipWith)
+import Data.Bits hiding (bit)
 
 -- Shortcuts for common type constructions.
 bits :: Int -> SType
@@ -65,10 +67,10 @@ sync t i = do
 -- Note: we only support the combinatorial (dual-clause) if.
 case' :: Seq m r => [(m (r S), m (r S))] -> m (r S) -> m (r S)
 case' [] dflt = dflt
-case' ((cond, whenTrue):cases) dflt = do
+case' ((cond, whenTrue):clauses) dflt = do
   c <- cond
   t <- whenTrue
-  f <- case' cases dflt
+  f <- case' clauses dflt
   if' c t f
   
 
@@ -77,12 +79,19 @@ case' ((cond, whenTrue):cases) dflt = do
 shiftReg :: Seq m r => SType -> r S -> m (r S, r S)
 shiftReg tr i = do
   closeReg [tr] $ \[r] -> do
-    ti <- stype i
-    let SInt (Just r_bits) _ = tr
-        SInt (Just i_bits) _ = ti
-    r_drop  <- slice r (Just $ r_bits - i_bits) 0
-    r_shift <- conc r_drop i
+    r_shift <- shiftUpdate r i
     return $ ([r_shift], (r, r_shift))
+
+-- Inner routine is useful without feedback.
+shiftUpdate r i = do
+  tr <- stype r
+  ti <- stype i
+  let SInt (Just r_bits) _ = tr
+      SInt (Just i_bits) _ = ti
+  r_drop  <- slice r (Just $ r_bits - i_bits) 0
+  r_shift <- conc r_drop i
+  return r_shift
+  
 
 
 integral :: Seq m r => r S -> m (r S)
@@ -199,11 +208,92 @@ instance Seq m r => Num (m (r S)) where
 
 
 
+
+-- Note that Seq does not support "imperative" conditionals.  To
+-- implement this kind of behavior, use a Traversable Zip container
+-- (e.g. []).  This make the parallel muxing behavior explicit.
+
+ifs :: (Seq m r, Traversable f, Zip f) => r S -> f (r S) -> f (r S) -> m (f (r S))
+ifs c t f = sequence $ zipWith (if' c) t f
+
+-- This makes me think that case statements might be implemented as
+-- multiplexers as well?  does this need special care, or is it easy
+-- for the synthesizer to recover the structure?  e.g. MyHDL does
+-- perform some magic for "case" statements I believe.
+
+-- Fixme: implement case' in terms of the more general cases.
+cases ::
+  (Seq m r, Traversable f, Zip f)
+  => [(m (r S), m (f (r S)))]
+  -> m (f (r S))
+  -> m (f (r S))
+cases [] dflt = dflt
+cases ((cond, whenTrue):clauses) dflt = do
+  c <- cond
+  t <- whenTrue
+  f <- cases clauses dflt
+  ifs c t f
+
+
+log2 i = f 0 where
+  f n = case shiftL 1 n >= i of
+    True -> n
+    False -> f $ n + 1
+
+
 -- UART.
 --
--- The main abstraction is a sequencer that can run another state
--- machine at a reduced rate.  Basically, this is single-branch if.
+-- Some observations:
+-- a) Factored into timing generation + shift register
+-- b) Timing can be factored using an enable signal
+
+-- The part below only computes timing. 
+
+-- Detect start bit, go to "on" state and produce a number of pulses.
+-- wait for stop bit and produce parallel output strobe.
+
+-- ( Personal note: One of the hardest things to unlearn going from
+-- CPU programming to hardware programming is that conditionals do not
+-- "save work".  For this an instruction sequencer with conditional
+-- branches is needed.  Conditionals in HDL are static multiplexers. )
+ 
+async_receiver ::
+  forall m r. Seq m r =>
+  SType -> r S -> m (r S)
+async_receiver t@(SInt (Just n_bits) _) i = sm where
+  sm = closeReg [bit, t, t'] update
+  t' = SInt (Just $ log2 n_bits) 0
   
+  update s@[is_on, n, sr] = do
+    n'  <- inc n
+    sr' <- shiftUpdate sr i
+    
+    -- switch on when i->0
+    off <- ifs i s [1,1,0,0]
+    on  <- cases
+           [(i `equ` 8, return [0,0,0,0])]
+           (return [1, 1, n', sr'])
+
+    (o:s'@[_,_,_]) <- ifs is_on on off
+    return (s',o)
+
+
+-- FIXME: enable should probably be explicit.  If used only to slow
+-- things down, the output strobes will not be 1-bit width.  A simple
+-- way to fix that is to encode strobes as alternations.
+
+-- Still not really done with figuring out how to decompose this.  But
+-- it is clear that the hard part is "controllers", "sequencers":
+-- decompose a circuit into basic building blocks, and the network
+-- that controls the enables, strobes, muxes, etc..
+
+
+
+
+
+
+
+
 
 
 

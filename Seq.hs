@@ -95,7 +95,16 @@ type InitVal = Int
 -- Ints currently behave as MyHDL's modbv with min=0 and max=2^NbBits.
 -- This needs to be fixed at some point, but wait for application pull.
 
-class (Monad m, Num (r S)) => Seq m r | r -> m where
+-- Conditionals
+
+-- Only the "dataflow" conditional is supported.  Note that this makes
+-- conditionals a little more awkward to use in Seq, but keeps them
+-- pure.  This does not impose a limitation on what can be expressed,
+-- only how it can be expressed.
+
+
+
+class (Monad m, Num (r S)) => Seq m r | r -> m, m -> r where
 
   -- Register operation
   signal   :: SType -> m (r S)    -- Undriven signal
@@ -123,18 +132,18 @@ class (Monad m, Num (r S)) => Seq m r | r -> m where
   slice :: r S -> SSize -> NbBits -> m (r S)
 
 
-  -- Subsampling environment variable.  FIXME: This is a very specific
-  -- extension.  Maybe other environment variables would be useful?
-  enable :: m (Maybe (r S))
-  withEnable :: (Maybe (r S)) -> m t -> m t
+  -- Local environement.  Used e.g. for register update enable,
+  -- effectively defining local "clock rate".
+  getEnv :: m (Env r)
+  withEnv :: (Env r -> Env r) -> m t -> m t
   
+
+
+-- Primitives
 
 type SeqOp1 m r = r S -> m (r S)
 type SeqOp2 m r = r S -> r S -> m (r S)
 type SeqOp3 m r = r S -> r S -> r S -> m (r S)
-
-
--- Primitives
 
 data Op1 = INV
   deriving Show
@@ -180,38 +189,72 @@ if' :: Seq m r => SeqOp3 m r
 if' = op3 IF  
 
 
--- Convert register update equation to to monadic output value,
+
+
+-- Convenience type for implementations. The Seq environment is
+-- currently only used to carry the enable bit for closeReg's default
+-- next'
+-- type Env r = Maybe (r S)
+-- initEnv = Nothing
+
+data EnvVar = Enable
+type Env r = EnvVar -> Maybe (r S)
+initEnv = const Nothing
+
+
+
+
+-- Convert a register update equation to to monadic output value,
 -- "tucking away" the registers.  This effectively computes the fixed
 -- point with register decoupling, defining a sequence.
 
--- Noe that using 'signal' and 'next' in the same function will avoid
--- the creation of undriven or multiply-driven signals.  This is
--- preferred over using the low-level primitives directly.
+-- The idea here is that using 'signal' and 'next' in the same
+-- function will avoid the creation of undriven or multiply-driven
+-- signals.  This is preferred over using the low-level primitives
+-- directly.
 
 -- A meta-level container is used to bundle registers.  Typically, a
 -- List will do, but the interface is generic.  Note: liftA2 doesn't
 -- do the right thing on lists.
 
-closeReg ::
+-- This is the general form, parameterized by a generic next operator.
+
+closeReg' ::
   forall f m r o. (Zip f, Traversable f, Seq m r) =>
-  f SType -> (f (r S) -> m (f (r S), o)) -> m o
-closeReg ts f = do
+  (r S -> r S -> m ())
+  -> f SType
+  -> (f (r S) -> m (f (r S), o))
+  -> m o
+closeReg' next' ts f = do
   rs <- sequence $ fmap signal ts
   (rs', o) <- f rs
-
-  -- Updates are made conditional to an enable bit.
-  en <- (enable :: m (Maybe (r S)))
-  let next' =
-        case en of
-          Nothing ->
-            (next :: r S -> r S -> m ())
-          Just en' ->
-            \r v -> do
-              v' <- if' en' v r
-              next r v'
-            
-  sequence_ $ zipWith next rs rs'
+  sequence_ $ zipWith next' rs rs'
   return o
+
+
+-- The default closeReg uses a "next" that is parameterized by the
+-- enable bit for the local context.  This is useful for building
+-- state machines that are updated at a lower rate.
+
+closeReg ::
+  forall f m r o. (Zip f, Traversable f, Seq m r) =>
+  f SType
+  -> (f (r S) -> m (f (r S), o))
+  -> m o
+closeReg = closeReg' next'
+
+next' :: forall m r. Seq m r => r S -> r S -> m ()
+next' r v = do
+  env <- getEnv
+  case env Enable of
+    Nothing ->
+      next r v
+    Just en' -> do
+      v' <- if' en' v r
+      next r v'
+
+
+
 
 
 -- Note: it might be possible to avoid 'signal' and 'next' in Seq, and
@@ -276,7 +319,3 @@ data Bit
 data Enable
 
 
--- The environment is currently only used to carry a local enable bit
--- for register updates, i.e. to sub-sample state machines.
-type SeqEnv r = Maybe (r S)
-initSeqEnv = Nothing

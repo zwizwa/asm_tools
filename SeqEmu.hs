@@ -42,7 +42,7 @@ newtype M t = M { runM :: ReaderT (CompEnv R) (State CompState) t } deriving
 type RegNum    = Int
 type RegVal    = Int
 data StateType = IntReg SType | ProcessReg Process
-type CompEnv r = (SeqEnv r, RegIn)
+type CompEnv r = (Env r, RegIn)
 -- Dictionaries
 type RegVals    = Map RegNum RegVal
 type StateTypes = Map RegNum StateType
@@ -136,11 +136,11 @@ instance Seq M R where
   connect _ _ = error "SeqEmu does not support connect"
 
   -- see comments in Seq.erl
-  enable = do
+  getEnv = do
     (e,_) <- ask
     return e
-  withEnable e m = do
-    local (\(_,r) -> (e,r)) m
+  withEnv f m = do
+    local (\(e,r) -> (f e,r)) m
 
     
 
@@ -211,7 +211,7 @@ runEmu :: M a -> RegIn -> Processes -> (a, StateTypes, RegVals, Processes)
 runEmu m regsenv extsi = (v, regtypes, regso, extso) where
   state =  (0, Map.empty, Map.empty, extsi)
   (v, (_, regtypes, regso, extso)) =
-    runState (runReaderT (runM m) (initSeqEnv, regsenv)) state
+    runState (runReaderT (runM m) (initEnv, regsenv)) state
 
 -- To perform a simulation, we need two things.  Both are built on runEmu.
 

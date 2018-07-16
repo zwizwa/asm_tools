@@ -12,7 +12,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 
 module SeqTerm where
-import Seq(SType(..),SeqEnv,initSeqEnv)
+import Seq(SType(..),Env,initEnv)
 import qualified Seq as Seq
 import Control.Monad.State
 import Control.Monad.Writer
@@ -86,13 +86,13 @@ type ConstVal = Int
 -- recorded to make sure definition dominates use.
 
 newtype M t = M { unM ::
-                    ReaderT (SeqEnv R)
+                    ReaderT (Env R)
                     (WriterT (Bindings NodeNum)
                      (State CompState))
                     t
                 } deriving
   (Functor, Applicative, Monad,
-   MonadReader (SeqEnv R),
+   MonadReader (Env R),
    MonadWriter (Bindings NodeNum),
    MonadState CompState)
 
@@ -145,8 +145,8 @@ instance Seq.Seq M R where
   next    = bind Delay
 
   -- see comments in Seq.erl
-  enable = ask
-  withEnable e m = local (const e) m
+  getEnv = ask
+  withEnv = local
 
 
 bind cons (R (Node t' dst)) (R src) = do
@@ -217,7 +217,7 @@ driveNode n c = do
 compile :: M [R t] -> ([Op NodeNum], [(NodeNum, Term (Op NodeNum))])
 compile m = (map unR ports, cleanPorts nodes) where
   ((ports, nodes), nbNodes) =
-    runState (runWriterT (runReaderT (unM m) initSeqEnv)) 0
+    runState (runWriterT (runReaderT (unM m) initEnv)) 0
 
 -- Remove duplicates, keeping last, preserving order.
 -- FIXME: generalize to functor output?
