@@ -32,14 +32,17 @@ import Data.Dynamic
 import Data.Typeable
 import Data.Maybe
 
+
+
 -- Main interpretation monad for Seq
-newtype M t = M { runM :: ReaderT RegIn (State CompState) t } deriving
+newtype M t = M { runM :: ReaderT (CompEnv R) (State CompState) t } deriving
   (Functor, Applicative, Monad,
-   MonadReader RegIn,
+   MonadReader (CompEnv R),
    MonadState CompState)
 type RegNum    = Int
 type RegVal    = Int
 data StateType = IntReg SType | ProcessReg Process
+type CompEnv r = (SeqEnv r, RegIn)
 -- Dictionaries
 type RegVals    = Map RegNum RegVal
 type StateTypes = Map RegNum StateType
@@ -132,6 +135,14 @@ instance Seq M R where
   -- this is an artefact necessary for MyHDL non-registered outputs
   connect _ _ = error "SeqEmu does not support connect"
 
+  -- see comments in Seq.erl
+  enable = do
+    (e,_) <- ask
+    return e
+  withEnable e m = do
+    local (\(_,r) -> (e,r)) m
+
+    
 
 
 -- This can happen due to []'s applicative functor.
@@ -150,7 +161,7 @@ val v = do SInt _ v' <- sval v ; return v'
 sints (Val i@(SInt sz v)) = do
   return $ (i, i)
 sints (Reg r) = do
-  v <- asks $ \regs -> regs r
+  v <- asks $ \(_,regs) -> regs r
   ts <- getTypes
   let IntReg v0@(SInt sz _) = ts ! r
   return $ (v0, SInt sz v)
@@ -199,7 +210,8 @@ makeRegNum = do
 runEmu :: M a -> RegIn -> Processes -> (a, StateTypes, RegVals, Processes)
 runEmu m regsenv extsi = (v, regtypes, regso, extso) where
   state =  (0, Map.empty, Map.empty, extsi)
-  (v, (_, regtypes, regso, extso)) = runState (runReaderT (runM m) regsenv) state
+  (v, (_, regtypes, regso, extso)) =
+    runState (runReaderT (runM m) (initSeqEnv, regsenv)) state
 
 -- To perform a simulation, we need two things.  Both are built on runEmu.
 

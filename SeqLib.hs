@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE EmptyDataDecls #-}
 
 module SeqLib where
 import Seq
@@ -194,6 +195,15 @@ instance Seq m r => Num (m (r S)) where
 -- So maybe create a 'lisp' on top of this.  Take s-expressions,
 -- perform macro substitution, and reduce to ANF before mapping onto
 -- the monadic form.
+
+
+
+
+-- UART.
+--
+-- The main abstraction is a sequencer that can run another state
+-- machine at a reduced rate.  Basically, this is single-branch if.
+  
 
 
 

@@ -12,7 +12,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 
 module SeqTerm where
-import Seq(SType(..))
+import Seq(SType(..),SeqEnv,initSeqEnv)
 import qualified Seq as Seq
 import Control.Monad.State
 import Control.Monad.Writer
@@ -85,8 +85,14 @@ type ConstVal = Int
 -- It's convenient if the Drivers preserve order in the way they are
 -- recorded to make sure definition dominates use.
 
-newtype M t = M { unM :: WriterT (Bindings NodeNum) (State CompState) t } deriving
+newtype M t = M { unM ::
+                    ReaderT (SeqEnv R)
+                    (WriterT (Bindings NodeNum)
+                     (State CompState))
+                    t
+                } deriving
   (Functor, Applicative, Monad,
+   MonadReader (SeqEnv R),
    MonadWriter (Bindings NodeNum),
    MonadState CompState)
 
@@ -137,6 +143,10 @@ instance Seq.Seq M R where
 
   -- register drive
   next    = bind Delay
+
+  -- see comments in Seq.erl
+  enable = ask
+  withEnable e m = local (const e) m
 
 
 bind cons (R (Node t' dst)) (R src) = do
@@ -206,7 +216,8 @@ driveNode n c = do
 -- Compile to list of I/O ports and network map.
 compile :: M [R t] -> ([Op NodeNum], [(NodeNum, Term (Op NodeNum))])
 compile m = (map unR ports, cleanPorts nodes) where
-  ((ports, nodes), nbNodes) = runState (runWriterT (unM m)) 0
+  ((ports, nodes), nbNodes) =
+    runState (runWriterT (runReaderT (unM m) initSeqEnv)) 0
 
 -- Remove duplicates, keeping last, preserving order.
 -- FIXME: generalize to functor output?

@@ -20,6 +20,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE EmptyDataDecls #-}
 
 module Seq where
 
@@ -122,6 +123,12 @@ class (Monad m, Num (r S)) => Seq m r | r -> m where
   slice :: r S -> SSize -> NbBits -> m (r S)
 
 
+  -- Subsampling environment variable.  FIXME: This is a very specific
+  -- extension.  Maybe other environment variables would be useful?
+  enable :: m (Maybe (r S))
+  withEnable :: (Maybe (r S)) -> m t -> m t
+  
+
 type SeqOp1 m r = r S -> m (r S)
 type SeqOp2 m r = r S -> r S -> m (r S)
 type SeqOp3 m r = r S -> r S -> r S -> m (r S)
@@ -135,28 +142,36 @@ data Op1 = INV
 inv :: forall m r. Seq m r => r S -> m (r S)
 inv = op1 INV
 
-data Op2 = ADD | MUL | AND | OR | XOR | SLL | SLR | CONC | EQU
+data Op2 =
+  ADD | MUL | AND | OR | XOR | SLL | SLR
+  | CONC
+  | EQU
   deriving Show
 
 add  :: Seq m r => SeqOp2 m r 
 mul  :: Seq m r => SeqOp2 m r
-equ  :: Seq m r => SeqOp2 m r
 band :: Seq m r => SeqOp2 m r
 bxor :: Seq m r => SeqOp2 m r
 bor  :: Seq m r => SeqOp2 m r
 sll  :: Seq m r => SeqOp2 m r
 slr  :: Seq m r => SeqOp2 m r
+
+equ  :: Seq m r => SeqOp2 m r
+
 conc :: Seq m r => SeqOp2 m r
 
 add  = op2 ADD
 mul  = op2 MUL
-equ  = op2 EQU
 band = op2 AND
 bxor = op2 XOR
 bor  = op2 OR
 sll  = op2 SLL
 slr  = op2 SLR
+
 conc = op2 CONC
+
+equ  = op2 EQU
+
 
 data Op3 = IF
   deriving Show
@@ -177,11 +192,24 @@ if' = op3 IF
 -- List will do, but the interface is generic.  Note: liftA2 doesn't
 -- do the right thing on lists.
 
-closeReg :: (Zip f, Traversable f, Seq m r) =>
+closeReg ::
+  forall f m r o. (Zip f, Traversable f, Seq m r) =>
   f SType -> (f (r S) -> m (f (r S), o)) -> m o
 closeReg ts f = do
   rs <- sequence $ fmap signal ts
   (rs', o) <- f rs
+
+  -- Updates are made conditional to an enable bit.
+  en <- (enable :: m (Maybe (r S)))
+  let next' =
+        case en of
+          Nothing ->
+            (next :: r S -> r S -> m ())
+          Just en' ->
+            \r v -> do
+              v' <- if' en' v r
+              next r v'
+            
   sequence_ $ zipWith next rs rs'
   return o
 
@@ -231,3 +259,24 @@ op3size IF c t f = sz c t f where
   sz c t f        = Left $ sizeError err
   
 sizeError = ("Seq.sizeError: " ++)
+
+
+
+-- Phantom types.
+--
+-- To simplify the core language, S takes the role of a dynamically
+-- typed bit vector.  At the library level, it makes sense to
+-- structure composition by creating more refined types.  The
+-- idiomatic way to do this is to use phantom type tags.  Here are the
+-- basic building blocks.
+
+data T t = T S
+
+data Bit
+data Enable
+
+
+-- The environment is currently only used to carry a local enable bit
+-- for register updates, i.e. to sub-sample state machines.
+type SeqEnv r = Maybe (r S)
+initSeqEnv = Nothing
