@@ -29,11 +29,14 @@ qc str f = do
   quickCheck f
   
 main = do
-  putStrLn "clocked_shift'"
-  print $ downSample' $ clocked_shift' 4 $ [[1,i] | i <- [1,1,1,1,0,0,0,0,0,0,0,1]]
+  print $ toWord [1,0,0,0]
+  print $ toBits 4 8
+  
+  -- putStrLn "clocked_shift'"
+  -- print $ downSample' $ clocked_shift' 4 $ [[1,i] | i <- [1,1,1,1,0,0,0,0,0,0,0,1]]
   qc "p_bits" p_bits
   qc "p_sample" p_sample
-  -- qc "p_clocked_shift" p_clocked_shift
+  qc "p_clocked_shift" p_clocked_shift
 
 -- General notes.
 --
@@ -51,29 +54,23 @@ p_sample spec = seq == seq' where
 
 
 -- Behavioral tests for SeqLib functions.
-p_clocked_shift :: Positive Int -> [(NonNegative Int, Int)] -> Bool
-p_clocked_shift (Positive nb_bits) spec = p1 where
+p_clocked_shift :: Positive Int -> [Int] -> Bool
+p_clocked_shift (Positive nb_bits) ints = p1 where
 
-  p1 = True
-  
-  -- p1 = wordSeq == wordSeq'
+  p1 = wordSeq == wordSeq'
 
-  -- spaces  = map (getNonNegative . fst) spec
-  -- spaces' = concat $ replicate nb_bits spaces
-  -- wordSeq = map ((mask nb_bits) . snd) spec
+  wordSeq  = map (mask nb_bits) ints
+  bitSeq   = toBitss nb_bits wordSeq
 
-  -- bitSeq   = toBitss nb_bits wordSeq
-  -- ins      = upSample' spaces' bitSeq
-  -- outs     = f ins
-  -- wordSeq' = downSample' outs
+  ins      = [[1,i] | i<-bitSeq] -- don't oversample yet
+  outs     = clocked_shift' nb_bits ins
+  wordSeq' = map head $ downSample' outs
 
-  -- -- test for the test
-  -- f = (upSample' $ cycle [1]) . (toWords nb_bits) . downSample'
   
 
 -- Tools
 toBits :: Int -> Int -> [Int]
-toBits nb_bits n = map (shiftL 1) [0..nb_bits-1]
+toBits nb_bits val = map ((.&. 1) . (shiftR val)) $ reverse [0..nb_bits-1]
 
 toBitss :: Int -> [Int] -> [Int]
 toBitss nb_bits = concat . (map $ toBits nb_bits)
@@ -86,12 +83,21 @@ toWords :: Int -> [Int] -> [Int]
 toWords nb_bits = (map toWord) . (chunksOf nb_bits)
 
 p_bits :: Positive Int -> [Int] -> Bool
-p_bits (Positive nb_bits) words = p1 && p2  where
+p_bits (Positive nb_bits) ints = p1 && p2  where
+  
   p1 = words == words'
   p2 = bits  == bits'
+
+  words  = map (mask nb_bits) ints
   bits   = toBitss nb_bits words
   words' = toWords nb_bits bits
   bits'  = toBitss nb_bits words'
+
+-- Defaults use "natural order", which places MSB on the left, which
+-- makes list form, scope display and normal digit display.  This is
+-- the same order as SPI, but the reverse of UART.
+
+
 
 
 mask nb_bits v = v .&. msk where
@@ -100,28 +106,27 @@ mask nb_bits v = v .&. msk where
 
 -- Bus sequences.
 
--- To keep things simple, use lists for all input/output busses.  In
--- that setting, subsampled signals are simplest to represent by
+-- To keep things simple, use [] as signal container for input and
+-- output busses.
+
+-- In that setting, subsampled signals are simplest to represent by
 -- pushing/poping the enable bit to/from the bus list.
 
 upSample' :: [Int] -> [[Int]] -> [[Int]]
-upSample' is = upSample f is where
-  f True  a = (1:a)
-  f False a = (0:a)
+upSample' is = upSample en is where
+  en True  a = (1:a)
+  en False a = (0:a)
 
 downSample' :: [[Int]] -> [[Int]]
-downSample' = downSample f where
-  f (1:a) = Just a
-  f (0:a) = Nothing
-
-
+downSample' = downSample sel where
+  sel (1:a) = Just a
+  sel (0:a) = Nothing
 
 -- onInts wrappers for SUTs
 trace ::
   [Int]
-  -> ([SeqEmu.R S] -> SeqEmu.M [SeqEmu.R S])
-  -> [[Int]]
-  -> [[Int]]
+  -> ([R S] -> M [R S])
+  -> [[Int]] -> [[Int]]
 trace inputBitSizes fm ins =
   iticks (onInts inputBitSizes fm) ins
 
