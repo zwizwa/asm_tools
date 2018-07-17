@@ -268,14 +268,14 @@ iticks f is = take' $ ticks $ closeInput is f where
   take' = (map fromJust) . (takeWhile isJust) 
 
 -- ... which is most useful when standard types are converted to Int.
--- For inputs, input width needs to be specified in that case.
+-- For inputs, input bit sizes needs to be specified.
 onInts ::
   (Zip i, Traversable o) =>
-  i (Int -> SType)
+  i Int
   -> (i (R S) -> M (o (R S)))
   -> (i Int   -> M (o Int))
-onInts typs mod ints = do
-  outs <- mod $ zipWith (\t i -> constant $ t i) typs ints
+onInts bitSizes mod ints = do
+  outs <- mod $ zipWith (\s i -> constant $ SInt (Just s) i) bitSizes ints
   sequence $ fmap (val . unR) outs
 
 

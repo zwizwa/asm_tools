@@ -28,7 +28,7 @@ license: BSD3
 --     build-depends: base
 
 Test-Suite test-qc-SeqLib.hs
-    build-depends: base, containers, mtl, free, keys, set-extra, template-haskell, parsec, QuickCheck
+    build-depends: base, containers, mtl, free, keys, set-extra, template-haskell, parsec, QuickCheck, split
     type:       exitcode-stdio-1.0
     main-is:    test-qc-SeqLib.hs
     build-depends: base

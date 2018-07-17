@@ -272,16 +272,10 @@ clocked_shift t_sr@(SInt (Just nb_bits) _) (bitClock, bitVal) = do
       n'  <- if' wc 0 n1
       sr' <- shiftUpdate sr bitVal
       return ([sr',n'], (wc, sr'))
-  wordClock <- bitClock `band` bitClock
+  wordClock <- bitClock `band` wordClock'
   return (wordClock, wordVal)
 
 
--- TEST.  Todo: how to make it possible to put a test right next to an
--- implementation?  Maybe not a good idea as it pulls in a lot of
--- dependencies.
-
-test_clocked_shift = ()
-    
 
 
 -- UART.
