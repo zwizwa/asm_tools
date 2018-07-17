@@ -239,6 +239,44 @@ log2 i = f 0 where
   f n = case shiftL 1 n >= i of
     True -> n
     False -> f $ n + 1
+    
+t_log2 (SInt (Just n_bits) _) =  SInt (Just $ log2 n_bits) 0
+t_log2 _ = SInt Nothing 0  
+
+
+-- Streams
+
+-- RTL is associated to streams by collecting the output of registers,
+-- one for each clock cycle.
+
+-- In practice, this is too limiting.  It is necessary to represent
+-- streams at arbitrary rate.  This can be done by accompanying a
+-- stream at clock rate, with a stream of enable bits, and using the
+-- enable bits as a "synchronous clock".
+
+-- For now it is ok to use partially applied pairs for this, as it
+-- gives the necessary instances.
+type Stream r = (,) r S
+
+
+-- Building block for converting bit streams to word streams.
+clocked_shift :: Seq m r => SType -> (r S, r S) -> m (r S, r S)
+clocked_shift t_sr@(SInt (Just nb_bits) _) (bitClock, bitVal) = do
+  let t_sr' = t_log2 t_sr
+      n_max = constant $ SInt Nothing $ nb_bits - 1
+  (wordClock', wordVal) <-
+    closeRegEn bitClock [t_sr, t_sr'] $
+    \[sr,n] -> do
+      wordClock <- n `equ` n_max
+      n1 <- inc n
+      n' <- if' wordClock 0 n1
+      sr' <- shiftUpdate sr bitVal
+      return ([sr',n'], (wordClock, sr'))
+  wordClock <- bitClock `band` bitClock
+  return (wordClock, wordVal)
+
+
+    
 
 
 -- UART.
@@ -256,13 +294,14 @@ log2 i = f 0 where
 -- CPU programming to hardware programming is that conditionals do not
 -- "save work".  For this an instruction sequencer with conditional
 -- branches is needed.  Conditionals in HDL are static multiplexers. )
- 
+
+  
 async_receiver ::
   forall m r. Seq m r =>
   SType -> r S -> m (r S)
 async_receiver t@(SInt (Just n_bits) _) i = sm where
   sm = closeReg [bit, t, t'] update
-  t' = SInt (Just $ log2 n_bits) 0
+  t' = t_log2 t
   
   update s@[is_on, n, sr] = do
     n'  <- inc n
@@ -286,7 +325,6 @@ async_receiver t@(SInt (Just n_bits) _) i = sm where
 -- it is clear that the hard part is "controllers", "sequencers":
 -- decompose a circuit into basic building blocks, and the network
 -- that controls the enables, strobes, muxes, etc..
-
 
 
 

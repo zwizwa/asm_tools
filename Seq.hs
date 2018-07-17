@@ -191,15 +191,15 @@ if' = op3 IF
 
 
 
--- Convenience type for implementations. The Seq environment is
--- currently only used to carry the enable bit for closeReg's default
--- next'
--- type Env r = Maybe (r S)
--- initEnv = Nothing
-
-data EnvVar = Enable
+-- Provide Env type and init as a convenience to implementations.
+-- getEnv,withEnv behave as ask,local specialized to Env.
 type Env r = EnvVar -> Maybe (r S)
 initEnv = const Nothing
+
+-- Seq uses local context for
+data EnvVar =
+  Enable -- the "time base" of the local state machines.
+  deriving Show
 
 
 
@@ -241,18 +241,30 @@ closeReg ::
   f SType
   -> (f (r S) -> m (f (r S), o))
   -> m o
-closeReg = closeReg' next'
+closeReg = closeReg' nextEnable
 
-next' :: forall m r. Seq m r => r S -> r S -> m ()
-next' r v = do
+closeRegEn ::
+  forall f m r o. (Zip f, Traversable f, Seq m r) =>
+  r S
+  -> f SType
+  -> (f (r S) -> m (f (r S), o))
+  -> m o
+closeRegEn en = closeReg' $ nextIf en
+
+nextEnable :: forall m r. Seq m r => r S -> r S -> m ()
+nextEnable r v = do
   env <- getEnv
   case env Enable of
     Nothing ->
       next r v
-    Just en' -> do
-      v' <- if' en' v r
-      next r v'
+    Just en' ->
+      nextIf en' r v
 
+nextIf :: forall m r. Seq m r => r S -> r S -> r S -> m ()
+nextIf en r v = do
+  v' <- if' en v r
+  next r v'
+  
 
 
 
