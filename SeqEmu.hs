@@ -14,8 +14,6 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ExistentialQuantification #-}
---{-# LANGUAGE DeriveTraversable #-}
---{-# LANGUAGE DeriveAnyClass #-}
 
 module SeqEmu where
 import Seq
@@ -187,6 +185,7 @@ sliceVal (SInt sa va) upper lower = truncVal sa' va' where
 f1 INV = complement
 
 f2 ADD = (+)
+f2 SUB = (-)
 f2 AND = (.&.)
 f2 XOR = xor
 f2 SLL = shiftL
@@ -412,7 +411,7 @@ num2 f (R (Val (SInt sza a))) (R (Val (SInt szb b))) =
 
 -- Streams
 
--- Insert extra spaces in between samples allowing cusom tagging
+-- Insert extra spaces in between samples allowing custom tagging
 -- (e.g. insert an enable signal in some form).
 
 upSample :: (Bool -> a -> b) -> [Int] -> [a] -> [b]

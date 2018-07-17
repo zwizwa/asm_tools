@@ -33,6 +33,9 @@ reg t f = do closeReg [t] $ \[r] -> do r' <- f r ; return ([r'], r)
 inc :: Seq m r => r S -> m (r S)
 inc c = add c 1
 
+dec :: Seq m r => r S -> m (r S)
+dec c = sub c 1
+
 counter :: Seq m r => SType -> m (r S)
 counter t = reg t inc
 
@@ -79,17 +82,28 @@ case' ((cond, whenTrue):clauses) dflt = do
 shiftReg :: Seq m r => SType -> r S -> m (r S, r S)
 shiftReg tr i = do
   closeReg [tr] $ \[r] -> do
-    r_shift <- shiftUpdate r i
+    r_shift <- shiftUpdateMSBF r i
     return $ ([r_shift], (r, r_shift))
 
 -- Inner routine is useful without feedback.
-shiftUpdate r i = do
+-- This is "natural order", or MSB first.
+shiftUpdateMSBF r i = do
   tr <- stype r
   ti <- stype i
   let SInt (Just r_bits) _ = tr
       SInt (Just i_bits) _ = ti
   r_drop  <- slice r (Just $ r_bits - i_bits) 0
   r_shift <- conc r_drop i
+  return r_shift
+
+-- Reverse order
+shiftUpdateLSBF r i = do
+  tr <- stype r
+  ti <- stype i
+  let SInt (Just r_bits) _ = tr
+      SInt (Just i_bits) _ = ti
+  r_drop  <- slice r (Just r_bits) i_bits
+  r_shift <- conc i r_drop
   return r_shift
   
 
@@ -270,7 +284,7 @@ clocked_shift t_sr@(SInt (Just nb_bits) _) (bitClock, bitVal) = do
       wc  <- n `equ` n_max
       n1  <- inc n
       n'  <- if' wc 0 n1
-      sr' <- shiftUpdate sr bitVal
+      sr' <- shiftUpdateMSBF sr bitVal
       return ([sr',n'], (wc, sr'))
   wordClock <- bitClock `band` wordClock'
   return (wordClock, wordVal)
@@ -295,25 +309,44 @@ clocked_shift t_sr@(SInt (Just nb_bits) _) (bitClock, bitVal) = do
 -- branches is needed.  Conditionals in HDL are static multiplexers. )
 
   
-async_receiver ::
+async_receiver_sample ::
   forall m r. Seq m r =>
-  SType -> r S -> m (r S)
-async_receiver t@(SInt (Just n_bits) _) i = sm where
-  sm = closeReg [bit, t, t'] update
-  t' = t_log2 t
+  Int -> r S -> m (r S)
+async_receiver_sample nb_bits i = sm where
+  sm = closeReg [bit, t] update
+  t = SInt (Just $ log2 $ nb_bits + 1) 0
   
-  update s@[is_on, n, sr] = do
+  update s@[is_on, n] = do
     n'  <- inc n
-    sr' <- shiftUpdate sr i
-    
     -- switch on when i->0
-    off <- ifs i s [1,1,0,0]
+    off <- ifs i (0:s) [0,1,0]
     on  <- cases
-           [(i `equ` 8, return [0,0,0,0])]
-           (return [1, 1, n', sr'])
+           [(n `equ` 8, return [0,0,0])]
+           (return [1, 1, n'])
 
-    (o:s'@[_,_,_]) <- ifs is_on on off
+    (o:s'@[_,_]) <- ifs is_on on off
     return (s',o)
+
+
+-- async_receiver ::
+--   forall m r. Seq m r =>
+--   SType -> r S -> m (r S)
+-- async_receiver t@(SInt (Just n_bits) _) i = sm where
+--   sm = closeReg [bit, t, t'] update
+--   t' = t_log2 t
+  
+--   update s@[is_on, n, sr] = do
+--     n'  <- inc n
+--     sr' <- shiftUpdateMSBF sr i
+    
+--     -- switch on when i->0
+--     off <- ifs i s [1,1,0,0]
+--     on  <- cases
+--            [(i `equ` 8, return [0,0,0,0])]
+--            (return [1, 1, n', sr'])
+
+--     (o:s'@[_,_,_]) <- ifs is_on on off
+--     return (s',o)
 
 
 -- FIXME: enable should probably be explicit.  If used only to slow

@@ -195,6 +195,7 @@ infx o a b = do
 
 
 f2 ADD = "+"
+f2 SUB = "-"
 f2 SLL = "<<"
 f2 SLR = ">>"
 f2 XOR = "^"

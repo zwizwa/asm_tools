@@ -19,11 +19,13 @@ qc str f = do
   
 main = do
   -- print $ toWord [1,0,0,0]
-  -- print $ toBits 4 8
-  -- print $ downSample' $ clocked_shift' 4 $ [[1,i] | i <- [1,1,1,1,0,0,0,0,0,0,0,1]]
+  -- print $ toBitList 4 8
+  -- print $ downSample' $ t_clocked_shift 4 $ [[1,i] | i <- [1,1,1,1,0,0,0,0,0,0,0,1]]
   qc "p_bits" p_bits
   qc "p_sample" p_sample
   qc "p_clocked_shift" p_clocked_shift
+  putStrLn "-- adhoc"
+  print $ map head $ t_async_receiver_sample 8 [[i] | i <- [1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1]]
 
 -- General notes.
 --
@@ -48,9 +50,9 @@ p_clocked_shift (NonNegative sub) (Positive nb_bits) ints = p1 where
 
   -- FIXME: It would be nice to have range generators
   wordSeq  = map (mask nb_bits) ints
-  bitSeq   = toBitss nb_bits wordSeq
+  bitSeq   = toBits nb_bits wordSeq
   ins      = upSample' (cycle [sub `rem` 5]) $ map (:[]) bitSeq
-  outs     = clocked_shift' nb_bits ins
+  outs     = t_clocked_shift nb_bits ins
   wordSeq' = map head $ downSample' outs
 
 
@@ -62,15 +64,15 @@ p_clocked_shift (NonNegative sub) (Positive nb_bits) ints = p1 where
 -- Defaults use "natural bit order", which places MSB on the left,
 -- which makes list form, scope display and normal digit display.
 
-toBits :: Int -> Int -> [Int]
-toBits nb_bits val = map ((.&. 1) . (shiftR val)) $ reverse [0..nb_bits-1]
-
-toBitss :: Int -> [Int] -> [Int]
-toBitss nb_bits = concat . (map $ toBits nb_bits)
+toBitList :: Int -> Int -> [Int]
+toBitList nb_bits val = map ((.&. 1) . (shiftR val)) $ reverse [0..nb_bits-1]
 
 toWord :: [Int] -> Int
 toWord bits = foldr f 0 $ reverse bits where
   f bit accu = (bit .&. 1) .|. (shiftL accu 1)
+
+toBits :: Int -> [Int] -> [Int]
+toBits nb_bits = concat . (map $ toBitList nb_bits)
 
 toWords :: Int -> [Int] -> [Int]
 toWords nb_bits = (map toWord) . (chunksOf nb_bits)
@@ -82,9 +84,9 @@ p_bits (Positive nb_bits) ints = p1 && p2  where
   p2 = bits  == bits'
 
   words  = map (mask nb_bits) ints
-  bits   = toBitss nb_bits words
+  bits   = toBits  nb_bits words
   words' = toWords nb_bits bits
-  bits'  = toBitss nb_bits words'
+  bits'  = toBits  nb_bits words'
 
 
 
@@ -120,6 +122,10 @@ trace ::
 trace inputBitSizes fm ins =
   iticks (onInts inputBitSizes fm) ins
 
-clocked_shift' nb_bits = trace [1,1] $ \[bc,bv] -> do
+t_clocked_shift nb_bits = trace [1,1] $ \[bc,bv] -> do
   (wc, wv) <- clocked_shift (SInt (Just nb_bits) 0) (bc, bv)
   return [wc, wv]
+
+t_async_receiver_sample nb_bits = trace [1] $ \[i] -> do
+  sample <- async_receiver_sample nb_bits i
+  return [sample]

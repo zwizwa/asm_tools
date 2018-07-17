@@ -152,12 +152,13 @@ inv :: forall m r. Seq m r => r S -> m (r S)
 inv = op1 INV
 
 data Op2 =
-  ADD | MUL | AND | OR | XOR | SLL | SLR
+  ADD | SUB | MUL | AND | OR | XOR | SLL | SLR
   | CONC
   | EQU
   deriving Show
 
 add  :: Seq m r => SeqOp2 m r 
+sub  :: Seq m r => SeqOp2 m r 
 mul  :: Seq m r => SeqOp2 m r
 band :: Seq m r => SeqOp2 m r
 bxor :: Seq m r => SeqOp2 m r
@@ -170,6 +171,7 @@ equ  :: Seq m r => SeqOp2 m r
 conc :: Seq m r => SeqOp2 m r
 
 add  = op2 ADD
+sub  = op2 ADD
 mul  = op2 MUL
 band = op2 AND
 bxor = op2 XOR
