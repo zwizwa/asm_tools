@@ -11,20 +11,26 @@ license: BSD3
 -- pretty-simple, text, 
 
 
-Library
-    build-depends: base, containers, mtl, free, keys, set-extra
-    build-depends: base
+-- Library
+--     build-depends: base, containers, mtl, free, keys, set-extra
+--     build-depends: base
 
-Test-Suite test-pru
-    build-depends: base, containers, mtl, free, keys
-    type:       exitcode-stdio-1.0
-    main-is:    test-pru.hs
-    build-depends: base
+-- Test-Suite test-pru
+--     build-depends: base, containers, mtl, free, keys
+--     type:       exitcode-stdio-1.0
+--     main-is:    test-pru.hs
+--     build-depends: base
 
-Test-Suite test-seq
-    build-depends: base, containers, mtl, free, keys, set-extra, template-haskell, parsec
+-- Test-Suite test-seq
+--     build-depends: base, containers, mtl, free, keys, set-extra, template-haskell, parsec, QuickCheck
+--     type:       exitcode-stdio-1.0
+--     main-is:    test-seq.hs
+--     build-depends: base
+
+Test-Suite test-qc-SeqLib.hs
+    build-depends: base, containers, mtl, free, keys, set-extra, template-haskell, parsec, QuickCheck
     type:       exitcode-stdio-1.0
-    main-is:    test-seq.hs
+    main-is:    test-qc-SeqLib.hs
     build-depends: base
 
 

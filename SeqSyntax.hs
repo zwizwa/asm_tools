@@ -1,3 +1,6 @@
+-- S-expression layer.
+-- Note: CCC might be more appropriate.
+
 module SeqSyntax where
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax

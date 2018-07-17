@@ -255,7 +255,7 @@ t_log2 _ = SInt Nothing 0
 -- enable bits as a "synchronous clock".
 
 -- For now it is ok to use partially applied pairs for this, as it
--- gives the necessary instances.
+-- gives the necessary instances.  Maybe call these "tagged streams" ?
 type Stream r = (,) r S
 
 
@@ -267,15 +267,20 @@ clocked_shift t_sr@(SInt (Just nb_bits) _) (bitClock, bitVal) = do
   (wordClock', wordVal) <-
     closeRegEn bitClock [t_sr, t_sr'] $
     \[sr,n] -> do
-      wordClock <- n `equ` n_max
-      n1 <- inc n
-      n' <- if' wordClock 0 n1
+      wc  <- n `equ` n_max
+      n1  <- inc n
+      n'  <- if' wc 0 n1
       sr' <- shiftUpdate sr bitVal
-      return ([sr',n'], (wordClock, sr'))
+      return ([sr',n'], (wc, sr'))
   wordClock <- bitClock `band` bitClock
   return (wordClock, wordVal)
 
 
+-- TEST.  Todo: how to make it possible to put a test right next to an
+-- implementation?  Maybe not a good idea as it pulls in a lot of
+-- dependencies.
+
+test_clocked_shift = ()
     
 
 

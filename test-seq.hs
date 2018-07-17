@@ -39,6 +39,7 @@
 import Seq
 import SeqLib
 import SeqSyntax
+import Names
 import qualified SeqTerm
 import qualified SeqExpr
 import qualified SeqEmu
@@ -46,6 +47,7 @@ import qualified MyHDL
 import qualified CPU
 import qualified VCD
 import qualified NetFun
+
 import Data.Map.Lazy (empty, foldrWithKey, insert)
 import qualified Data.Map.Lazy as Map
 import qualified Control.Applicative as Applicative
@@ -57,11 +59,9 @@ import Control.Monad
 import Data.List
 import Data.Key(Zip(..),zipWith)
 import Data.Typeable
-
-import Names
   
 main = do
-
+  
   putStrLn "--- test_mem_delay2"
   print $ test_mem_delay2
 

@@ -281,6 +281,7 @@ onInts typs mod ints = do
 
 
 
+
 -- Generic external state threading + conversion to/from the internal
 -- Dynamic representation.
 closeProcess :: Typeable o => (s -> M (s, o)) -> s -> M o
@@ -409,4 +410,18 @@ num2 f (R (Val (SInt sza a))) (R (Val (SInt szb b))) =
 
 
 
+-- Streams
+
+-- SeqLib.Stream: streams as values tagged with an enable signal.
+
+upSample :: [Int] -> [a] -> [(Int, a)]
+upSample = u where
+  u [] _ = []
+  u _ [] = []
+  u (t:ts) (v:vs) = (1, v):(f t) where
+    f 0 = upSample ts vs
+    f n = (0, v) : (f $ n - 1)
+
+downSample :: [(Int, a)] -> [a]
+downSample = (map snd) . (filter ((/= 0) . fst))
 
