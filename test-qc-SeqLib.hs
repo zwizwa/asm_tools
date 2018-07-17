@@ -7,21 +7,10 @@
 import Seq
 import SeqLib
 import SeqEmu
+
 import Data.Bits
 import Data.List
 import Data.List.Split
-
--- import Data.Map.Lazy (empty, foldrWithKey, insert)
--- import qualified Data.Map.Lazy as Map
--- import qualified Control.Applicative as Applicative
--- import Control.Applicative (ZipList(..))
--- import Control.Category
--- import Prelude hiding((.),id)
--- import Control.Arrow
--- import Control.Monad
--- import Data.List
--- import Data.Key(Zip(..),zipWith)
--- import Data.Typeable
 import Test.QuickCheck hiding ((.&.),(.|.))
 
 qc str f = do
@@ -29,10 +18,8 @@ qc str f = do
   quickCheck f
   
 main = do
-  print $ toWord [1,0,0,0]
-  print $ toBits 4 8
-  
-  -- putStrLn "clocked_shift'"
+  -- print $ toWord [1,0,0,0]
+  -- print $ toBits 4 8
   -- print $ downSample' $ clocked_shift' 4 $ [[1,i] | i <- [1,1,1,1,0,0,0,0,0,0,0,1]]
   qc "p_bits" p_bits
   qc "p_sample" p_sample
@@ -54,21 +41,27 @@ p_sample spec = seq == seq' where
 
 
 -- Behavioral tests for SeqLib functions.
-p_clocked_shift :: Positive Int -> [Int] -> Bool
-p_clocked_shift (Positive nb_bits) ints = p1 where
+p_clocked_shift :: NonNegative Int -> Positive Int -> [Int] -> Bool
+p_clocked_shift (NonNegative sub) (Positive nb_bits) ints = p1 where
 
   p1 = wordSeq == wordSeq'
 
+  -- FIXME: It would be nice to have range generators
   wordSeq  = map (mask nb_bits) ints
   bitSeq   = toBitss nb_bits wordSeq
-
-  ins      = [[1,i] | i<-bitSeq] -- don't oversample yet
+  ins      = upSample' (cycle [sub `rem` 5]) $ map (:[]) bitSeq
   outs     = clocked_shift' nb_bits ins
   wordSeq' = map head $ downSample' outs
 
-  
+
+
+
 
 -- Tools
+
+-- Defaults use "natural bit order", which places MSB on the left,
+-- which makes list form, scope display and normal digit display.
+
 toBits :: Int -> Int -> [Int]
 toBits nb_bits val = map ((.&. 1) . (shiftR val)) $ reverse [0..nb_bits-1]
 
@@ -93,9 +86,6 @@ p_bits (Positive nb_bits) ints = p1 && p2  where
   words' = toWords nb_bits bits
   bits'  = toBitss nb_bits words'
 
--- Defaults use "natural order", which places MSB on the left, which
--- makes list form, scope display and normal digit display.  This is
--- the same order as SPI, but the reverse of UART.
 
 
 
@@ -113,7 +103,7 @@ mask nb_bits v = v .&. msk where
 -- pushing/poping the enable bit to/from the bus list.
 
 upSample' :: [Int] -> [[Int]] -> [[Int]]
-upSample' is = upSample en is where
+upSample' spaces = upSample en spaces where
   en True  a = (1:a)
   en False a = (0:a)
 
