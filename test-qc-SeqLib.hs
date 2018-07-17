@@ -30,7 +30,7 @@ qc str f = do
   
 main = do
   putStrLn "clocked_shift'"
-  print $ clocked_shift' 4 $ [[1,i] | i <- [1,1,1,1,0,0,0,0]]
+  print $ downSample' $ clocked_shift' 4 $ [[1,i] | i <- [1,1,1,1,0,0,0,0,0,0,0,1]]
   qc "p_bits" p_bits
   qc "p_sample" p_sample
   -- qc "p_clocked_shift" p_clocked_shift
@@ -46,27 +46,29 @@ main = do
 p_sample :: [(NonNegative Int, Int)] -> Bool
 p_sample spec = seq == seq' where
   spaces = map (getNonNegative . fst) spec
-  seq    = map snd spec
-  seq'   = downSample $ upSample spaces seq
+  seq    = map ((:[]) . snd) spec
+  seq'   = downSample' $ upSample' spaces seq
 
 
 -- Behavioral tests for SeqLib functions.
 p_clocked_shift :: Positive Int -> [(NonNegative Int, Int)] -> Bool
 p_clocked_shift (Positive nb_bits) spec = p1 where
+
+  p1 = True
   
-  p1 = wordSeq == wordSeq'
+  -- p1 = wordSeq == wordSeq'
 
-  spaces  = map (getNonNegative . fst) spec
-  spaces' = concat $ replicate nb_bits spaces
-  wordSeq = map ((mask nb_bits) . snd) spec
+  -- spaces  = map (getNonNegative . fst) spec
+  -- spaces' = concat $ replicate nb_bits spaces
+  -- wordSeq = map ((mask nb_bits) . snd) spec
 
-  bitSeq   = toBitss nb_bits wordSeq
-  ins      = upSample spaces' bitSeq
-  outs     = f ins
-  wordSeq' = downSample outs
+  -- bitSeq   = toBitss nb_bits wordSeq
+  -- ins      = upSample' spaces' bitSeq
+  -- outs     = f ins
+  -- wordSeq' = downSample' outs
 
-  -- test for the test
-  f = (upSample $ cycle [1]) . (toWords nb_bits) . downSample
+  -- -- test for the test
+  -- f = (upSample' $ cycle [1]) . (toWords nb_bits) . downSample'
   
 
 -- Tools
@@ -96,17 +98,32 @@ mask nb_bits v = v .&. msk where
   msk = (1 `shiftL` nb_bits) - 1
 
 
+-- Bus sequences.
+
+-- To keep things simple, use lists for all input/output busses.  In
+-- that setting, subsampled signals are simplest to represent by
+-- pushing/poping the enable bit to/from the bus list.
+
+upSample' :: [Int] -> [[Int]] -> [[Int]]
+upSample' is = upSample f is where
+  f True  a = (1:a)
+  f False a = (0:a)
+
+downSample' :: [[Int]] -> [[Int]]
+downSample' = downSample f where
+  f (1:a) = Just a
+  f (0:a) = Nothing
+
+
+
 -- onInts wrappers for SUTs
---
--- To keep things simple, use lists for all input/output busses.  The
--- wrappers below contain type specs for inputs.
 trace ::
   [Int]
   -> ([SeqEmu.R S] -> SeqEmu.M [SeqEmu.R S])
   -> [[Int]]
   -> [[Int]]
-trace typs fm ins =
-  iticks (onInts typs fm) ins
+trace inputBitSizes fm ins =
+  iticks (onInts inputBitSizes fm) ins
 
 clocked_shift' nb_bits = trace [1,1] $ \[bc,bv] -> do
   (wc, wv) <- clocked_shift (SInt (Just nb_bits) 0) (bc, bv)

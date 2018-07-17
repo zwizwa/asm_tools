@@ -414,14 +414,18 @@ num2 f (R (Val (SInt sza a))) (R (Val (SInt szb b))) =
 
 -- SeqLib.Stream: streams as values tagged with an enable signal.
 
-upSample :: [Int] -> [a] -> [(Int, a)]
-upSample = u where
+-- Insert extra spaces in between samples allowing cusom tagging
+-- (e.g. insert an enable signal in some form).
+
+upSample :: (Bool -> a -> b) -> [Int] -> [a] -> [b]
+upSample en = u where
   u [] _ = []
   u _ [] = []
-  u (t:ts) (v:vs) = (1, v):(f t) where
-    f 0 = upSample ts vs
-    f n = (0, v) : (f $ n - 1)
+  u (e:es) (a:as) = (en True a) : (f e) where
+    f 0 = u es as
+    f n = (en False a) : (f $ n - 1)
 
-downSample :: [(Int, a)] -> [a]
-downSample = (map snd) . (filter ((/= 0) . fst))
+downSample :: (a -> Maybe b) -> [a] -> [b]
+downSample sample = catMaybes . (map sample)
+
 
