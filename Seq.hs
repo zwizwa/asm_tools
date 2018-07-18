@@ -171,7 +171,7 @@ equ  :: Seq m r => SeqOp2 m r
 conc :: Seq m r => SeqOp2 m r
 
 add  = op2 ADD
-sub  = op2 ADD
+sub  = op2 SUB
 mul  = op2 MUL
 band = op2 AND
 bxor = op2 XOR

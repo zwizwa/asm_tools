@@ -67,15 +67,6 @@ sync :: Seq m r => SType -> r S -> m (r S)
 sync t i = do
   reg t $ sync' (constant t) i
 
--- Note: we only support the combinatorial (dual-clause) if.
-case' :: Seq m r => [(m (r S), m (r S))] -> m (r S) -> m (r S)
-case' [] dflt = dflt
-case' ((cond, whenTrue):clauses) dflt = do
-  c <- cond
-  t <- whenTrue
-  f <- case' clauses dflt
-  if' c t f
-  
 
 -- Shift register in terms of slice + conc.
 -- Return old and new for max flex.
@@ -223,11 +214,14 @@ instance Seq m r => Num (m (r S)) where
 
 
 
--- Note that Seq does not support "imperative" conditionals.  To
+-- Note that Seq does not support "imperative" conditionals, which are
+-- used in MyHDL to conditionally assign multiple signals.  To
 -- implement this kind of behavior, use a Traversable Zip container
 -- (e.g. []).  This make the parallel muxing behavior explicit.
 
-ifs :: (Seq m r, Traversable f, Zip f) => r S -> f (r S) -> f (r S) -> m (f (r S))
+ifs ::
+  (Seq m r, Traversable f, Zip f) =>
+  r S -> f (r S) -> f (r S) -> m (f (r S))
 ifs c t f = sequence $ zipWith (if' c) t f
 
 -- This makes me think that case statements might be implemented as
@@ -235,18 +229,25 @@ ifs c t f = sequence $ zipWith (if' c) t f
 -- for the synthesizer to recover the structure?  e.g. MyHDL does
 -- perform some magic for "case" statements I believe.
 
--- Fixme: implement case' in terms of the more general cases.
-cases ::
+-- Fixme: implement case' in terms of the more general cond.
+cond ::
   (Seq m r, Traversable f, Zip f)
   => [(m (r S), m (f (r S)))]
   -> m (f (r S))
   -> m (f (r S))
-cases [] dflt = dflt
-cases ((cond, whenTrue):clauses) dflt = do
-  c <- cond
+cond [] dflt = dflt
+cond ((mcond, whenTrue):clauses) dflt = do
+  c <- mcond
   t <- whenTrue
-  f <- cases clauses dflt
+  f <- cond clauses dflt
   ifs c t f
+
+
+switch :: Seq m r => r S -> [(r S, m [r S])] -> m [r S] -> m [r S]
+switch state clauses dflt = cond (map f clauses) dflt where
+  f (state', m) = (state `equ` state', m)
+
+
 
 
 log2 i = f 0 where
@@ -308,24 +309,83 @@ clocked_shift t_sr@(SInt (Just nb_bits) _) (bitClock, bitVal) = do
 -- "save work".  For this an instruction sequencer with conditional
 -- branches is needed.  Conditionals in HDL are static multiplexers. )
 
-  
-async_receiver_sample ::
-  forall m r. Seq m r =>
-  Int -> r S -> m (r S)
-async_receiver_sample nb_bits i = sm where
-  sm = closeReg [bit, t] update
-  t = SInt (Just $ log2 $ nb_bits + 1) 0
-  
-  update s@[is_on, n] = do
-    n'  <- inc n
-    -- switch on when i->0
-    off <- ifs i (0:s) [0,1,0]
-    on  <- cases
-           [(n `equ` 8, return [0,0,0])]
-           (return [1, 1, n'])
 
-    (o:s'@[_,_]) <- ifs is_on on off
-    return (s',o)
+-- If only a single UART is needed, it makes sense to associate a
+-- single baud rate counter.  If many are needed, it's possible to
+-- save some register bits by deriving from a shared clock.  How many
+-- bits if internal resolution are needed in that case?  Assume the
+-- rate is accurate enough.  What about the phase?
+
+
+-- Debug version.  Outputs internal state.  
+d_async_receiver_sample ::
+  forall m r. Seq m r =>
+  Int -> r S -> m [r S]
+d_async_receiver_sample nb_bits rx = sm where
+  [idle, start, bits, stop] = [0,1,2,3] :: [r S]
+
+  half_bit =  3 :: r S
+  one_bit  =  7 :: r S
+  all_bits = 63 :: r S
+
+  t_state = SInt (Just 2) 0  -- state
+  t_count = SInt (Just 6) 0  -- sub-bit counter
+
+  sm :: m [r S]
+  sm = closeReg [t_state,t_count] update
+
+  -- reg: sub-bit counter
+  -- reg: bit counter
+
+  -- FIXME: optimize don't care to make update equation similar, then
+  -- hoist out of state machine.
+
+  update :: [r S] -> m ([r S], [r S])
+  update [state, count] = do
+    -- Subcircuits hoisted out of conditional.
+    count1   <- dec count
+    phase    <- slice count (Just 3) 0
+    countz   <- count `equ` 0
+    bitClock <- phase `equ` 0
+    
+    (bc:wc:regs') <- switch state [
+      (idle,  do
+          state' <- if' rx idle start
+          -- skip half a bit to sample mid-bit
+          return [0, 0, state', half_bit]),
+      (start, do
+          -- skip start bit
+          [state', count'] <- ifs countz [bits, all_bits] [state, count1]
+          return [0, 0, state', count']),
+      (bits,  do
+          -- send out bit clock mid-bit
+          [state', count'] <- ifs countz [stop, one_bit] [state, count1]
+          return [bitClock, 0, state', count']),
+      (stop,  do
+          -- only send out the word clock if stop bit is 1
+          wordClock <- bitClock `band` rx
+          [state', count'] <- ifs countz [idle, 0] [state, count1]
+          return [0, wordClock, state', count'])]
+      -- FIXME: not reached.  How to express mutex states?
+      (return [0, 0,0,0])
+      
+    return (regs', rx:bc:wc:regs')
+
+async_receiver_sample nb_bits rx = do
+  (_:bc:wc:_) <- d_async_receiver_sample nb_bits rx
+  return (bc,wc)
+
+
+  -- update s@[is_on, n] = do
+  --   n'  <- inc n
+  --   -- switch on when i->0
+  --   off <- ifs i (0:s) [0,1,0]
+  --   on  <- cond
+  --          [(n `equ` 8, return [0,0,0])]
+  --          (return [1, 1, n'])
+
+  --   (o:s'@[_,_]) <- ifs is_on on off
+  --   return (s',o)
 
 
 -- async_receiver ::
@@ -341,7 +401,7 @@ async_receiver_sample nb_bits i = sm where
     
 --     -- switch on when i->0
 --     off <- ifs i s [1,1,0,0]
---     on  <- cases
+--     on  <- cond
 --            [(i `equ` 8, return [0,0,0,0])]
 --            (return [1, 1, n', sr'])
 
