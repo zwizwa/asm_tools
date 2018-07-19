@@ -102,6 +102,12 @@ type InitVal = Int
 -- pure.  This does not impose a limitation on what can be expressed,
 -- only how it can be expressed.
 
+-- Monads and macros
+
+-- Note that the RTL language itself is less powerful than a Monad,
+-- i.e. the structure of computation is constant.  However, the
+-- metalanguage can take a different path based on values.  I.e. it is
+-- a macro language.  FIXME: Solidify this in an Applicative structure?
 
 
 class (Monad m, Num (r S)) => Seq m r | r -> m, m -> r where

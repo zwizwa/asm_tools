@@ -69,33 +69,28 @@ sync t i = do
 
 
 -- Shift register in terms of slice + conc.
-shiftReg :: Seq m r => SType -> r S -> m (r S)
-shiftReg tr i = do
+shiftReg :: Seq m r => ShiftDir -> SType -> r S -> m (r S)
+shiftReg dir tr i = do
   closeReg [tr] $ \[r] -> do
-    r_shift <- shiftUpdateMSBF r i
+    r_shift <- shiftUpdate dir r i
     return $ ([r_shift], r)
+
+data ShiftDir = ShiftLeft | ShiftRight
 
 -- Inner routine is useful without feedback.
 -- This is "natural order", or MSB first.
-shiftUpdateMSBF r i = do
+shiftUpdate dir r i = do
   tr <- stype r
   ti <- stype i
   let SInt (Just r_bits) _ = tr
       SInt (Just i_bits) _ = ti
-  r_drop  <- slice r (Just $ r_bits - i_bits) 0
-  r_shift <- conc r_drop i
-  return r_shift
-
--- Reverse order
-shiftUpdateLSBF r i = do
-  tr <- stype r
-  ti <- stype i
-  let SInt (Just r_bits) _ = tr
-      SInt (Just i_bits) _ = ti
-  r_drop  <- slice r (Just r_bits) i_bits
-  r_shift <- conc i r_drop
-  return r_shift
-  
+  case dir of
+    ShiftLeft -> do
+      r_drop <- slice r (Just $ r_bits - i_bits) 0
+      conc r_drop i
+    ShiftRight -> do
+      r_drop  <- slice r (Just r_bits) i_bits
+      conc i r_drop
 
 
 integral :: Seq m r => r S -> m (r S)
@@ -275,8 +270,8 @@ type Stream r = (,) r S
 
 
 -- Building block for converting bit streams to word streams.
-clocked_shift :: Seq m r => SType -> (r S, r S) -> m (r S, r S)
-clocked_shift t_sr@(SInt (Just nb_bits) _) (bitClock, bitVal) = do
+clocked_shift :: Seq m r => ShiftDir -> SType -> (r S, r S) -> m (r S, r S)
+clocked_shift dir t_sr@(SInt (Just nb_bits) _) (bitClock, bitVal) = do
   let t_sr' = t_log2 t_sr
       n_max = constant $ SInt Nothing $ nb_bits - 1
   (wordClock', wordVal) <-
@@ -285,7 +280,7 @@ clocked_shift t_sr@(SInt (Just nb_bits) _) (bitClock, bitVal) = do
       wc  <- n `equ` n_max
       n1  <- inc n
       n'  <- if' wc 0 n1
-      sr' <- shiftUpdateMSBF sr bitVal
+      sr' <- shiftUpdate dir sr bitVal
       return ([sr',n'], (wc, sr'))
   wordClock <- bitClock `band` wordClock'
   return (wordClock, wordVal)
@@ -371,21 +366,18 @@ d_async_receiver_sample nb_data_bits rx = sm where
       
     return (regs', rx:bc:wc:regs')
 
-async_receiver_sample nb_bits rx = do
-  (_:bc:wc:_) <- d_async_receiver_sample nb_bits rx
-  return (bc,wc)
+-- async_receiver_sample nb_bits rx = do
+--   (_:bc:wc:_) <- d_async_receiver_sample nb_bits rx
+--   return (bc,wc)
 
 
-
-
-async_receiver nb_bits i = do
-  (bc,wc) <- async_receiver_sample nb_bits i
-  sr <- withEnable bc $ shiftReg (bits nb_bits) i
-  return (wc,sr)
 
 d_async_receiver nb_bits i = do
   regs@(_:bc:wc:_) <- d_async_receiver_sample nb_bits i
-  sr <- withEnable bc $ shiftReg (bits nb_bits) i
+  sr <- withEnable bc $ shiftReg ShiftRight (bits nb_bits) i
   return (sr:regs)
 
+async_receiver nb_bits i = do
+  (sr:_:_:wc:_) <- d_async_receiver nb_bits i
+  return (wc,sr)
   

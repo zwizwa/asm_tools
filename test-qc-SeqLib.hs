@@ -77,7 +77,7 @@ p_clocked_shift (NonNegative sub) (Positive nb_bits) ints = p1 where
 
 t_clocked_shift :: Int -> [[Int]] -> [[Int]]
 t_clocked_shift nb_bits = trace [1,1] $ \[bc,bv] -> do
-  (wc, wv) <- clocked_shift (SInt (Just nb_bits) 0) (bc, bv)
+  (wc, wv) <- clocked_shift ShiftLeft (SInt (Just nb_bits) 0) (bc, bv)
   return [wc, wv]
 
 
@@ -149,7 +149,7 @@ mask nb_bits v = v .&. msk where
 uartBits :: Int -> [Int] -> [Int] 
 uartBits n str = samps where
   bits = concat $ map toBits str
-  toBits w = [1,0] ++ (toBitList n w) ++ [1,1]
+  toBits w = [1,0] ++ (reverse $ toBitList n w) ++ [1,1]
   samps = upSample (\_ a -> a) (cycle [n-1]) bits
 
 -- Bus sequences.

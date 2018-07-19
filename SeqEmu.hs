@@ -180,7 +180,7 @@ conc' (SInt _ va) (SInt (Just szb) vb) = (shiftL va szb) .|. vb
 sliceVal :: SType -> Maybe Int -> Int -> Signal
 sliceVal (SInt sa va) upper lower = truncVal sa' va' where
   va' = shiftR va lower
-  sa'= fmap (lower +) upper
+  sa'= fmap (+ (-lower)) upper
 
 f1 INV = complement
 
