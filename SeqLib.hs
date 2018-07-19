@@ -374,7 +374,7 @@ d_async_receiver_sample nb_data_bits rx = sm where
 
 d_async_receiver nb_bits i = do
   regs@(_:bc:wc:_) <- d_async_receiver_sample nb_bits i
-  sr <- withEnable bc $ shiftReg ShiftRight (bits nb_bits) i
+  sr <- withClockEnable bc $ shiftReg ShiftRight (bits nb_bits) i
   return (sr:regs)
 
 async_receiver nb_bits i = do

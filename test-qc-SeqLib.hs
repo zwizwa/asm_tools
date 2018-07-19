@@ -33,9 +33,31 @@ import Data.List
 import Data.List.Split
 import Test.QuickCheck hiding ((.&.),(.|.))
 
+
+main = do
+
+  -- print $ toWord [1,0,0,0]
+  -- print $ toBitList 4 8
+  -- print $ downSample' $ t_clocked_shift 4 $ [[1,i] | i <- [1,1,1,1,0,0,0,0,0,0,0,1]]
+  qc "p_bits0" p_bits0
+  qc "p_bits1" p_bits1
+  qc "p_sample" p_sample
+  qc "p_clocked_shift" p_clocked_shift
+  qc "p_async_receiver" p_async_receiver
+  -- x_async_receiver_sample
+  x_async_receiver
+
+
+
+
+
 qc str f = do
   putStrLn $ "-- " ++ str
   quickCheck f
+
+qc' str f = do
+  putStrLn $ "-- " ++ str
+  verboseCheck f
 
 printL l = sequence $ map print l
 printC l = sequence $ zipWith f l [0..] where
@@ -43,16 +65,6 @@ printC l = sequence $ zipWith f l [0..] where
     putStrLn $ "-- " ++ show n
     printL l'
   
-main = do
-  -- print $ toWord [1,0,0,0]
-  -- print $ toBitList 4 8
-  -- print $ downSample' $ t_clocked_shift 4 $ [[1,i] | i <- [1,1,1,1,0,0,0,0,0,0,0,1]]
-  qc "p_bits" p_bits
-  qc "p_sample" p_sample
-  qc "p_clocked_shift" p_clocked_shift
-  -- x_async_receiver_sample
-  x_async_receiver
-
 
 -- FIXME: Make better generators for fixed bit size sequences.
 
@@ -64,16 +76,17 @@ main = do
 
 -- clocked_shift
 
-p_clocked_shift :: NonNegative Int -> Positive Int -> [Int] -> Bool
-p_clocked_shift (NonNegative sub) (Positive nb_bits) ints = p1 where
 
-  p1 = wordSeq == wordSeq'
-
-  wordSeq  = map (mask nb_bits) ints
-  bitSeq   = toBits nb_bits wordSeq
-  ins      = upSample' (cycle [sub `rem` 5]) $ map (:[]) bitSeq
-  outs     = t_clocked_shift nb_bits ins
-  wordSeq' = map head $ downSample' outs
+p_clocked_shift = forAll vars pred where
+  vars = do
+    sub <- choose (0,7)
+    wl  <- wordList
+    return (sub, wl)
+  pred (sub, (nb_bits, words)) = words == words' where
+    bits   = toBits nb_bits words
+    ins    = upSample' (cycle [sub]) $ map (:[]) bits
+    outs   = t_clocked_shift nb_bits ins
+    words' = map head $ downSample' outs
 
 t_clocked_shift :: Int -> [[Int]] -> [[Int]]
 t_clocked_shift nb_bits = trace [1,1] $ \[bc,bv] -> do
@@ -107,7 +120,18 @@ x_async_receiver = do
     out' = downSample sample out
   -- printC $ chunksOf 8 out
   print $ out'
+
+p_async_receiver = forAll (listOf $ word 8) pred where
+  pred words = words == words' where
+    ins    = map (:[]) $ uartBits oversample words
+    outs   = t_async_receiver nb_bits $ ins
+    words' = downSample sample outs
+    sample [v,i,bc,wc@1,state,count] = Just v
+    sample _ = Nothing
   
+  oversample = 8
+  nb_bits = 8
+
 
 
 
@@ -147,10 +171,10 @@ mask nb_bits v = v .&. msk where
   msk = (1 `shiftL` nb_bits) - 1
 
 uartBits :: Int -> [Int] -> [Int] 
-uartBits n str = samps where
+uartBits oversample str = samps where
   bits = concat $ map toBits str
-  toBits w = [1,0] ++ (reverse $ toBitList n w) ++ [1,1]
-  samps = upSample (\_ a -> a) (cycle [n-1]) bits
+  toBits w = [1,0] ++ (reverse $ toBitList 8 w) ++ [1,1]
+  samps = upSample (\_ a -> a) (cycle [oversample-1]) bits
 
 -- Bus sequences.
 
@@ -178,6 +202,16 @@ trace inputBitSizes fm ins =
   iticks (onInts inputBitSizes fm) ins
 
 
+word :: Int -> Gen Int
+word nb_bits = arbitrary >>= return . (mask nb_bits)
+
+wordList :: Gen (Int,[Int])
+wordList = do
+  nb_bits <- choose (1,16)
+  lst <- listOf $ word nb_bits
+  return (nb_bits, lst)
+
+
 
 
 -- Tools tests
@@ -190,16 +224,21 @@ p_sample spec = seq == seq' where
   seq    = map ((:[]) . snd) spec
   seq'   = downSample' $ upSample' spaces seq
 
-
-p_bits :: Positive Int -> [Int] -> Bool
-p_bits (Positive nb_bits) ints = p1 && p2  where
+p_bits0 = forAll wordList p where
+  p (nb_bits, words) = p1 && p2 where
+    
+    p1 = words == words'
+    p2 = bits  == bits'
   
-  p1 = words == words'
-  p2 = bits  == bits'
+    bits   = toBits  nb_bits words
+    words' = toWords nb_bits bits
+    bits'  = toBits  nb_bits words'
 
-  words  = map (mask nb_bits) ints
-  bits   = toBits  nb_bits words
-  words' = toWords nb_bits bits
-  bits'  = toBits  nb_bits words'
-
-
+p_bits1 :: (Positive Int) -> Property
+p_bits1 (Positive nb_bits) = p' where
+  p' = forAll (word nb_bits) p
+  p w = w == w' where
+    w' = toWord $ toBitList nb_bits w
+  
+  
+  
