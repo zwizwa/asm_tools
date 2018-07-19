@@ -69,12 +69,11 @@ sync t i = do
 
 
 -- Shift register in terms of slice + conc.
--- Return old and new for max flex.
-shiftReg :: Seq m r => SType -> r S -> m (r S, r S)
+shiftReg :: Seq m r => SType -> r S -> m (r S)
 shiftReg tr i = do
   closeReg [tr] $ \[r] -> do
     r_shift <- shiftUpdateMSBF r i
-    return $ ([r_shift], (r, r_shift))
+    return $ ([r_shift], r)
 
 -- Inner routine is useful without feedback.
 -- This is "natural order", or MSB first.
@@ -214,6 +213,7 @@ instance Seq m r => Num (m (r S)) where
 
 
 
+
 -- Note that Seq does not support "imperative" conditionals, which are
 -- used in MyHDL to conditionally assign multiple signals.  To
 -- implement this kind of behavior, use a Traversable Zip container
@@ -317,11 +317,17 @@ clocked_shift t_sr@(SInt (Just nb_bits) _) (bitClock, bitVal) = do
 -- rate is accurate enough.  What about the phase?
 
 
--- Debug version.  Outputs internal state.  
+-- Debug version.  Outputs internal state.
 d_async_receiver_sample ::
   forall m r. Seq m r =>
   Int -> r S -> m [r S]
-d_async_receiver_sample nb_bits rx = sm where
+d_async_receiver_sample nb_data_bits rx = sm where
+
+  -- FIXME: parameterize
+  -- data_count_bits = log2 nb_data_bits
+  -- oversample_count_bits = 3 :: Int --  8x oversampling
+  -- oversample = 2 ^ oversample_count_bits
+  
   [idle, start, bits, stop] = [0,1,2,3] :: [r S]
 
   half_bit =  3 :: r S
@@ -333,12 +339,6 @@ d_async_receiver_sample nb_bits rx = sm where
 
   sm :: m [r S]
   sm = closeReg [t_state,t_count] update
-
-  -- reg: sub-bit counter
-  -- reg: bit counter
-
-  -- FIXME: optimize don't care to make update equation similar, then
-  -- hoist out of state machine.
 
   update :: [r S] -> m ([r S], [r S])
   update [state, count] = do
@@ -367,7 +367,7 @@ d_async_receiver_sample nb_bits rx = sm where
           [state', count'] <- ifs countz [idle, 0] [state, count1]
           return [0, wordClock, state', count'])]
       -- FIXME: not reached.  How to express mutex states?
-      (return [0, 0,0,0])
+      (return [0, 0, 0, 0])
       
     return (regs', rx:bc:wc:regs')
 
@@ -376,54 +376,16 @@ async_receiver_sample nb_bits rx = do
   return (bc,wc)
 
 
-  -- update s@[is_on, n] = do
-  --   n'  <- inc n
-  --   -- switch on when i->0
-  --   off <- ifs i (0:s) [0,1,0]
-  --   on  <- cond
-  --          [(n `equ` 8, return [0,0,0])]
-  --          (return [1, 1, n'])
-
-  --   (o:s'@[_,_]) <- ifs is_on on off
-  --   return (s',o)
 
 
--- async_receiver ::
---   forall m r. Seq m r =>
---   SType -> r S -> m (r S)
--- async_receiver t@(SInt (Just n_bits) _) i = sm where
---   sm = closeReg [bit, t, t'] update
---   t' = t_log2 t
+async_receiver nb_bits i = do
+  (bc,wc) <- async_receiver_sample nb_bits i
+  sr <- withEnable bc $ shiftReg (bits nb_bits) i
+  return (wc,sr)
+
+d_async_receiver nb_bits i = do
+  regs@(_:bc:wc:_) <- d_async_receiver_sample nb_bits i
+  sr <- withEnable bc $ shiftReg (bits nb_bits) i
+  return (sr:regs)
+
   
---   update s@[is_on, n, sr] = do
---     n'  <- inc n
---     sr' <- shiftUpdateMSBF sr i
-    
---     -- switch on when i->0
---     off <- ifs i s [1,1,0,0]
---     on  <- cond
---            [(i `equ` 8, return [0,0,0,0])]
---            (return [1, 1, n', sr'])
-
---     (o:s'@[_,_,_]) <- ifs is_on on off
---     return (s',o)
-
-
--- FIXME: enable should probably be explicit.  If used only to slow
--- things down, the output strobes will not be 1-bit width.  A simple
--- way to fix that is to encode strobes as alternations.
-
--- Still not really done with figuring out how to decompose this.  But
--- it is clear that the hard part is "controllers", "sequencers":
--- decompose a circuit into basic building blocks, and the network
--- that controls the enables, strobes, muxes, etc..
-
-
-
-
-
-
-
-
-
-

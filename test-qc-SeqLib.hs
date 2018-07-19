@@ -14,7 +14,7 @@
 --   out a human-readable report about how the function is performing.
 --
 -- . Once this works, generalize the example into property tests (p_)
---   to add test coverage.
+--   to add test coverage, and comment out the verbose example.
 
 
 {-# LANGUAGE NoMonomorphismRestriction #-}
@@ -27,6 +27,7 @@ import Seq
 import SeqLib
 import SeqEmu
 
+import Data.Char
 import Data.Bits
 import Data.List
 import Data.List.Split
@@ -49,7 +50,8 @@ main = do
   qc "p_bits" p_bits
   qc "p_sample" p_sample
   qc "p_clocked_shift" p_clocked_shift
-  x_async_receiver_sample
+  -- x_async_receiver_sample
+  x_async_receiver
 
 
 -- FIXME: Make better generators for fixed bit size sequences.
@@ -91,6 +93,22 @@ x_async_receiver_sample = do
   printC $ chunksOf 8 $ t_async_receiver_sample 8
     [[i] | i <- rle (1,[8,8*9,8])]
 
+t_async_receiver nb_bits = trace [1] $ \[i] ->
+  d_async_receiver nb_bits i
+
+x_async_receiver = do
+  putStrLn "-- x_async_receiver"
+  let
+    -- ins = map ord "ABCDEF"
+    ins = [0,7..255]
+    out = t_async_receiver 8 $ map (:[]) $ uartBits 8 ins
+    sample [v,i,bc,wc@1,state,count] = Just v
+    sample _ = Nothing
+    out' = downSample sample out
+  -- printC $ chunksOf 8 out
+  print $ out'
+  
+
 
 
 
@@ -125,10 +143,14 @@ rle (val,ns) = f (int2bool val) ns where
   f _ [] = []
   f v (n:ns) = (replicate n $ bool2int v) ++ f (not v) ns
 
-
 mask nb_bits v = v .&. msk where
   msk = (1 `shiftL` nb_bits) - 1
 
+uartBits :: Int -> [Int] -> [Int] 
+uartBits n str = samps where
+  bits = concat $ map toBits str
+  toBits w = [1,0] ++ (toBitList n w) ++ [1,1]
+  samps = upSample (\_ a -> a) (cycle [n-1]) bits
 
 -- Bus sequences.
 

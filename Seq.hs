@@ -200,7 +200,8 @@ initEnv = const Nothing
 
 -- Seq uses local context for
 data EnvVar =
-  Enable -- the "time base" of the local state machines.
+  Enable |       -- the "time base" of the local state machines.
+  EnvVar String  -- for extensions
   deriving Show
 
 
@@ -261,6 +262,14 @@ nextEnable r v = do
       next r v
     Just en' ->
       nextIf en' r v
+
+-- Note that when using clock enables, it is important to only ever
+-- use the outputs of the register, and not the input combinatorial
+-- networks!
+withEnable val m = do
+  let f _ Enable = Just val
+      f env var = env var
+  withEnv f m
 
 nextIf :: forall m r. Seq m r => r S -> r S -> r S -> m ()
 nextIf en r v = do
