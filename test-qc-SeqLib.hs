@@ -32,6 +32,7 @@ import Data.Bits
 import Data.List
 import Data.List.Split
 import Test.QuickCheck hiding ((.&.),(.|.))
+import Test.QuickCheck.Gen hiding (bitSize, getLine)
 
 
 main = do
@@ -79,7 +80,7 @@ printC l = sequence $ zipWith f l [0..] where
 
 p_clocked_shift = forAll vars pred where
   vars = do
-    sub <- choose (0,7)
+    sub <- choose (1,8)
     wl  <- wordList
     return (sub, wl)
   pred (sub, (nb_bits, words)) = words == words' where
@@ -174,7 +175,7 @@ uartBits :: Int -> [Int] -> [Int]
 uartBits oversample str = samps where
   bits = concat $ map toBits str
   toBits w = [1,0] ++ (reverse $ toBitList 8 w) ++ [1,1]
-  samps = upSample (\_ a -> a) (cycle [oversample-1]) bits
+  samps = upSample (\_ a -> a) (cycle [oversample]) bits
 
 -- Bus sequences.
 
@@ -218,11 +219,15 @@ wordList = do
 
 -- downSample is left inverse of upSample
 -- Test this separately as it is used in other tests.
-p_sample :: [(NonNegative Int, Int)] -> Bool
-p_sample spec = seq == seq' where
-  spaces = map (getNonNegative . fst) spec
-  seq    = map ((:[]) . snd) spec
-  seq'   = downSample' $ upSample' spaces seq
+p_sample = forAll vars pred where
+  vars = sized $ \n -> do
+    spaces <- vectorOf n $ choose (1,8)
+    seq    <- vectorOf n $ arbitrary
+    return (spaces, seq)
+  pred (spaces, seq) = seq == seq' where
+    seq' = downSample' $ upSample' spaces seq
+
+
 
 p_bits0 = forAll wordList p where
   p (nb_bits, words) = p1 && p2 where

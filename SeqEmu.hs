@@ -416,7 +416,8 @@ num2 f (R (Val (SInt sza a))) (R (Val (SInt szb b))) =
 
 upSample :: (Bool -> a -> b) -> [Int] -> [a] -> [b]
 upSample en spaces as = concat $ zipWith dup spaces as where
-  dup n a = (en True a) : (map (en False) $ replicate n a)
+  dup 0 _ = []
+  dup n a = (en True a) : (map (en False) $ replicate (n-1) a)
 
 downSample :: (b -> Maybe a) -> [b] -> [a]
 downSample sel = catMaybes . (map sel)
