@@ -73,6 +73,7 @@ main = do
   x_sync
   x_mem
   x_mem2
+  x_mem_term
   x_counter_term
   x_hdl
   x_hdl_sync
@@ -160,7 +161,10 @@ t_mem = trace' m  where
   m = closeMem ([t]) dummy_mem
 x_mem = do
   putStrLn "--- x_mem"
-  print $ take 10 $ t_mem
+
+x_mem_term = do
+  putStrLn "--- x_mem_term"
+  printSeqTerm $ closeMem ([bit]) dummy_mem
 
 
 -- After thinking a bit, I want this interface:
