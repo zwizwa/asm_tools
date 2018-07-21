@@ -41,16 +41,15 @@ main = do
   -- print $ toBitList 4 8
   -- print $ downSample' $ t_clocked_shift 4 $ [[1,i] | i <- [1,1,1,1,0,0,0,0,0,0,0,1]]
 
-  -- qc "p_bits" p_bits
-  -- qc "p_sample" p_sample
-  -- qc "p_clocked_shift" p_clocked_shift
-  -- qc "p_async_receiver" p_async_receiver
-  -- -- x_async_receiver_sample
-  -- x_async_receiver
+  qc "p_bits" p_bits
+  qc "p_sample" p_sample
+  qc "p_clocked_shift" p_clocked_shift
+  qc "p_async_receiver" p_async_receiver
+  -- x_async_receiver_sample
+  x_async_receiver
 
-  -- x_mem
-  -- x_fifo
-  x_mem_bad
+  x_mem
+  x_fifo
 
 
 
@@ -136,8 +135,20 @@ p_async_receiver = forAll (listOf $ word 8) pred where
   nb_bits = 8
 
 
+t_mem = trace [8,1,8,8] $ \i@[ra,we,wa,wd] -> do
+  t <- stype wd
+  SeqEmu.closeMem [t] $ \[rd] ->
+    return ([(we, wa, wd, ra)], (rd:i))
+
+x_mem = do
+  let writes = [[0,1,x,x+20] | x <- [1..10]]
+      reads  = [[x,0,0,0]    | x <- [1..10]]
+      outs = t_mem $ writes ++ reads
+  putStrLn "-- x_mem rd,ra,we,wa,wd"
+  printL outs
 
 
+-- FIXME: how to abstract?
 t_fifo = trace [1,1,8] $ \i@[re,we,wd] -> do
   -- t: type
   -- d: data
@@ -164,31 +175,7 @@ x_fifo = do
   printL outs
 
 
-t_mem = trace [8,1,8,8] $ \i@[ra,we,wa,wd] -> do
-  t <- stype wd
-  SeqEmu.closeMem [t] $ \[rd] ->
-    return ([(we, wa, wd, ra)], (rd:i))
-
-x_mem = do
-  let writes = [[0,1,x,x+20] | x <- [1..10]]
-      reads  = [[x,0,0,0]    | x <- [1..10]]
-      outs = t_mem $ writes ++ reads
-  putStrLn "-- x_mem rd,ra,we,wa,wd"
-  printL outs
     
-
--- This does something really strange
-x_mem_bad = do
-  let writes = [[0,1,x,x+20] | x <- [1..10]]
-      reads  = [[x,0,0,0]    | x <- [1..10]]
-      outs = t_mem $ writes ++ reads
-      t_mem = trace [8,1,8,8] $ \i@[ra,we,wa,wd] -> do
-        t <- stype wd
-        SeqEmu.closeMem [t] $ \[rd] ->
-          return ([(we, wa, wd, ra)], (rd:i))
-  putStrLn "-- x_mem_bad rd,ra,we,wa,wd"
-  printL outs
-  
 
 
 

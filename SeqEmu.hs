@@ -65,14 +65,6 @@ appTypes     f (n, t, v, e) = (n, f t, v, e) ; getTypes     = do (_, t, _, _) <-
 appVals      f (n, t, v, e) = (n, t, f v, e)
 appProcesses f (n, t, v, e) = (n, t, v, f e) ; getProcesses = do (_, _, _, e) <- get ; return e
 
--- Similar, but monadic f, and specialized to one of the external state objects.
--- modifyProcess :: ()
-modifyProcess r def f = do
-  ps <- getProcesses
-  let p = Map.findWithDefault def r ps
-  (p', o) <- f p
-  modify $ appProcesses $ insert r p'
-  return o
   
 
 
@@ -281,32 +273,27 @@ onInts bitSizes mod ints = do
 
 
 
--- Generic external state threading + conversion to/from the internal
--- Dynamic representation.
+-- Generic external state threading.
 closeProcess :: (Typeable o, Typeable s) => (s -> M (s, o)) -> s -> M o
 closeProcess update init = do
 
-  -- The state type can remain hidden, but state value and state
-  -- update function need to be stored together to be able to perform
-  -- the application.  The return value needs to come out again, so it
-  -- is wrapped as Dynamic.
-  let enc = Process . toDyn . Just
-      dec = fromJust . (flip fromDyn Nothing) . getProcess
-      update' s = do
-        (s', o) <- update $ dec s
-        return $ (enc s', o)
-      p0 = enc init
+  -- State is stored as Dynamic.
+  let enc = Process . toDyn
+      dec = fromJust . fromDynamic . getProcess
+      s0 = enc init
   
   -- Type and state are indexed by a unique register number.
   r <- makeRegNum
   
   -- Initial state is stored in the types dictionary.
-  modify $ appTypes $ insert r $ ProcessReg p0
+  modify $ appTypes $ insert r $ ProcessReg s0
 
-  -- Compute update using the update function bundled with current
-  -- state.  Repack with update function to do the same next time.
-  modifyProcess r p0 $ update'
-
+  -- Compute update from current or initial state.
+  ps <- getProcesses
+  let s = Map.findWithDefault s0 r ps
+  (s', o) <- update $ dec s
+  modify $ appProcesses $ insert r $ enc s'
+  return o
 
 
 
