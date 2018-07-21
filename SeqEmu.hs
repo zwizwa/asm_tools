@@ -54,7 +54,7 @@ type MemState = Map RegNum RegVal
 
 -- See closeProcess.  Uses Dynamic types.  Too much hassle to make
 -- this parametric.
-data Process = Process { getProcess :: Dynamic }
+data Process = Process Dynamic
 
 
 
@@ -278,64 +278,81 @@ onInts bitSizes mod ints = do
 -- Generic external state threading.
 
 -- Processes are similar to registers, except that they are completely
--- opaque.  State is threaded through the computation in a separate
--- map.
-
-closeProcess :: (Typeable o, Typeable s) => (s -> M (s, o)) -> s -> M o
-closeProcess u i = do
-  r <- process
-  updateProcess r u i
-
-process :: M RegNum
-process = do
-  r <- makeRegNum
-  modify $ appTypes $ insert r $ ProcessReg
-  return r
+-- opaque.  State is containt in a map and threaded through 'ticks'.
 
 toProcess   :: Typeable t => t -> Process
 fromProcess :: Typeable t => Process -> t
 toProcess   = Process . toDyn
-fromProcess = fromProcess' "fromProcess type mismatch"
-
-fromProcess' msg (Process p) =
+fromProcess (Process p) =
   case fromDynamic p of
     Just v -> v
-    Nothing -> error msg
+    Nothing -> error "fromProcess: Nothing"
 
-updateProcess :: (Typeable o, Typeable s) => RegNum -> (s -> M (s, o)) -> s -> M o
-updateProcess r update init = do
+process :: forall s. Typeable s => s -> M RegNum
+process init = do
+  r <- makeRegNum
+  modify $ appTypes $ insert r $ ProcessReg
 
-  -- State is stored as Dynamic.
-  let s0 = toProcess init
+  -- When running inside 'ticks', the first 'tick' or during 'probe',
+  -- we'll have to initialize state.  This is a little quirky..
+  mv <- (getProcess' r) :: M (Maybe s)
+  case mv of
+    Just _ ->
+      return ()
+    Nothing ->
+      modify $ appProcesses $ insert r $ toProcess init
+  
+  return r
 
-  -- Compute update from current or initial state.
+getProcess r = do
+  Just v <- getProcess' r
+  return v
+
+getProcess' :: Typeable s => RegNum -> M (Maybe s)
+getProcess' r = do
   ps <- getProcesses
-  let s = Map.findWithDefault s0 r ps
-  (s', o) <- update $ fromProcess s
+  return $ case Map.lookup r ps of
+    Nothing -> Nothing
+    Just d -> Just $ fromProcess d
+
+updateProcess :: Typeable s => RegNum -> (s -> M (s, o)) -> M o
+updateProcess r update = do
+  s <- getProcess r
+  (s', o) <- update s
   modify $ appProcesses $ insert r $ toProcess s'
   return o
 
-  
--- FIXME: alternative implementation
+-- Bundle declaration and binding in the same way as closeReg, closeMem
+closeProcess :: Typeable s => (s -> M (s, o)) -> s -> M o
+closeProcess u i = do
+  r <- process i
+  updateProcess r u
 
+
+-- closeProcess closes input "list popping" feedback loop.
+closeInput :: 
+  (Typeable i, Typeable o) =>
+  [i] -> (i -> M o) -> M (Maybe o)
+
+closeInput is f = closeProcess update is where
+  update [] =
+    return ([], Nothing)
+  update (i:is) = do
+    o <- f i
+    return (is, Just o)
+
+
+-- Memory is implemented using the "open" interface from Seq.erl
+
+memory' :: SType -> M (R S, R Mem)
 memory' td = do
-  r <- process
-  ps <- getProcesses
-  -- When running inside 'ticks', the first 'tick' we'll have to
-  -- initialize state, hence "with default".  This is a little quirky..
-  (_, rd) <- case Map.lookup r ps of
-    Just s ->
-      return $ (fromProcess s :: (MemState, Signal))
-    Nothing -> do
-      let s0 = (Map.empty, unR $ constant td) :: (MemState, Signal)
-      modify $ appProcesses $ insert r $ toProcess s0
-      return s0
+  r <- process ((Map.empty, unR $ constant td) :: (MemState, Signal))
+  (_, rd) <- (getProcess r) :: M (MemState, Signal)
   return (R rd, R $ Reg r)
-        
+
+updateMemory' :: R Mem -> (R S, R S, R S, R S) -> M ()
 updateMemory' (R (Reg r)) memInputs = do
-  ps <- getProcesses
-  let err = error $ "SeqEmu.updateMemory: process " ++ show r ++ "has no state data"
-      (ms, _) = fromProcess $ Map.findWithDefault err r ps :: (MemState, Signal)
+  (ms, _) <- getProcess r :: M (MemState, Signal)
   (ms', R rd') <- mem memInputs ms
   modify $ appProcesses $ insert r $ toProcess (ms', rd')
   return ()
@@ -364,18 +381,6 @@ mem (wEn, wAddr, wData, rAddr) memState = do
   return (memState', rData)
 
 
-
-
--- closeProcess closes input "list popping" feedback loop.
-closeInput :: 
-  (Typeable i, Typeable o) =>
-  [i] -> (i -> M o) -> M (Maybe o)
-
-closeInput is f = closeProcess update is where
-  update [] = return ([], Nothing)
-  update (i:is) = do
-    o <- f i
-    return (is, Just o)
 
 
 
@@ -414,16 +419,4 @@ upSample en spaces as = concat $ zipWith dup spaces as where
 downSample :: (b -> Maybe a) -> [b] -> [a]
 downSample sel = catMaybes . (map sel)
 
-
--- Generalized closeReg
-
-
--- The idea is to close over registers and arbitrary state.
-
-
--- closeProc ts f = do
---   rs <- sequence $ fmap signal ts
---   (rs', o) <- f rs
---   sequence_ $ zipWith nextProc rs rs'
---   return o
 
