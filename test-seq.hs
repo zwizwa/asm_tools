@@ -157,7 +157,7 @@ dummy_mem ([_]) = do       -- memory's output
 t_mem :: [[Int]]
 t_mem = trace' m  where
   t = SInt Nothing 0
-  m = SeqEmu.closeMem ([t]) dummy_mem
+  m = closeMem ([t]) dummy_mem
 x_mem = do
   putStrLn "--- x_mem"
   print $ take 10 $ t_mem
@@ -177,7 +177,7 @@ dummy_mem2 ([mo1, mo2]) = do
   return $ ([mi1, mi2],[])
 t_mem2 = trace' m where
   t = SInt Nothing 0
-  m = SeqEmu.closeMem ([t,t]) dummy_mem2
+  m = closeMem ([t,t]) dummy_mem2
 x_mem2 = do
   putStrLn "--- x_mem2"
   print $ take 10 $ t_mem2
@@ -186,7 +186,7 @@ x_mem2 = do
 -- wEn, wAddr, wData, rAddr
 t_mem_write_to_read_delay = trace' m  where
   t = SInt Nothing 0
-  m = SeqEmu.closeMem [t] $ \[rd] -> do
+  m = closeMem [t] $ \[rd] -> do
     c <- counter $ SInt (Just 3) 0
     return ([(1, 0, c, 0)], [c, rd])
 
@@ -204,7 +204,7 @@ cpu_net = do
   return $ o ++ [a,b,c,d]
 cpu_emu =  trace' m where
   t = SInt Nothing 0
-  m = SeqEmu.closeMem ([t]) CPU.cpu
+  m = closeMem ([t]) CPU.cpu
   mem = Map.fromList $ [(n,n+1) | n <- [0..2]]
 x_cpu_term = do
   putStrLn "--- x_cpu_term"

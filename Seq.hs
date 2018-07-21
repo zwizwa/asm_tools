@@ -288,11 +288,30 @@ updateIf en r v = do
   
 
 
+-- Similar, but for memories
+closeMem :: 
+  forall m r f o. (Seq m r, Zip f, Traversable f) =>
+  f SType -> (f (r S) -> m (f (r S, r S, r S, r S), o)) -> m o
+
+closeMem typ memAccess = do
+  mems <- sequence $ fmap memory typ
+  let rds     = fmap fst mems
+      memRefs = fmap snd mems
+  (memInputs, o) <- memAccess rds
+  sequence $ zipWith updateMemory memRefs memInputs
+  return o
+
+
+
 
 
 -- Note: it might be possible to avoid 'signal' and 'update' in Seq,
 -- and replace it with closeReg.  Currently, the MyHDL uses it to bind
 -- outputs, but that can probably be solved differently.
+
+-- It seems more convenient to keep these operations separate.
+
+
 
 -- Can Num be implemented generically?
 

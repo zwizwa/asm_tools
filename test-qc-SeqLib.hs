@@ -49,7 +49,6 @@ main = do
   x_async_receiver
 
   x_mem
-  x_mem'
   x_fifo
 
 
@@ -138,7 +137,7 @@ p_async_receiver = forAll (listOf $ word 8) pred where
 
 t_mem = trace [8,1,8,8] $ \i@[ra,we,wa,wd] -> do
   t <- stype wd
-  SeqEmu.closeMem [t] $ \[rd] ->
+  closeMem [t] $ \[rd] ->
     return ([(we, wa, wd, ra)], (rd:i))
 
 x_mem = do
@@ -148,17 +147,6 @@ x_mem = do
   putStrLn "-- x_mem rd,ra,we,wa,wd"
   printL outs
 
-t_mem' = trace [8,1,8,8] $ \i@[ra,we,wa,wd] -> do
-  t <- stype wd
-  SeqEmu.closeMem' [t] $ \[rd] ->
-    return ([(we, wa, wd, ra)], (rd:i))
-
-x_mem' = do
-  let writes = [[0,1,x,x+20] | x <- [1..10]]
-      reads  = [[x,0,0,0]    | x <- [1..10]]
-      outs = t_mem' $ writes ++ reads
-  putStrLn "-- x_mem' rd,ra,we,wa,wd"
-  printL outs
 
 
 -- FIXME: generalize this to Seq
@@ -174,7 +162,7 @@ fifo ta (rc,wc,wd) = do
     ra' <- if' rc ra1 ra
     wa' <- if' wc wa1 wa
     return ([wa',ra'], (wa,ra))
-  SeqEmu.closeMem [td] $ \[rd] -> do
+  closeMem [td] $ \[rd] -> do
     return ([(wc, wa, wd, ra)], rd)
 
 t_fifo = trace [1,1,8] $ \i@[rc,wc,wd] -> do

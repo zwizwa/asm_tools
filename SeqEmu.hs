@@ -363,51 +363,6 @@ mem (wEn, wAddr, wData, rAddr) memState = do
           
   return (memState', rData)
 
-closeMem :: 
-  forall f o. (Zip f, Traversable f, Typeable o, Typeable f) =>
-  f SType -> (f (R S) -> M (f (R S, R S, R S, R S), o)) -> M o
-
-closeMem typ memAccess = do
-  mems <- sequence $ fmap memory' typ
-  let rds     = fmap fst mems
-      memRefs = fmap snd mems
-  (memInputs, o) <- memAccess rds
-  sequence $ zipWith updateMemory' memRefs memInputs
-  return o
-
--- Bind Seq code that manipulates memory interface registers, to
--- memory implementation, closing feedback loops.  Multiple memories
--- can be contained in a functor, similar to closeReg.
-closeMem' :: 
-  forall f o. (Zip f, Traversable f, Typeable o, Typeable f) =>
-  f SType -> (f (R S) -> M (f (R S, R S, R S, R S), o)) -> M o
-
-closeMem' typ memAccess = mo where
-
-  -- closeReg closes the read register feedback
-  -- closeProcess closes the f MemState feedback (see also closeInput)
-  update :: f MemState -> M (f MemState, o)
-  update s = closeReg typ $ comb s
-  init     = fmap (\_ -> Map.empty) typ
-  mo       = closeProcess update init
-
-  -- Input/Output are named from memory's perspective: o is the
-  -- memory's read port data register.  The memory enable, address and
-  -- data input is implemented as a combinatorial network to provide
-  -- single cycle read acces.
-  comb :: (f MemState) -> f (R S) -> M (f (R S), (f MemState, o))
-  comb s o = do
-
-    -- Apply memory access combinatorial network (o->i)
-    -- x is just an output we pass along for generic threading.
-    (i, x) <- memAccess o
-
-    -- Apply each memory's combinatorial network (i->o)
-    so' <- sequence $ zipWith mem i s
-    let s' = fmap fst so'
-        o' = fmap snd so'
-
-    return (o', (s', x))
 
 
 
