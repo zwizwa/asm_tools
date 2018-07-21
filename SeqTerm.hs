@@ -48,6 +48,8 @@ data Term n
   | Comb3   SType Seq.Op3 n n n
   | Slice   SType n Seq.SSize Seq.NbBits
   | Delay   SType n
+  | MemRd   SType n
+  | MemWr   (n,n,n,n)
   | Connect SType n
   | Input   SType -- Externally driven node
   deriving (Show, Functor, Foldable)
@@ -55,8 +57,9 @@ data Term n
 -- Constants are not monadic values in Seq (tried that, and decided
 -- it's too annoying), so the operand type Op has two clauses:
 data Op n
-  = Node  SType n   -- node reference (*)
-  | Const SType     -- inlined constant
+  = Node    SType n   -- node reference (*)
+  | Const   SType     -- inlined constant
+  | MemNode n
   deriving (Show, Functor, Foldable)
 
 
@@ -149,11 +152,12 @@ instance Seq.Seq M R where
   withEnv = local
 
   memory td = do
-    rd <- makeNode td
-    return (R rd, R undefined)
+    mem  <- fmap MemNode makeNodeNum
+    rData <- driven $ MemRd td mem
+    return (R rData, R mem)
 
-  updateMemory (R _) (_,_,_,_) = do
-    return ()
+  updateMemory (R (MemNode n)) (R wEn, R wAddr, R wData, R rAddr) = do
+    driveNode n $ MemWr (wEn, wAddr, wData, rAddr)
 
 bind cons (R (Node t' dst)) (R src) = do
     let t = opType src
@@ -198,10 +202,14 @@ mergeSize (ta:tb:ts) = mergeSize ((f ta tb):ts) where
 
 
 makeNode :: SType -> M (Op NodeNum)
-makeNode t = do
+makeNode t = fmap (Node t) makeNodeNum
+
+makeNodeNum :: M NodeNum
+makeNodeNum = do
   n <- getNodeNum
   modifyNodeNum (+ 1)
-  return $ Node t n
+  return n
+  
 
 driven c = do
   s@(Node _ n) <- makeNode $ termType c
