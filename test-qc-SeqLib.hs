@@ -49,6 +49,7 @@ main = do
   x_async_receiver
 
   x_mem
+  x_mem'
   x_fifo
 
 
@@ -145,6 +146,18 @@ x_mem = do
       reads  = [[x,0,0,0]    | x <- [1..10]]
       outs = t_mem $ writes ++ reads
   putStrLn "-- x_mem rd,ra,we,wa,wd"
+  printL outs
+
+t_mem' = trace [8,1,8,8] $ \i@[ra,we,wa,wd] -> do
+  t <- stype wd
+  SeqEmu.closeMem' [t] $ \[rd] ->
+    return ([(we, wa, wd, ra)], (rd:i))
+
+x_mem' = do
+  let writes = [[0,1,x,x+20] | x <- [1..10]]
+      reads  = [[x,0,0,0]    | x <- [1..10]]
+      outs = t_mem' $ writes ++ reads
+  putStrLn "-- x_mem' rd,ra,we,wa,wd"
   printL outs
 
 

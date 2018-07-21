@@ -39,7 +39,7 @@ newtype M t = M { runM :: ReaderT (CompEnv R) (State CompState) t } deriving
    MonadState CompState)
 type RegNum    = Int
 type RegVal    = Int
-data StateType = IntReg SType | ProcessReg Process
+data StateType = IntReg SType | ProcessReg
 type CompEnv r = (Env r, RegIn)
 -- Dictionaries
 type RegVals    = Map RegNum RegVal
@@ -117,9 +117,9 @@ instance Seq M R where
     return $ R $ truncVal sz vr
 
   -- register drive
-  next (R (Reg a)) (R b) = do
+  update (R (Reg a)) (R b) = do
     b' <- val b
-    modify $ appVals $ insert' "SeqEmu.next: " a b'
+    modify $ appVals $ insert' "SeqEmu.update: " a b'
     
   -- this is an artefact necessary for MyHDL non-registered outputs
   connect _ _ = error "SeqEmu does not support connect"
@@ -131,7 +131,10 @@ instance Seq M R where
   withEnv f m = do
     local (\(e,r) -> (f e,r)) m
 
-    
+  memory = memory'
+  updateMemory = updateMemory'
+  
+
 
 
 -- This can happen due to []'s applicative functor.
@@ -220,14 +223,13 @@ reset m = (r0, e0) where
   -- stored in the same type map.
   (regTypes, extTypes) = Map.partition isIntReg types
   isIntReg (IntReg _) = True
-  isIntReg (ProcessReg _) = False
+  isIntReg ProcessReg = False
 
   r0 = Map.map initReg regTypes
   initReg (IntReg (SInt size initVal)) = initVal
 
-  -- Is it actually necessary to initialize these?
-  -- e0 = Map.map initExt extTypes
-  -- initExt (ProcessReg v) = v
+  -- Process initialization is performed in updateProcess when the
+  -- state value is not present.
   e0 = Map.empty
 
 -- b) The register update function.  Two assumptions are made: an
@@ -274,32 +276,73 @@ onInts bitSizes mod ints = do
 
 
 -- Generic external state threading.
+
+-- Processes are similar to registers, except that they are completely
+-- opaque.  State is threaded through the computation in a separate
+-- map.
+
 closeProcess :: (Typeable o, Typeable s) => (s -> M (s, o)) -> s -> M o
-closeProcess update init = do
+closeProcess u i = do
+  r <- process
+  updateProcess r u i
+
+process :: M RegNum
+process = do
+  r <- makeRegNum
+  modify $ appTypes $ insert r $ ProcessReg
+  return r
+
+toProcess   :: Typeable t => t -> Process
+fromProcess :: Typeable t => Process -> t
+toProcess   = Process . toDyn
+fromProcess = fromProcess' "fromProcess type mismatch"
+
+fromProcess' msg (Process p) =
+  case fromDynamic p of
+    Just v -> v
+    Nothing -> error msg
+
+updateProcess :: (Typeable o, Typeable s) => RegNum -> (s -> M (s, o)) -> s -> M o
+updateProcess r update init = do
 
   -- State is stored as Dynamic.
-  let enc = Process . toDyn
-      dec = fromJust . fromDynamic . getProcess
-      s0 = enc init
-  
-  -- Type and state are indexed by a unique register number.
-  r <- makeRegNum
-  
-  -- Initial state is stored in the types dictionary.
-  modify $ appTypes $ insert r $ ProcessReg s0
+  let s0 = toProcess init
 
   -- Compute update from current or initial state.
   ps <- getProcesses
   let s = Map.findWithDefault s0 r ps
-  (s', o) <- update $ dec s
-  modify $ appProcesses $ insert r $ enc s'
+  (s', o) <- update $ fromProcess s
+  modify $ appProcesses $ insert r $ toProcess s'
   return o
 
+  
+-- FIXME: alternative implementation
 
+memory' td = do
+  r <- process
+  ps <- getProcesses
+  -- When running inside 'ticks', the first 'tick' we'll have to
+  -- initialize state, hence "with default".  This is a little quirky..
+  (_, rd) <- case Map.lookup r ps of
+    Just s ->
+      return $ (fromProcess s :: (MemState, Signal))
+    Nothing -> do
+      let s0 = (Map.empty, unR $ constant td) :: (MemState, Signal)
+      modify $ appProcesses $ insert r $ toProcess s0
+      return s0
+  return (R rd, R $ Reg r)
+        
+updateMemory' (R (Reg r)) memInputs = do
+  ps <- getProcesses
+  let err = error $ "SeqEmu.updateMemory: process " ++ show r ++ "has no state data"
+      (ms, _) = fromProcess $ Map.findWithDefault err r ps :: (MemState, Signal)
+  (ms', R rd') <- mem memInputs ms
+  modify $ appProcesses $ insert r $ toProcess (ms', rd')
+  return ()
 
 -- MemState <-> register interface
-type Mem = (R S, R S, R S, R S) -> MemState -> M (MemState, R S)
-mem :: Mem
+type Memory = (R S, R S, R S, R S) -> MemState -> M (MemState, R S)
+mem :: Memory
 mem (wEn, wAddr, wData, rAddr) memState = do
   
   -- Read
@@ -320,15 +363,26 @@ mem (wEn, wAddr, wData, rAddr) memState = do
           
   return (memState', rData)
 
-
--- Bind Seq code that manipulates memory interface registers, to
--- memory implementation, closing feedback loops.  Multiple memories
--- can be contained in a functor, similar to closeReg.
 closeMem :: 
   forall f o. (Zip f, Traversable f, Typeable o, Typeable f) =>
   f SType -> (f (R S) -> M (f (R S, R S, R S, R S), o)) -> M o
 
-closeMem typ memAccess = mo where
+closeMem typ memAccess = do
+  mems <- sequence $ fmap memory' typ
+  let rds     = fmap fst mems
+      memRefs = fmap snd mems
+  (memInputs, o) <- memAccess rds
+  sequence $ zipWith updateMemory' memRefs memInputs
+  return o
+
+-- Bind Seq code that manipulates memory interface registers, to
+-- memory implementation, closing feedback loops.  Multiple memories
+-- can be contained in a functor, similar to closeReg.
+closeMem' :: 
+  forall f o. (Zip f, Traversable f, Typeable o, Typeable f) =>
+  f SType -> (f (R S) -> M (f (R S, R S, R S, R S), o)) -> M o
+
+closeMem' typ memAccess = mo where
 
   -- closeReg closes the read register feedback
   -- closeProcess closes the f MemState feedback (see also closeInput)

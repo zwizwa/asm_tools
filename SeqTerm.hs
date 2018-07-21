@@ -142,12 +142,18 @@ instance Seq.Seq M R where
   connect = bind Connect
 
   -- register drive
-  next    = bind Delay
+  update   = bind Delay
 
   -- see comments in Seq.erl
   getEnv = ask
   withEnv = local
 
+  memory td = do
+    rd <- makeNode td
+    return (R rd, R undefined)
+
+  updateMemory (R _) (_,_,_,_) = do
+    return ()
 
 bind cons (R (Node t' dst)) (R src) = do
     let t = opType src

@@ -8,7 +8,7 @@
 -- with RTL embedded inside in the case synchronization points are
 -- only determined by clocks.
 
--- Seq has implicit clock signals Only 'next' to relate the current
+-- Seq has implicit clock signals Only 'update' to relate the current
 -- clock cycle to the next.
 
 
@@ -30,8 +30,9 @@ import Data.Traversable
 import Data.Key hiding((!))
 import Prelude hiding(zipWith)
 
--- Abstract tag for signal representation.
+-- Abstract tag for signal and memory representation.
 data S = S
+data Mem = Mem
 type SSize = Maybe NbBits
 data SType = SInt SSize InitVal deriving Show
 type NbBits = Int
@@ -50,8 +51,8 @@ type InitVal = Int
 -- a) The default is combinatorial.  This is abstracted as ordinary
 --    functions taking value inputs and returning values.
 --
--- b) Registers are created using 'signal' and bound using 'next'.
---    For the library, a higher level 'fixReg' is exposed which avoids
+-- b) Registers are created using 'signal' and bound using 'update'.
+--    For the library, a higher level 'closeReg' is exposed which avoids
 --    creating unbound or multiply-bound signals.
 
 
@@ -113,11 +114,11 @@ type InitVal = Int
 class (Monad m, Num (r S)) => Seq m r | r -> m, m -> r where
 
   -- Register operation
-  signal   :: SType -> m (r S)    -- Undriven signal
-  next     :: r S -> r S -> m ()  -- Drive a register input
-  connect  :: r S -> r S -> m ()  -- Combinatorial connect
+  signal  :: SType -> m (r S)    -- Undriven signal
+  update  :: r S -> r S -> m ()  -- Drive a register input
+  connect :: r S -> r S -> m ()  -- Combinatorial connect
 
-  -- Note that 'signal' and 'next' are considered to be imperative
+  -- Note that 'signal' and 'update' are considered to be imperative
   -- low-level primitives.  They should not be used in library code.
   -- Instead, use the declarative 'reg' operator.
   -- Combinatorial connect is necessary for HDL export.
@@ -143,6 +144,9 @@ class (Monad m, Num (r S)) => Seq m r | r -> m, m -> r where
   getEnv :: m (Env r)
   withEnv :: (Env r -> Env r) -> m t -> m t
   
+  -- Memories
+  memory       :: SType -> m (r S, r Mem)
+  updateMemory :: r Mem -> (r S, r S, r S, r S) -> m ()
 
 
 -- Primitives
@@ -217,7 +221,7 @@ data EnvVar =
 -- "tucking away" the registers.  This effectively computes the fixed
 -- point with register decoupling, defining a sequence.
 
--- The idea here is that using 'signal' and 'next' in the same
+-- The idea here is that using 'signal' and 'update' in the same
 -- function will avoid the creation of undriven or multiply-driven
 -- signals.  This is preferred over using the low-level primitives
 -- directly.
@@ -234,14 +238,14 @@ closeReg' ::
   -> f SType
   -> (f (r S) -> m (f (r S), o))
   -> m o
-closeReg' next' ts f = do
+closeReg' update' ts f = do
   rs <- sequence $ fmap signal ts
   (rs', o) <- f rs
-  sequence_ $ zipWith next' rs rs'
+  sequence_ $ zipWith update' rs rs'
   return o
 
 
--- The default closeReg uses a "next" that is parameterized by the
+-- The default closeReg uses a "update" that is parameterized by the
 -- enable bit for the local context.  This is useful for building
 -- state machines that are updated at a lower rate.
 
@@ -250,7 +254,7 @@ closeReg ::
   f SType
   -> (f (r S) -> m (f (r S), o))
   -> m o
-closeReg = closeReg' nextEnable
+closeReg = closeReg' updateEnable
 
 closeRegEn ::
   forall f m r o. (Zip f, Traversable f, Seq m r) =>
@@ -258,16 +262,16 @@ closeRegEn ::
   -> f SType
   -> (f (r S) -> m (f (r S), o))
   -> m o
-closeRegEn en = closeReg' $ nextIf en
+closeRegEn en = closeReg' $ updateIf en
 
-nextEnable :: forall m r. Seq m r => r S -> r S -> m ()
-nextEnable r v = do
+updateEnable :: forall m r. Seq m r => r S -> r S -> m ()
+updateEnable r v = do
   env <- getEnv
   case env ClockEnable of
     Nothing ->
-      next r v
+      update r v
     Just en' ->
-      nextIf en' r v
+      updateIf en' r v
 
 -- Note that when using clock enables, it is important to only ever
 -- use the outputs of the register, and not the input combinatorial
@@ -277,17 +281,17 @@ withClockEnable val m = do
       f env var = env var
   withEnv f m
 
-nextIf :: forall m r. Seq m r => r S -> r S -> r S -> m ()
-nextIf en r v = do
+updateIf :: forall m r. Seq m r => r S -> r S -> r S -> m ()
+updateIf en r v = do
   v' <- if' en v r
-  next r v'
+  update r v'
   
 
 
 
 
--- Note: it might be possible to avoid 'signal' and 'next' in Seq, and
--- replace it with closeReg.  Currently, the MyHDL uses it to bind
+-- Note: it might be possible to avoid 'signal' and 'update' in Seq,
+-- and replace it with closeReg.  Currently, the MyHDL uses it to bind
 -- outputs, but that can probably be solved differently.
 
 -- Can Num be implemented generically?
