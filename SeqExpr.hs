@@ -60,6 +60,7 @@ inlined termBindings = [(n, exprDef n) | n <- keep] where
   inlinable n = 
     case ref n of
       (Delay _ _) -> False      -- inlining Delay would create loops
+      (MemWr _)   -> False
       (Input _)   -> False      -- keep external refernces as nodes
       _           -> 1 == rc n  -- rc > 1 would lead to code duplication
   
@@ -116,12 +117,16 @@ mTerm (Comb1 _ o a)     = tagged (show o)  [mOp a]
 mTerm (Comb2 _ o a b)   = tagged (show o)  [mOp a, mOp b]
 mTerm (Comb3 _ o a b c) = tagged (show o)  [mOp a, mOp b, mOp c]
 mTerm (Slice _ a b c)   = tagged "SLICE"   [mOp a, tell $ showSize b, tell $ show c]
+mTerm (MemRd _ a)       = tagged "MEMRD"   [mOp a]
+mTerm (MemWr (a,b,c,d)) = tagged "MEMWR"   [mOp a, mOp b, mOp c, mOp d]
+
 
 showSize (Just s) = show s
 showSize Nothing = ""
                                             
-mOp (Const v)  = tagged "CONST" [ tell $ show v]
-mOp (Node _ n) = mSexp n
+mOp (Const v)   = tagged "CONST" [ tell $ show v ]
+mOp (Node _ n)  = mSexp n
+mOp (MemNode n) = mSexp n
 
 tagged tag ms = do
   tell "("

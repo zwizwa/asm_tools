@@ -86,6 +86,7 @@ main = do
   x_template_haskell
   x_syntax
   x_ifs
+  x_blink_fpga
   
 
 x_counter = do
@@ -312,6 +313,23 @@ x_ifs = do
     os' <- ifs c [i1,i2] [0,0]
     sequence $ zipWith connect [o1,o2] os'
     return io
+
+f_blink_fpga :: ([String], [SeqTerm.R S] -> SeqTerm.M ())
+f_blink_fpga =
+  $(named
+   [|
+    \[ _LED ] -> do
+      c <- counter $ (bits 16)
+      led <- slice c (Just 15) 15
+      connect _LED led
+    |])
+
+-- FIXME: move to MyHDL
+x_blink_fpga = putStrLn "-- x_blink_fpga" >> gen_py where
+  (names, fun) = f_blink_fpga
+  names' = map (\('_':nm) -> nm) names
+  py = MyHDL.fpga "x_blink_fpga" (names', fun)
+  gen_py = writeFile "x_blink_fpga.gen.py" $ show py
 
 
 -- TOOLS
