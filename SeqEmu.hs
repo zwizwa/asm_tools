@@ -55,7 +55,7 @@ type MemState = Map RegNum RegVal
 -- Abstract external emulation processes with private state.  State
 -- can be hidden as existential type, but the output needs to be
 -- dynamic to be recoverable.  See closeProcess for the user interface.
-data Process = forall s. Process (s, s -> M (s, Dynamic))
+data Process = Process { getProcess :: Dynamic }
 
 
 
@@ -262,7 +262,7 @@ ticks m = t s0 where
     (s', o) = tick m s
 
 -- Input is implemented using extensible state threading...
-iticks :: Typeable o => (i -> M o) -> [i] -> [o]
+iticks :: (Typeable i, Typeable o) => (i -> M o) -> [i] -> [o]
 iticks f is = take' $ ticks $ closeInput is f where 
   take' = (map fromJust) . (takeWhile isJust) 
 
@@ -283,17 +283,19 @@ onInts bitSizes mod ints = do
 
 -- Generic external state threading + conversion to/from the internal
 -- Dynamic representation.
-closeProcess :: Typeable o => (s -> M (s, o)) -> s -> M o
+closeProcess :: (Typeable o, Typeable s) => (s -> M (s, o)) -> s -> M o
 closeProcess update init = do
 
   -- The state type can remain hidden, but state value and state
   -- update function need to be stored together to be able to perform
   -- the application.  The return value needs to come out again, so it
   -- is wrapped as Dynamic.
-  let update' s = do
-        (s', o) <- update s
-        return (s', toDyn $ Just o)
-      p0 = Process (init, update')
+  let enc = Process . toDyn . Just
+      dec = fromJust . (flip fromDyn Nothing) . getProcess
+      update' s = do
+        (s', o) <- update $ dec s
+        return $ (enc s', o)
+      p0 = enc init
   
   -- Type and state are indexed by a unique register number.
   r <- makeRegNum
@@ -303,14 +305,8 @@ closeProcess update init = do
 
   -- Compute update using the update function bundled with current
   -- state.  Repack with update function to do the same next time.
-  o <- modifyProcess r p0 $ \(Process (s, u)) -> do
-    (s', o) <- u s
-    return (Process (s', u), o)
+  modifyProcess r p0 $ update'
 
-  -- Recover the value.  Because r is unique, this is guaranteed to
-  -- work as long as state is derived from the initial state as in
-  -- 'ticks'.
-  return $ fromJust $ fromDyn o Nothing
 
 
 
@@ -342,7 +338,7 @@ mem (wEn, wAddr, wData, rAddr) memState = do
 -- memory implementation, closing feedback loops.  Multiple memories
 -- can be contained in a functor, similar to closeReg.
 closeMem :: 
-  forall f o. (Zip f, Traversable f, Typeable o) =>
+  forall f o. (Zip f, Traversable f, Typeable o, Typeable f) =>
   f SType -> (f (R S) -> M (f (R S, R S, R S, R S), o)) -> M o
 
 closeMem typ memAccess = mo where
@@ -376,7 +372,7 @@ closeMem typ memAccess = mo where
 
 -- closeProcess closes input "list popping" feedback loop.
 closeInput :: 
-  Typeable o =>
+  (Typeable i, Typeable o) =>
   [i] -> (i -> M o) -> M (Maybe o)
 
 closeInput is f = closeProcess update is where
