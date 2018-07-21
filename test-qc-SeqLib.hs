@@ -148,23 +148,27 @@ x_mem = do
   printL outs
 
 
--- FIXME: how to abstract?
-t_fifo = trace [1,1,8] $ \i@[re,we,wd] -> do
+-- FIXME: generalize this to Seq
+fifo ta (rc,wc,wd) = do
   -- t: type
   -- d: data
   -- a: address
-  -- e: enable
+  -- c: clock enable
   td <- stype wd
-  let ta = SInt (Just 4) 0
   (wa,ra) <- closeReg [ta, ta] $ \[wa, ra] -> do
     wa1 <- inc wa
     ra1 <- inc ra
-    ra' <- if' re ra1 ra
-    wa' <- if' we wa1 wa
+    ra' <- if' rc ra1 ra
+    wa' <- if' wc wa1 wa
     return ([wa',ra'], (wa,ra))
-  rd <- SeqEmu.closeMem [td] $ \[rd] -> do
-    return ([(we, wa, wd, ra)], rd)
-  return (rd:wa:ra:i)
+  SeqEmu.closeMem [td] $ \[rd] -> do
+    return ([(wc, wa, wd, ra)], rd)
+
+t_fifo = trace [1,1,8] $ \i@[rc,wc,wd] -> do
+  let ta = SInt (Just 4) 0
+  td <- stype wd
+  rd <- fifo ta (rc,wc,wd)
+  return (rd:i)
   
 x_fifo = do
   -- Write a bunch of data into the memory, then read it out.

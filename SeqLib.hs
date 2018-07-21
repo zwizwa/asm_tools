@@ -316,7 +316,7 @@ clocked_shift dir t_sr@(SInt (Just nb_bits) _) (bitClock, bitVal) = do
 d_async_receiver_sample ::
   forall m r. Seq m r =>
   Int -> r S -> m [r S]
-d_async_receiver_sample nb_data_bits rx = sm where
+d_async_receiver_sample nb_data_bits@8 rx = sm where
 
   -- FIXME: parameterize
   -- data_count_bits = log2 nb_data_bits

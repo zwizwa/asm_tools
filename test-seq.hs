@@ -54,76 +54,263 @@ import qualified Data.Map.Lazy as Map
 import qualified Control.Applicative as Applicative
 import Control.Applicative (ZipList(..))
 import Control.Category
-import Prelude hiding((.),id)
 import Control.Arrow
 import Control.Monad
-import Data.List
+import Prelude hiding (zipWith, (.), id)
+import Data.List hiding (zipWith)
 import Data.Key(Zip(..),zipWith)
 import Data.Typeable
+
+-- t_: trace
+-- h_: hdl port module
+-- x_: example
   
 main = do
-  
-  putStrLn "--- test_mem_delay2"
-  print $ test_mem_delay2
 
+  x_counter
+  x_counter2
+  x_edge
+  x_sync
+  x_mem
+  x_mem2
+  x_counter_term
+  x_hdl
+  x_hdl_sync
+  x_closeReg
+  x_cpu_term
+  x_cpu
+  x_mem_write_to_read_delay
+  x_vcd
+  x_netfun
+  x_template_haskell
+  x_syntax
+  x_ifs
   
-  putStrLn "--- counter SeqEmu.compile"
+
+x_counter = do
+  putStrLn "--- x_counter"
   printSeqEmu $ counter (SInt (Just 2) 0)
-  
 
-  putStrLn "--- counter SeqEmu.trace"
-  print $ take 10 $ test_counter
-
-  putStrLn "--- edge SeqEmu.trace"
-  print $ take 10 $ map head $ test_edge
-
-  putStrLn "--- test_sync"
-  printl $ take 10 $ test_sync
-
-  putStrLn "--- test_mem"
-  print $ take 10 $ test_mem
-
-  putStrLn "--- test_mem2"
-  print $ take 10 $ test_mem2
-
-  putStrLn "--- counter SeqTerm.sexp'"
+x_counter_term = do
+  putStrLn "--- x_counter_term"
   printSeqTerm $ do c <- counter $ SInt Nothing 2 ; return [c]
 
-  putStrLn "--- test_hdl"
-  print_hdl test_hdl
 
-  putStrLn "--- test_hdl_sync"
-  print_hdl test_hdl_sync
+square = do
+  c <- counter $ SInt (Just 3) 0
+  b <- slr c 2
+  band b 1
 
-  putStrLn "--- test_closeReg"
-  print $ take 10 $ test_closeReg
+x_counter2 = do
+  putStrLn "--- x_counter2"
+  print $ take 10 $ t_counter2
+
+t_counter2 = trace' $ do
+  c1 <- counter $ SInt (Just 1) 0
+  c2 <- counter $ SInt (Just 3) 0
+  -- [] is a meta-language construct needed for trace
+  return [c1, c2]
+
+closeReg2 = do
+  let t = SInt Nothing 0
+  closeReg [t, t] $ \[a, b] -> do
+    a' <- add a 2
+    b' <- add b 3
+    return ([a', b'], [a, b])
+
+x_closeReg = do
+  putStrLn "--- x_closeReg"
+  print $ take 10 $ t_closeReg
   printSeqTerm $ closeReg2
-  
-  putStrLn "--- test_cpu_net"
-  printSeqTerm $ test_cpu_net
-  
-  putStrLn "--- test_cpu_emu"
-  print $ take 10 $ test_cpu_emu
 
-  putStrLn "--- test_mem_delay"
-  print $ take 10 $ test_mem_delay
+t_closeReg = trace' closeReg2
 
-  putStrLn "--- VCD"
+
+x_edge = do
+  putStrLn "--- x_edge"
+  print $ take 10 $ map head $ t_edge
+
+t_edge = trace' $ do
+  e <- edge =<< square
+  return [e]
+
+-- Clock synchronizer
+
+x_sync = do
+  putStrLn "--- tx_sync"
+  printl $ take 10 $ t_sync
+  
+t_sync = trace [1] f is where
+  is = cycle [[v] | v <- [1,0,0,0,0,1,0,0]]
+  f [i] = do
+    o <- sync (SInt (Just 2) 0) i
+    -- o <- counter (SInt (Just 2) 0)
+    -- o <- edge i
+    return [i,o]
+  
+
+-- Bare bones closeMem test.
+dummy_mem ([_]) = do       -- memory's output
+  let z = 0
+  return ([(z, z, z, z)],  -- memory's input
+          [])              -- test program empty output bus
+t_mem :: [[Int]]
+t_mem = trace' m  where
+  t = SInt Nothing 0
+  m = SeqEmu.closeMem ([t]) dummy_mem
+x_mem = do
+  putStrLn "--- x_mem"
+  print $ take 10 $ t_mem
+
+
+-- After thinking a bit, I want this interface:
+
+-- a) Do not put closeMem in the generic Seq.  Memories are an
+--    external thing, so keep them as abstract as possible.  SeqEmu is
+--    ok.
+--
+-- b) Allow to group memories in a functor (Traversable,Zip)
+  
+dummy_mem2 ([mo1, mo2]) = do
+  ([mi1],_) <- dummy_mem $ [mo1]
+  ([mi2],_) <- dummy_mem $ [mo2]
+  return $ ([mi1, mi2],[])
+t_mem2 = trace' m where
+  t = SInt Nothing 0
+  m = SeqEmu.closeMem ([t,t]) dummy_mem2
+x_mem2 = do
+  putStrLn "--- x_mem2"
+  print $ take 10 $ t_mem2
+
+
+-- wEn, wAddr, wData, rAddr
+t_mem_write_to_read_delay = trace' m  where
+  t = SInt Nothing 0
+  m = SeqEmu.closeMem [t] $ \[rd] -> do
+    c <- counter $ SInt (Just 3) 0
+    return ([(1, 0, c, 0)], [c, rd])
+
+x_mem_write_to_read_delay = do
+  putStrLn "--- x_mem_write_to_read_delay"
+  print $ take 10 $ t_mem_write_to_read_delay
+
+    
+
+-- Stub out what doesn't fit.  The idea is to find a way to gracefully
+-- have these two interpretations produce something useful: MyHDL code
+-- and an emulation test.
+cpu_net = do
+  ([(a,b,c,d)], o) <- CPU.cpu $ [0]
+  return $ o ++ [a,b,c,d]
+cpu_emu =  trace' m where
+  t = SInt Nothing 0
+  m = SeqEmu.closeMem ([t]) CPU.cpu
+  mem = Map.fromList $ [(n,n+1) | n <- [0..2]]
+x_cpu_term = do
+  putStrLn "--- x_cpu_term"
+  printSeqTerm $ cpu_net
+  
+x_cpu = do
+  putStrLn "--- x_cpu"
+  print $ take 10 $ cpu_emu
+
+
+
+
+
+-- MyHDL export needs some wrapping to specify module I/O structure.
+-- SeqTerm has support for this.
+x_hdl = do
+  putStrLn "--- x_hdl"
+  print_hdl h_hdl
+  
+h_hdl :: SeqTerm.M [SeqTerm.R S]
+h_hdl = do
+  -- Define types and signals
+  let t    = SInt (Just 1) 0
+      t_sr = SInt (Just 8) 0
+  io@[i,o,sr_o] <- SeqTerm.io [t,t,t_sr]
+  -- Instantiate circuits
+  i1    <- delay i
+  i2    <- delay i1
+  sr_o' <- shiftReg ShiftLeft t_sr i
+  -- Bind outputs
+  connect o i2   
+  connect sr_o sr_o'
+  return io
+
+x_hdl_sync = do
+  putStrLn "--- x_hdl_sync"
+  print_hdl h_sync
+  
+h_sync :: SeqTerm.M [SeqTerm.R S]
+h_sync = do
+  io@[i,o] <- SeqTerm.io [SInt (Just 2) 0, SInt (Just 2) 0]
+  o' <- sync (SInt (Just 2) 0) i
+  connect o o'
+  return io
+
+
+
+-- Just for types.  Kleisli composition can be done without wrapping
+-- using (>=>). I don't really see the point in using the Category or
+-- Arrow abstraction.
+
+
+-- Non-wrapped kleisli composition    
+arrow0 :: Seq m r => r S -> m (r S)
+arrow0 = integral >=> integral
+
+-- Wrapped, with (.) from Control.Category
+arrow1 :: Seq m r => r S -> m (r S)
+arrow1 = runKleisli $ i . i where i = Kleisli integral
+
+-- With some Arrow syntax
+arrow2 :: forall m r. Seq m r => r S -> m (r S)
+arrow2 = runKleisli a where
+  integral' = Kleisli (integral :: r S -> m (r S))
+  a = proc x -> do
+    x' <- integral' . integral' -< x
+    id -< x'
+
+-- Can also be used to create "expressions".
+arrow3 :: forall m r. Seq m r => r S -> m (r S)
+arrow3 x = (add x <=< add x) x
+
+
+x_template_haskell = do
+  putStrLn "--- x_template_haskell"
+  let (n,f) = $(named [| \[a,b,c] -> a |])
+  print $ (n, f [1,2,3])
+
+x_syntax = do
+  putStrLn "--- x_syntax"
+  let stx = $(seqFile "example.seq")
+  print stx
+
+
+x_vcd = do
+  putStrLn "--- x_vcd"
   let vcd = VCD.toVCD "1ns" ([("d1",1),("d2",1),("d3",8)],
                              transpose [[0,1,1,0,0],[1,0,0,1,0],[1,2,3,3,3]])
   putStr $ show vcd
   writeFile "test.vcd" $ show vcd
 
-  putStrLn "--- NetFun"
+x_netfun = do
+  putStrLn "--- x_netfun"
   NetFun.test
 
-  putStrLn "--- test_th"
-  test_th
+-- sequenced if' : does it need to be bundled?
+x_ifs = do
+  putStrLn "--- x_ifs"
+  print_hdl $ do
+    io@[c,i1,i2,o1,o2] <- SeqTerm.io $ replicate 5 bit
+    os' <- ifs c [i1,i2] [0,0]
+    sequence $ zipWith connect [o1,o2] os'
+    return io
 
-  putStrLn "--- SeqSyntax test"
-  let stx = $(seqFile "example.seq")
-  print stx
-  
+
+-- TOOLS
 
 -- printSeqTerm :: Functor f => SeqTerm.M (f (SeqTerm.R S)) -> IO ()
 printSeqTerm :: SeqTerm.M [SeqTerm.R S] -> IO ()
@@ -156,144 +343,19 @@ mapToList = foldrWithKey f [] where f k v t = (k,v):t
 
 
 
--- FIXME: This represents inputs without assigned bit length.  That
--- doesn't work for concatenation.
-itrace ::
-  forall f f'.  (Zip f, Traversable f', Typeable f, Typeable f') =>
-  (f (SeqEmu.R S) -> SeqEmu.M (f' (SeqEmu.R S)))
-  -> [f Int] -> [f' Int]
-itrace fm is = itrace' typs fm is where
-  typs = fmap (\_ -> SInt Nothing) $ is !! 0
--- More general
-itrace' typs fm is = os where
+trace ::
+  [Int]
+  -> ([SeqEmu.R S] -> SeqEmu.M [SeqEmu.R S])
+  -> [[Int]] -> [[Int]]
+trace typs fm is = os where
   os = SeqEmu.iticks fm' is
   fm' = SeqEmu.onInts typs fm
 
-trace m = itrace (\[] -> m) $ cycle [[]]
+-- Specialized: no inputs.
+trace' m = trace [] (\[] -> m) $ cycle [[]]
 
 
-square = do
-  c <- counter $ SInt (Just 3) 0
-  b <- slr c 2
-  band b 1
-
-test_counter = trace $ do
-  c1 <- counter $ SInt (Just 1) 0
-  c2 <- counter $ SInt (Just 3) 0
-  -- [] is a meta-language construct needed for trace
-  return [c1, c2]
-
-closeReg2 = do
-  let t = SInt Nothing 0
-  closeReg [t, t] $ \[a, b] -> do
-    a' <- add a 2
-    b' <- add b 3
-    return ([a', b'], [a, b])
-
-test_closeReg = trace closeReg2
-
-
--- For testing, outputs need to be collected in lists.
-test_edge = trace $ do
-  e <- edge =<< square
-  return [e]
-
--- Clock synchronizer
-test_sync = itrace f is where
-  is = cycle [[v] | v <- [1,0,0,0,0,1,0,0]]
-  f [i] = do
-    o <- sync (SInt (Just 2) 0) i
-    -- o <- counter (SInt (Just 2) 0)
-    -- o <- edge i
-    return [i,o]
-  
-
--- Bare bones closeMem test.
-dummy_mem ([_]) = do       -- memory's output
-  let z = 0
-  return ([(z, z, z, z)],  -- memory's input
-          [])              -- test program empty output bus
-test_mem :: [[Int]]
-test_mem = trace m  where
-  t = SInt Nothing 0
-  m = SeqEmu.closeMem ([t]) dummy_mem
-
-
--- After thinking a bit, I want this interface:
-
--- a) Do not put closeMem in the generic Seq.  Memories are an
---    external thing, so keep them as abstract as possible.  SeqEmu is
---    ok.
---
--- b) Allow to group memories in a functor (Traversable,Zip)
-  
-dummy_mem2 ([mo1, mo2]) = do
-  ([mi1],_) <- dummy_mem $ [mo1]
-  ([mi2],_) <- dummy_mem $ [mo2]
-  return $ ([mi1, mi2],[])
-
-test_mem2 = trace m where
-  t = SInt Nothing 0
-  m = SeqEmu.closeMem ([t,t]) dummy_mem2
-
--- Input/output delay.
-test_mem_delay = trace m  where
-  t = SInt Nothing 0
-  m = SeqEmu.closeMem [t] $ \[rd] -> do
-    c <- counter $ SInt (Just 3) 0
-    return ([(1, 0, c, 0)], [c, rd])
-
--- wEn, wAddr, wData, rAddr
-test_mem_delay2 = out where
-  -- s0 = SeqEmu.reset m
-  out = take 10 $ trace m
-  t = SInt Nothing 0
-  m = SeqEmu.closeMem [t] $ \[rd] -> do
-      c <- counter $ SInt (Just 3) 0
-      return ([(1, 0, c, 0)], [c, rd])
-
-
-    
-
--- Stub out what doesn't fit.  The idea is to find a way to gracefully
--- have these two interpretations produce something useful: MyHDL code
--- and an emulation test.
-test_cpu_net = do
-  ([(a,b,c,d)], o) <- CPU.cpu $ [0]
-  return $ o ++ [a,b,c,d]
-test_cpu_emu =  trace m where
-  t = SInt Nothing 0
-  m = SeqEmu.closeMem ([t]) CPU.cpu
-  mem = Map.fromList $ [(n,n+1) | n <- [0..2]]
-
-
-
-
-
--- MyHDL export needs some wrapping to specify module I/O structure.
--- SeqTerm has support for this.
-test_hdl :: SeqTerm.M [SeqTerm.R S]
-test_hdl = do
-  -- Define types and signals
-  let t    = SInt (Just 1) 0
-      t_sr = SInt (Just 8) 0
-  io@[i,o,sr_o] <- SeqTerm.io [t,t,t_sr]
-  -- Instantiate circuits
-  i1        <- delay i
-  i2        <- delay i1
-  (sr_o',_) <- shiftReg t_sr i
-  -- Bind outputs
-  connect o i2   
-  connect sr_o sr_o'
-  return io
-
-test_hdl_sync :: SeqTerm.M [SeqTerm.R S]
-test_hdl_sync = do
-  io@[i,o] <- SeqTerm.io [SInt (Just 2) 0, SInt (Just 2) 0]
-  o' <- sync (SInt (Just 2) 0) i
-  connect o o'
-  return io
-
+print_hdl :: SeqTerm.M [SeqTerm.R S] -> IO ()
 print_hdl src = do
   let (ports, bindings) = SeqTerm.compile src
   putStrLn "-- ports: "
@@ -306,33 +368,3 @@ print_hdl src = do
   putStr $ show $ MyHDL.myhdl "module" ports inl
   return ()
   
-
--- Just types.  Kleisli composition can be done without wrapping using
--- (>=>). I don't really see the point in using the Category or Arrow
--- abstraction.
-
-
--- Non-wrapped kleisli composition    
-test_arrow0 :: Seq m r => r S -> m (r S)
-test_arrow0 = integral >=> integral
-
--- Wrapped, with (.) from Control.Category
-test_arrow1 :: Seq m r => r S -> m (r S)
-test_arrow1 = runKleisli $ i . i where i = Kleisli integral
-
--- With some Arrow syntax
-test_arrow2 :: forall m r. Seq m r => r S -> m (r S)
-test_arrow2 = runKleisli a where
-  integral' = Kleisli (integral :: r S -> m (r S))
-  a = proc x -> do
-    x' <- integral' . integral' -< x
-    id -< x'
-
--- Can also be used to create "expressions".
-test_arrow3 :: forall m r. Seq m r => r S -> m (r S)
-test_arrow3 x = (add x <=< add x) x
-
-
-test_th = do
-  let (n,f) = $(named [| \[a,b,c] -> a |])
-  print $ (n, f [1,2,3])

@@ -52,9 +52,8 @@ type CompState = (RegNum, StateTypes, RegVals, Processes)
 type MemState = Map RegNum RegVal
 
 
--- Abstract external emulation processes with private state.  State
--- can be hidden as existential type, but the output needs to be
--- dynamic to be recoverable.  See closeProcess for the user interface.
+-- See closeProcess.  Uses Dynamic types.  Too much hassle to make
+-- this parametric.
 data Process = Process { getProcess :: Dynamic }
 
 
@@ -226,9 +225,10 @@ reset m = (r0, e0) where
   r0 = Map.map initReg regTypes
   initReg (IntReg (SInt size initVal)) = initVal
 
-  e0 = Map.map initExt extTypes
-  initExt (ProcessReg v) = v
-  
+  -- Is it actually necessary to initialize these?
+  -- e0 = Map.map initExt extTypes
+  -- initExt (ProcessReg v) = v
+  e0 = Map.empty
 
 -- b) The register update function.  Two assumptions are made: an
 --    arbitrary output is produced to allow user extension, along side
