@@ -422,3 +422,16 @@ upSample en spaces as = concat $ zipWith dup spaces as where
 downSample :: (b -> Maybe a) -> [b] -> [a]
 downSample sel = catMaybes . (map sel)
 
+
+-- Generalized closeReg
+
+
+-- The idea is to close over registers and arbitrary state.
+
+
+-- closeProc ts f = do
+--   rs <- sequence $ fmap signal ts
+--   (rs', o) <- f rs
+--   sequence_ $ zipWith nextProc rs rs'
+--   return o
+

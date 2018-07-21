@@ -40,15 +40,17 @@ main = do
   -- print $ toWord [1,0,0,0]
   -- print $ toBitList 4 8
   -- print $ downSample' $ t_clocked_shift 4 $ [[1,i] | i <- [1,1,1,1,0,0,0,0,0,0,0,1]]
-  qc "p_bits0" p_bits0
-  qc "p_bits1" p_bits1
-  qc "p_sample" p_sample
-  qc "p_clocked_shift" p_clocked_shift
-  qc "p_async_receiver" p_async_receiver
-  -- x_async_receiver_sample
-  x_async_receiver
 
+  -- qc "p_bits" p_bits
+  -- qc "p_sample" p_sample
+  -- qc "p_clocked_shift" p_clocked_shift
+  -- qc "p_async_receiver" p_async_receiver
+  -- -- x_async_receiver_sample
+  -- x_async_receiver
 
+  -- x_mem
+  -- x_fifo
+  x_mem_bad
 
 
 
@@ -136,7 +138,57 @@ p_async_receiver = forAll (listOf $ word 8) pred where
 
 
 
+t_fifo = trace [1,1,8] $ \i@[re,we,wd] -> do
+  -- t: type
+  -- d: data
+  -- a: address
+  -- e: enable
+  td <- stype wd
+  let ta = SInt (Just 4) 0
+  (wa,ra) <- closeReg [ta, ta] $ \[wa, ra] -> do
+    wa1 <- inc wa
+    ra1 <- inc ra
+    ra' <- if' re ra1 ra
+    wa' <- if' we wa1 wa
+    return ([wa',ra'], (wa,ra))
+  rd <- SeqEmu.closeMem [td] $ \[rd] -> do
+    return ([(we, wa, wd, ra)], rd)
+  return (rd:wa:ra:i)
+  
+x_fifo = do
+  -- Write a bunch of data into the memory, then read it out.
+  let writes = [[0,1,x] | x <- [1..10]]
+      reads  = replicate 10 $ [1,0,0]
+      outs = t_fifo $ writes ++ reads
+  putStrLn "-- x_fifo rd,wa,ra,re,we,wd"
+  printL outs
 
+
+t_mem = trace [8,1,8,8] $ \i@[ra,we,wa,wd] -> do
+  t <- stype wd
+  SeqEmu.closeMem [t] $ \[rd] ->
+    return ([(we, wa, wd, ra)], (rd:i))
+
+x_mem = do
+  let writes = [[0,1,x,x+20] | x <- [1..10]]
+      reads  = [[x,0,0,0]    | x <- [1..10]]
+      outs = t_mem $ writes ++ reads
+  putStrLn "-- x_mem rd,ra,we,wa,wd"
+  printL outs
+    
+
+-- This does something really strange
+x_mem_bad = do
+  let writes = [[0,1,x,x+20] | x <- [1..10]]
+      reads  = [[x,0,0,0]    | x <- [1..10]]
+      outs = t_mem $ writes ++ reads
+      t_mem = trace [8,1,8,8] $ \i@[ra,we,wa,wd] -> do
+        t <- stype wd
+        SeqEmu.closeMem [t] $ \[rd] ->
+          return ([(we, wa, wd, ra)], (rd:i))
+  putStrLn "-- x_mem_bad rd,ra,we,wa,wd"
+  printL outs
+  
 
 
 
@@ -229,7 +281,7 @@ p_sample = forAll vars pred where
 
 
 
-p_bits0 = forAll wordList p where
+p_bits = forAll wordList p where
   p (nb_bits, words) = p1 && p2 where
     
     p1 = words == words'
@@ -238,12 +290,6 @@ p_bits0 = forAll wordList p where
     bits   = toBits  nb_bits words
     words' = toWords nb_bits bits
     bits'  = toBits  nb_bits words'
-
-p_bits1 :: (Positive Int) -> Property
-p_bits1 (Positive nb_bits) = p' where
-  p' = forAll (word nb_bits) p
-  p w = w == w' where
-    w' = toWord $ toBitList nb_bits w
   
   
   

@@ -11,9 +11,14 @@ license: BSD3
 -- pretty-simple, text, 
 
 
--- Library
---     build-depends: base, containers, mtl, free, keys, set-extra
---     build-depends: base
+Library
+    build-depends:   base, containers, mtl, free, keys, set-extra
+    build-depends:   base
+    exposed-modules: Seq
+                     SeqLib
+                     SeqEmu
+    hs-source-dirs:  .
+
 
 -- Test-Suite test-pru
 --     build-depends: base, containers, mtl, free, keys

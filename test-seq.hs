@@ -40,6 +40,7 @@ import Seq
 import SeqLib
 import SeqSyntax
 import Names
+import qualified SeqStatic
 import qualified SeqTerm
 import qualified SeqExpr
 import qualified SeqEmu
