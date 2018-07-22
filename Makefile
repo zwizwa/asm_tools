@@ -9,7 +9,7 @@
 all: compile
 
 clean:
-	rm -f result *~
+	rm -f result *~ x_*
 
 # Release build
 compile: default.nix release.nix
@@ -40,6 +40,50 @@ cabal-test: default.nix
 
 test: cabal-test
 
+
+# MyHDL
+
+# FPGA: MyHDL + yosys + arachne-pnr
+MYHDL:=$(shell readlink -f myhdl)
+
+
+%.myhdl: %.py run_myhdl.py $(MYHDL) Makefile
+	PYTHONPATH="$(MYHDL)" python3 run_myhdl.py $* $< >$@.tmp
+	mv $@.tmp $@
+
+# apt-get install gtkwave
+# gtkwave module.vcd
+
+
+# Logic synthesis.  Same for all ice40.
+%.blif: %.v
+	yosys -p "synth_ice40 -blif $@" $<  >$*.yosys.log
+
+# Place and route, one for each device,package type.
+%.qn84.asc: %.blif %.pcf
+	arachne-pnr -P qn84 -d 1k -p $*.pcf $< -o $@ >$*.qn84.pnr
+%.ct256.asc: %.blif %.pcf
+	arachne-pnr -P ct256 -d 8k -p $*.pcf $< -o $@ >$*.ct256.pnr
+
+# Some fake fanout.  Do check that the file exists before touching.
+%.v: %.myhdl
+	[ -f "$@" ] && touch $@
+%.vhd: %.myhdl
+	[ -f "$@" ] && touch $@
+%.pcf: %.myhdl
+	[ -f "$@" ] && touch $@
+build/fpga_trigger_gen.py: .stamp.generate
+	[ -f "$@" ] && touch $@
+build/testbench_gen.py: .stamp.generate
+	[ -f "$@" ] && touch $@
+
+# Bitstream
+%.bin: %.asc
+	icepack $< $@
+
+# For flashing iCEblink40-LP1K eval board EEPROM
+%.icedude: %.bin  
+	PATH=~/.cabal/bin:$$PATH iCEDude -U flash:w:$<
 
 
 

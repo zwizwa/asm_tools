@@ -309,8 +309,8 @@ x_blink_fpga = do
   board <- CSV.readTagged id "specs/hx8k_breakout.csv"
   let (py,pcf) = MyHDL.fpga' "x_blink_fpga" f_blink_fpga pin
       pin = CSV.ff (\[k,_,v,_] -> (k,v)) board
-  writeFile "x_blink_fpga.gen.py" $ show py
-  writeFile "x_blink_fpga.gen.pcf" $ show pcf
+  writeFile "x_blink_fpga.py" $ show py
+  writeFile "x_blink_fpga.pcf" $ show pcf
 
 -- TOOLS
 
