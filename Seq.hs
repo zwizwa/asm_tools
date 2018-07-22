@@ -149,11 +149,6 @@ class (Monad m, Num (r S)) => Seq m r | r -> m, m -> r where
   updateMemory :: r Mem -> (r S, r S, r S, r S) -> m ()
 
 
--- Convert any type to a monadic representation of a signal.
--- See SeqApp.hs
-class Seq m r => SeqMRS m r t where
-  seqMR :: t -> m (r S)
-
 
 -- Primitives
 

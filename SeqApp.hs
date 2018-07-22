@@ -13,7 +13,7 @@
 
 module SeqApp where
 
-import Seq(Seq,S,SeqMRS(..))
+import Seq(Seq,S)
 import qualified Seq
 import qualified SeqLib
 import Prelude hiding (id, (.))
@@ -71,48 +71,52 @@ import Control.Monad
 
 
 
--- type SeqMOp1 m r = (m (r S)) -> (m (r S))
--- type SeqMOp2 m r = (m (r S)) -> (m (r S)) -> (m (r S))
+type SeqApp1 m r = (m (r S)) -> (m (r S))
+type SeqApp2 m r = (m (r S)) -> (m (r S)) -> (m (r S))
+type SeqApp3 m r = (m (r S)) -> (m (r S)) -> (m (r S)) -> (m (r S))
 
--- inv'  :: Seq m r => SeqMOp1 m r
+inv  :: Seq m r => SeqApp1 m r
 
--- add'  :: Seq m r => SeqMOp2 m r
--- mul'  :: Seq m r => SeqMOp2 m r
--- equ'  :: Seq m r => SeqMOp2 m r
--- band' :: Seq m r => SeqMOp2 m r
--- bxor' :: Seq m r => SeqMOp2 m r
--- bor'  :: Seq m r => SeqMOp2 m r
--- sll'  :: Seq m r => SeqMOp2 m r
--- slr'  :: Seq m r => SeqMOp2 m r
--- conc' :: Seq m r => SeqMOp2 m r
+add  :: Seq m r => SeqApp2 m r
+mul  :: Seq m r => SeqApp2 m r
+equ  :: Seq m r => SeqApp2 m r
+band :: Seq m r => SeqApp2 m r
+bxor :: Seq m r => SeqApp2 m r
+bor  :: Seq m r => SeqApp2 m r
+sll  :: Seq m r => SeqApp2 m r
+slr  :: Seq m r => SeqApp2 m r
+conc :: Seq m r => SeqApp2 m r
 
--- -- Tese are different from fmap, liftA2 because the primitive
--- -- operations are monadic.
--- lift1 f ma    = do a <- ma           ; f a
--- lift2 f ma mb = do a <- ma ; b <- mb ; f a b
+if'  :: Seq m r => SeqApp3 m r
 
--- inv' = lift1 inv
+-- Tese are different from fmap, liftA2 because the primitive
+-- operations are monadic.
+lift1 f ma       = do a <- ma                     ; f a
+lift2 f ma mb    = do a <- ma ; b <- mb           ; f a b
+lift3 f ma mb mc = do a <- ma ; b <- mb ; c <- mc ; f a b c
 
--- add'  = lift2 add
--- mul'  = lift2 mul
--- equ'  = lift2 equ
--- band' = lift2 band
--- bxor' = lift2 bxor
--- bor'  = lift2 bor
--- sll'  = lift2 sll
--- slr'  = lift2 slr
--- conc' = lift2 conc
+inv = lift1 Seq.inv
 
+add  = lift2 Seq.add
+mul  = lift2 Seq.mul
+equ  = lift2 Seq.equ
+band = lift2 Seq.band
+bxor = lift2 Seq.bxor
+bor  = lift2 Seq.bor
+sll  = lift2 Seq.sll
+slr  = lift2 Seq.slr
+conc = lift2 Seq.conc
 
--- -- The applicative interface allows overriding.
--- instance Seq m r => Num (m (r S)) where
---   (+) = add'
---   (*) = mul'
---   fromInteger n = return $ constant $ SInt Nothing $ fromInteger n
---   negate = inv'
---   abs    = error $ "TODO: abs"
---   signum = error $ "TODO: signum"
+if'  = lift3 Seq.if'
 
+-- The applicative interface allows overriding.
+instance Seq m r => Num (m (r S)) where
+  (+) = add
+  (*) = mul
+  fromInteger n = return $ Seq.constant $ Seq.SInt Nothing $ fromInteger n
+  negate = inv
+  abs    = error $ "TODO: abs"
+  signum = error $ "TODO: signum"
 
 
 -- The above is not the whole story.
@@ -127,40 +131,50 @@ import Control.Monad
 -- 'lisp' on top of this.  Take s-expressions, perform macro
 -- substitution, and reduce to ANF before mapping onto the monadic
 -- form.
---
--- Another solution is to use some a converter type class.  
+--b
+-- Another solution is to use some a converter type class.  This turns
+-- out to be very awkward to use.  I did not find a way to properly
+-- constrain the conversions, requiring type annotations of the
+-- intermediaries.  Leaving it here for reference.
+
+-- -- Convert any type to a monadic representation of a signal.
+-- -- See SeqApp.hs
+-- class Seq m r => SeqMRS m r t where
+--   seqMR :: t -> m (r S)
 
 
--- The main use for this is in applicative interfaces.  See SeqApp.hs
-instance forall m r t. Seq m r => SeqMRS m r (m (r S)) where seqMR = id  
-instance forall m r t. Seq m r => SeqMRS m r    (r S)  where seqMR = return
 
-lift1 f a   = do a' <- seqMR a                 ; f a'
-lift2 f a b = do a' <- seqMR a ; b' <- seqMR b ; f a' b'
 
-inv :: SeqMRS m r a => a -> m (r S)
-inv = lift1 Seq.inv
+-- -- The main use for this is in applicative interfaces.  See SeqApp.hs
+-- instance forall m r t. Seq m r => SeqMRS m r (m (r S)) where seqMR = id  
+-- instance forall m r t. Seq m r => SeqMRS m r    (r S)  where seqMR = return
 
-add :: forall m r a b. (SeqMRS m r a, SeqMRS m r b) => a -> b -> m (r S)
-sub :: forall m r a b. (SeqMRS m r a, SeqMRS m r b) => a -> b -> m (r S)
+-- lift1 f a   = do a' <- seqMR a                 ; f a'
+-- lift2 f a b = do a' <- seqMR a ; b' <- seqMR b ; f a' b'
 
-add = lift2 Seq.add
-sub = lift2 Seq.sub
+-- inv :: SeqMRS m r a => a -> m (r S)
+-- inv = lift1 Seq.inv
 
--- However it seems this will need quite a bit of type annotation at
--- the user end to constrain the types.  E.g. to use these in monadic
--- form works fine, and actually seems to remove the need for
--- annotation altogether:
+-- add :: forall m r a b. (SeqMRS m r a, SeqMRS m r b) => a -> b -> m (r S)
+-- sub :: forall m r a b. (SeqMRS m r a, SeqMRS m r b) => a -> b -> m (r S)
 
-f a = do
-  b <- add a a
-  c <- add b b
-  return c
+-- add = lift2 Seq.add
+-- sub = lift2 Seq.sub
 
--- But this will not work without constraining the intermediates.
--- Can this be solved somehow?
-f' :: forall m r a. SeqMRS m r a => a ->  m (r S)
-f' a = a `add` ((a `add` a) :: m (r S))
--- f' a = a `add` a `add` a
+-- -- However it seems this will need quite a bit of type annotation at
+-- -- the user end to constrain the types.  E.g. to use these in monadic
+-- -- form works fine, and actually seems to remove the need for
+-- -- annotation altogether:
 
--- The whole thing seems like a bad idea...
+-- f a = do
+--   b <- add a a
+--   c <- add b b
+--   return c
+
+-- -- But this will not work without constraining the intermediates.
+-- -- Can this be solved somehow?
+-- f' :: forall m r a. SeqMRS m r a => a ->  m (r S)
+-- f' a = a `add` ((a `add` a) :: m (r S))
+-- -- f' a = a `add` a `add` a
+
+-- -- The whole thing seems like a bad idea...
