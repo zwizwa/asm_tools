@@ -13,7 +13,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 
-module MyHDL(myhdl,MyHDL,testbench,fpga) where
+module MyHDL(myhdl,MyHDL,testbench,fpga,fpga') where
 import Seq
 import SeqLib
 import qualified SeqExpr
@@ -295,3 +295,9 @@ fpga name (portNames, mod) = MyHDL module_py where
   rename n = Map.findWithDefault ("s" ++ show n) n namedPorts
   namedPorts = Map.fromList $
     [(n, nm) | (Node _ n, nm) <- zip ports portNames]
+
+-- Using the convention that names are prefixed, so capital letters
+-- can be used in Haskell code.
+fpga' name (names, fun) = py where 
+  names' = map (\('_':nm) -> nm) names
+  py = MyHDL.fpga name (names', fun)

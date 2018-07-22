@@ -40,6 +40,8 @@ import Seq
 import SeqLib
 import SeqSyntax
 import Names
+import qualified SeqKleisli
+import qualified SeqApplicative
 import qualified SeqStatic
 import qualified SeqTerm
 import qualified SeqExpr
@@ -257,30 +259,6 @@ h_sync = do
 
 
 
--- Just for types.  Kleisli composition can be done without wrapping
--- using (>=>). I don't really see the point in using the Category or
--- Arrow abstraction.
-
-
--- Non-wrapped kleisli composition    
-arrow0 :: Seq m r => r S -> m (r S)
-arrow0 = integral >=> integral
-
--- Wrapped, with (.) from Control.Category
-arrow1 :: Seq m r => r S -> m (r S)
-arrow1 = runKleisli $ i . i where i = Kleisli integral
-
--- With some Arrow syntax
-arrow2 :: forall m r. Seq m r => r S -> m (r S)
-arrow2 = runKleisli a where
-  integral' = Kleisli (integral :: r S -> m (r S))
-  a = proc x -> do
-    x' <- integral' . integral' -< x
-    id -< x'
-
--- Can also be used to create "expressions".
-arrow3 :: forall m r. Seq m r => r S -> m (r S)
-arrow3 x = (add x <=< add x) x
 
 
 x_template_haskell = do
@@ -326,9 +304,7 @@ f_blink_fpga =
 
 -- FIXME: move to MyHDL
 x_blink_fpga = putStrLn "-- x_blink_fpga" >> gen_py where
-  (names, fun) = f_blink_fpga
-  names' = map (\('_':nm) -> nm) names
-  py = MyHDL.fpga "x_blink_fpga" (names', fun)
+  py = MyHDL.fpga' "x_blink_fpga" f_blink_fpga
   gen_py = writeFile "x_blink_fpga.gen.py" $ show py
 
 
@@ -390,3 +366,33 @@ print_hdl src = do
   putStr $ show $ MyHDL.myhdl "module" ports inl
   return ()
   
+
+
+
+
+-- Examples.  See SeqKleisli.hs
+
+
+
+-- Non-wrapped Kleisli Arrow
+type SeqA m r a b = r a -> m (r b)
+
+-- Non-wrapped kleisli composition    
+x_arrow0 :: Seq m r => SeqA m r S S
+x_arrow0 = integral >=> integral
+
+-- Wrapped, with (.) from Control.Category
+x_arrow1 :: Seq m r => SeqA m r S S
+x_arrow1 = runKleisli $ i . i where i = Kleisli integral
+
+-- With some Arrow syntax
+x_arrow2 :: Seq m r => SeqA m r S S
+x_arrow2 = runKleisli a where
+  integral' = Kleisli integral
+  a = proc x -> do
+    x' <- integral' . integral' -< x
+    id -< x'
+
+-- Can also be used to create "expressions".
+x_arrow3 :: Seq m r => SeqA m r S S
+x_arrow3 x = (add x <=< add x) x

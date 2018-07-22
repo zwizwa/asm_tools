@@ -317,6 +317,7 @@ getProcess' r = do
 
 updateProcess :: Typeable s => RegNum -> (s -> M (s, o)) -> M o
 updateProcess r update = do
+
   s <- getProcess r
   (s', o) <- update s
   modify $ appProcesses $ insert r $ toProcess s'
