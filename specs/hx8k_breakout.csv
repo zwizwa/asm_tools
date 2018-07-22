@@ -1,0 +1,8 @@
+# FPGA code consists of:
+# - Seq.hs code  (see  fpga_trigger in Trigger.hs)
+# - Net name to pin map like this file
+#
+firmware,dir,fpga,board_silk
+TEST_IN,in,C16,J2_37
+TEST_OUT,out,B16,J2_38
+LED,out,D2,LED_D2

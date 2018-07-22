@@ -13,9 +13,10 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 
-module MyHDL(myhdl,MyHDL,testbench,fpga,fpga') where
+module MyHDL(myhdl,MyHDL,testbench,fpga,fpga',PCF(..),pcf) where
 import Seq
 import SeqLib
+import CSV
 import qualified SeqExpr
 import qualified SeqTerm
 import qualified SeqEmu
@@ -297,7 +298,21 @@ fpga name (portNames, mod) = MyHDL module_py where
     [(n, nm) | (Node _ n, nm) <- zip ports portNames]
 
 -- Using the convention that names are prefixed, so capital letters
--- can be used in Haskell code.
-fpga' name (names, fun) = py where 
+-- can be used in Haskell code.  Also generates pcf based on pin map.
+fpga' name (names, fun) pinMap = (py, pcf') where 
   names' = map (\('_':nm) -> nm) names
-  py = MyHDL.fpga name (names', fun)
+  py = fpga name (names', fun)
+  pcf' = PCF names' pinMap
+
+--- ice40 PCF pin configuration files
+pcf :: [String] -> (String -> String) -> String
+pcf names pin = pcf' where
+  pcf' = concat $ map set_io names
+  set_io name =
+    "set_io " ++
+    name ++ " " ++
+    (pin name) ++ "\n"
+
+data PCF = PCF [String] (String->String)
+instance Show PCF where
+  show (PCF names pin) = pcf names pin

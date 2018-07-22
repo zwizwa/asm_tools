@@ -49,6 +49,7 @@ import qualified SeqEmu
 import qualified MyHDL
 import qualified CPU
 import qualified VCD
+import qualified CSV
 import qualified NetFun
 
 import Data.Map.Lazy (empty, foldrWithKey, insert)
@@ -303,10 +304,13 @@ f_blink_fpga =
     |])
 
 -- FIXME: move to MyHDL
-x_blink_fpga = putStrLn "-- x_blink_fpga" >> gen_py where
-  py = MyHDL.fpga' "x_blink_fpga" f_blink_fpga
-  gen_py = writeFile "x_blink_fpga.gen.py" $ show py
-
+x_blink_fpga = do
+  putStrLn "-- x_blink_fpga"
+  board <- CSV.readTagged id "specs/hx8k_breakout.csv"
+  let (py,pcf) = MyHDL.fpga' "x_blink_fpga" f_blink_fpga pin
+      pin = CSV.ff (\[k,_,v,_] -> (k,v)) board
+  writeFile "x_blink_fpga.gen.py" $ show py
+  writeFile "x_blink_fpga.gen.pcf" $ show pcf
 
 -- TOOLS
 
@@ -396,3 +400,5 @@ x_arrow2 = runKleisli a where
 -- Can also be used to create "expressions".
 x_arrow3 :: Seq m r => SeqA m r S S
 x_arrow3 x = (add x <=< add x) x
+
+

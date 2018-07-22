@@ -1,5 +1,7 @@
 -- Multi-table CSV parser.  Should survive round-trips to Excel/LibreOffice
 
+-- TODO: add some TH to avoid IO.
+
 module CSV where
 
 import Text.ParserCombinators.Parsec
@@ -77,4 +79,22 @@ readCSV fileName contents =
       msg = show parseError
       msg' = fileName ++ ":" ++ l ++ ": " ++ msg
 
+readCSVFile :: [Char] -> IO ([String],[[String]])
+readCSVFile file = do
+  str <- readFile file
+  case fmap checkTable $ readCSV file str of
+    Right table -> return table
+    Left msg -> error msg
+
+readTagged tag file = do
+  (header, table) <- readCSVFile file
+  return $ map tag table
+  
+-- Finite function evaluator.
+ff :: (Show k, Eq k, Show v) => (r -> (k,v)) -> [r] -> k -> v
+ff kv table = flip lookup' $ map kv table
+
+lookup' k l = case lookup k l of
+  Just v -> v
+  Nothing -> error $ "lookup': " ++ show (k,l)
 
