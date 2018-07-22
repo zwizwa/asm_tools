@@ -1,6 +1,15 @@
--- See SeqArr.hs
-
--- This contains alternative applicative wrappers.
+-- To further abstract, there seem to be two main avenues:
+--
+-- A) Kleisli Arrows
+--
+--     r a -> m ( r b ),
+--
+-- B) "pure" Applicative interface
+--
+--     m ( r a ) -> m ( r b ).
+--
+--
+-- The latter is used here, the latter in SeqArr.hs
 
 
 {-# LANGUAGE ScopedTypeVariables #-}

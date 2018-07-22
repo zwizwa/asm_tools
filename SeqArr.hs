@@ -1,4 +1,16 @@
--- Re-export library functions as Kleisli arrows for point-free programming.
+-- To further abstract, there seem to be two main avenues:
+--
+-- A) Kleisli Arrows
+--
+--     r a -> m ( r b ),
+--
+-- B) "pure" Applicative interface
+--
+--     m ( r a ) -> m ( r b ).
+--
+--
+-- The former is used here, the latter in SeqApp.hs
+
 
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE Arrows #-}
@@ -17,30 +29,6 @@ import Control.Arrow
 import Control.Monad
 
 
--- There are two main ways I can think of to abstract composition.
-
--- A) Kleisli Arrows
---
---     r a -> m ( r b ),
---
--- B) "pure" Applicative interface
---
---     m ( r a ) -> m ( r b ).
---
--- The differences show up for multi-argument functions.  There, the
--- latter interface cannot express sharing.
-
-
--- The Applicative types
--- type SeqF  m r a b     = m (r a) -> m (r b)
--- type SeqF2 m r a b c   = m (r a) -> m (r b) -> m (r c)
--- type SeqF3 m r a b c d = m (r a) -> m (r b) -> m (r c) -> m (r d)
-
--- The unwrapped Kleisli arrow.  It seems that currying doesn't make
--- much sense here, so only one version, which includes multi-argument
--- functions as operating on product types (tuples).
-
--- type SeqA  m r a b     = r a -> m (r b)
 
 
 
