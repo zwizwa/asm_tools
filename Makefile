@@ -6,10 +6,19 @@
 # $ nix-env -i cabal2nix
 # $ nix-env -i nix-prefetch-git
 
+
 all: compile
+
+.SECONDARY:
 
 clean:
 	rm -f result *~ x_*
+
+.PHONY: myhdl_test
+myhdl_test:  x_blink_fpga.ct256.bin
+
+
+
 
 # Release build
 compile: default.nix release.nix
