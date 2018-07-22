@@ -149,6 +149,12 @@ class (Monad m, Num (r S)) => Seq m r | r -> m, m -> r where
   updateMemory :: r Mem -> (r S, r S, r S, r S) -> m ()
 
 
+-- Convert any type to a monadic representation.
+-- See SeqApp.hs
+class Seq m r => SeqMR m r t s where
+  seqMR :: t -> m (r s)
+
+
 -- Primitives
 
 type SeqOp1 m r = r S -> m (r S)
@@ -369,5 +375,6 @@ data T t = T S
 
 data Bit
 data Enable
+
 
 

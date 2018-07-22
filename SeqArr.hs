@@ -6,7 +6,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE LiberalTypeSynonyms #-}
 
-module SeqKleisli where
+module SeqArr where
 
 import Seq(Seq,S)
 import qualified Seq

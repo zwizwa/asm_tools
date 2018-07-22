@@ -40,8 +40,8 @@ import Seq
 import SeqLib
 import SeqSyntax
 import Names
-import qualified SeqKleisli
-import qualified SeqApplicative
+import qualified SeqArr
+import qualified SeqApp
 import qualified SeqStatic
 import qualified SeqTerm
 import qualified SeqExpr
