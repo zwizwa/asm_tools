@@ -2,7 +2,15 @@
 # - Seq.hs code  (see  fpga_trigger in Trigger.hs)
 # - Net name to pin map like this file
 #
-firmware,dir,fpga,board_silk
-TEST_IN,in,C16,J2_37
-TEST_OUT,out,B16,J2_38
-LED,out,D2,LED_D2
+firmware,dir,fpga,schematic
+#TEST_IN,in,C16,J2_37
+#TEST_OUT,out,B16,J2_38
+LED0,out,B5,LED_D2
+TX,out,B12,RS232_Tx_TTL
+RX,in,B10,RS232_Rx_TTL
+CLK,in,J3,iCE_CLK
+
+
+# There is no proper reset switch on the board.  Is it possible to
+# disable it in the circuit?  On the board it seems simplest to just
+# tie an input to ground.

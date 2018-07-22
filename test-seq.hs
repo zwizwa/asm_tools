@@ -297,10 +297,10 @@ f_blink_fpga :: ([String], [SeqTerm.R S] -> SeqTerm.M ())
 f_blink_fpga =
   $(named
    [|
-    \[ _LED ] -> do
+    \[ _LED0 ] -> do
       c <- counter $ (bits 16)
       led <- slice c (Just 15) 15
-      connect _LED led
+      connect _LED0 led
     |])
 
 -- FIXME: move to MyHDL

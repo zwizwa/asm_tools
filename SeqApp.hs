@@ -13,7 +13,7 @@
 
 module SeqApp where
 
-import Seq(Seq,S,SeqMR(..))
+import Seq(Seq,S,SeqMRS(..))
 import qualified Seq
 import qualified SeqLib
 import Prelude hiding (id, (.))
@@ -132,17 +132,17 @@ import Control.Monad
 
 
 -- The main use for this is in applicative interfaces.  See SeqApp.hs
-instance forall m r t. Seq m r => SeqMR m r (m (r t)) t where seqMR = id  
-instance forall m r t. Seq m r => SeqMR m r    (r t)  t where seqMR = return
+instance forall m r t. Seq m r => SeqMRS m r (m (r S)) where seqMR = id  
+instance forall m r t. Seq m r => SeqMRS m r    (r S)  where seqMR = return
 
 lift1 f a   = do a' <- seqMR a                 ; f a'
 lift2 f a b = do a' <- seqMR a ; b' <- seqMR b ; f a' b'
 
-inv :: SeqMR m r a S => a -> m (r S)
+inv :: SeqMRS m r a => a -> m (r S)
 inv = lift1 Seq.inv
 
-add :: forall m r a b. (SeqMR m r a S, SeqMR m r b S) => a -> b -> m (r S)
-sub :: forall m r a b. (SeqMR m r a S, SeqMR m r b S) => a -> b -> m (r S)
+add :: forall m r a b. (SeqMRS m r a, SeqMRS m r b) => a -> b -> m (r S)
+sub :: forall m r a b. (SeqMRS m r a, SeqMRS m r b) => a -> b -> m (r S)
 
 add = lift2 Seq.add
 sub = lift2 Seq.sub
@@ -159,7 +159,8 @@ f a = do
 
 -- But this will not work without constraining the intermediates.
 -- Can this be solved somehow?
-f' :: forall m r. Seq m r => r S ->  m (r S)
+f' :: forall m r a. SeqMRS m r a => a ->  m (r S)
 f' a = a `add` ((a `add` a) :: m (r S))
 -- f' a = a `add` a `add` a
 
+-- The whole thing seems like a bad idea...
