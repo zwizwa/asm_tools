@@ -16,7 +16,7 @@ import Seq
 import qualified SeqLib
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax
-
+import Data.List
 
 
 x_seqTH = m where
@@ -28,43 +28,54 @@ x_seqTH = m where
     print outputs
     sequence $ map print bindings
     -- expr <- runQ [| \f g x -> f (x*2 + 3) . g |]
-    putStrLn $ pprint $ nDo outputs bindings
+    putStrLn $ pprint $ nLet outputs bindings
 
 type N = Op NodeNum
 type T = Term N
-nDo :: [N] -> [(Int, T)] -> Exp
-nDo outputs bindings = exp where
-  exp = DoE $ bs ++ [NoBindS $ AppE _return os]
-  bs = [nBind n e | (n, e) <- bindings]
-  os = TupE $ map nVarE' outputs
+nLet :: [N] -> [(Int, T)] -> Exp
+nLet outputs bindings = exp where
+  exp = LamE [TupP [s, tupP' []]] $ LetE bs $ TupE [s',o]
+  bs = [ValD (nVarP n) (NormalB (nExp e)) [] | (n, e) <- exprs]
+  o = tupE' $ map nNodeE outputs
+
+  (stats,exprs) = partition isStat bindings
+  -- Expressions are let bindings.
+  isStat (_,Delay _ _) = True
+  isStat _ = False
+  -- Delay statements are state i/o
+  s  = tupP' $ map (nVarP . fst) stats
+  s' = tupE' [nNodeE n | (_, (Delay _ n)) <- stats]
+  
 
 _return :: Exp
 _return = VarE $ mkName "return"
 _next :: Exp
 _next   = VarE $ mkName "next"
 
-nBind :: Int -> T -> Stmt
-nBind n (Delay _ n') =
-  NoBindS $ AppE (AppE _next (LitE $ StringL $ varStr n)) (nVarE' n')
-nBind n e =
-  BindS (nVarP n) (nExp e)
+
+tupE' [a] = a
+tupE' as = TupE as
+
+tupP' [a] = a
+tupP' as = TupP as
 
 nExp :: T -> Exp
-nExp (Comb1 _ opc a)   = AppE (nOp opc) (nVarE' a)
-nExp (Comb2 _ opc a b) = AppE (AppE (nOp opc) (nVarE' a)) (nVarE' b)
+nExp (Comb1 _ opc a)   = AppE (nOp opc) (nNodeE a)
+nExp (Comb2 _ opc a b) = AppE (AppE (nOp opc) (nNodeE a)) (nNodeE b)
 nExp e = error $ show e
 
 nOp :: Show t => t -> Exp
 nOp opc = VarE $ mkName $ "_" ++ show opc
 
-nVarE' :: N -> Exp          
-nVarE' (Node _ n) = nVarE n
-nVarE' (Const (SInt _ v)) = LitE $ IntegerL $ fromIntegral v
+nNodeE :: N -> Exp          
+nNodeE (Node _ n) = nVarE n
+nNodeE (Const (SInt _ v)) = LitE $ IntegerL $ fromIntegral v
 
 
 nVarE :: Int -> Exp          
 nVarE n = VarE $ varName n
 
+nVarP :: Int -> Pat          
 nVarP n = VarP $ varName n
 
 varName :: Int -> Name
