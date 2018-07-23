@@ -366,10 +366,10 @@ sizeError = ("Seq.sizeError: " ++)
 -- idiomatic way to do this is to use phantom type tags.  Here are the
 -- basic building blocks.
 
-data T t = T S
+-- data T t = T S
 
-data Bit
-data Enable
+-- data Bit
+-- data Enable
 
 
 
