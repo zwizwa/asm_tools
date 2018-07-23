@@ -48,8 +48,7 @@ type StateTypes = Map RegNum StateType
 type Processes  = Map RegNum Process
 -- More abstract than concrete Map allows probing
 type RegIn = RegNum -> RegVal
-type Run = [(RegNum, RegUpdate)]
-type CompState = (RegNum, StateTypes, RegVals, Processes, Run)
+type CompState = (RegNum, StateTypes, RegVals, Processes)
 -- Memory state implementation
 type MemState = Map RegNum RegVal
 
@@ -61,17 +60,10 @@ data Process = Process Dynamic
 
 
 -- Primitive state manipulations.  Combine these with 'modify'
-appRegNum    f (n, t, v, e, p) = (f n, t, v, e, p) ; getRegNum    = do (n, _, _, _, _) <- get ; return n
-appTypes     f (n, t, v, e, p) = (n, f t, v, e, p) ; getTypes     = do (_, t, _, _, _) <- get ; return t
-appVals      f (n, t, v, e, p) = (n, t, f v, e, p)
-appProcesses f (n, t, v, e, p) = (n, t, v, f e, p) ; getProcesses = do (_, _, _, e, _) <- get ; return e
-appProgram   f (n, t, v, e, p) = (n, t, v, e, f p)
-
--- Efficiency of representation of the binding dictionary doesn't
--- matter.  It will be "compiled" later anyway.
-addProgram (r, f) = do
-  modify $ appProgram $ \p -> p ++ [(r, f)]
-
+appRegNum    f (n, t, v, e) = (f n, t, v, e) ; getRegNum    = do (n, _, _, _) <- get ; return n
+appTypes     f (n, t, v, e) = (n, f t, v, e) ; getTypes     = do (_, t, _, _) <- get ; return t
+appVals      f (n, t, v, e) = (n, t, f v, e)
+appProcesses f (n, t, v, e) = (n, t, v, f e) ; getProcesses = do (_, _, _, e) <- get ; return e
 
 data R t = R { unR :: Signal } -- phantom wrapper
 data Signal = Reg Int
@@ -208,8 +200,8 @@ makeRegNum = do
 -- to thread register state from one machine tick to another.
 runEmu :: M a -> RegIn -> Processes -> (a, StateTypes, RegVals, Processes)
 runEmu m regsenv extsi = (v, regtypes, regso, extso) where
-  state =  (0, Map.empty, Map.empty, extsi, [])
-  (v, (_, regtypes, regso, extso, tick)) =
+  state =  (0, Map.empty, Map.empty, extsi)
+  (v, (_, regtypes, regso, extso)) =
     runState (runReaderT (runM m) (initEnv, regsenv)) state
 
 -- To perform a simulation, we need two things.  Both are built on runEmu.

@@ -46,6 +46,7 @@ import qualified SeqStatic
 import qualified SeqTerm
 import qualified SeqExpr
 import qualified SeqEmu
+import qualified SeqTH
 import qualified MyHDL
 import qualified CPU
 import qualified VCD
@@ -90,6 +91,7 @@ main = do
   x_syntax
   x_ifs
   x_blink_fpga
+  SeqTH.x_seqTH
   
 
 x_counter = do
