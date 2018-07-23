@@ -39,7 +39,8 @@ newtype M t = M { runM :: ReaderT (CompEnv R) (State CompState) t } deriving
    MonadState CompState)
 type RegNum    = Int
 type RegVal    = Int
-data StateType = IntReg SType | ProcessReg
+data StateType = IntReg SType | ProcessReg Process
+data RegUpdate = RegUpdate
 type CompEnv r = (Env r, RegIn)
 -- Dictionaries
 type RegVals    = Map RegNum RegVal
@@ -47,7 +48,8 @@ type StateTypes = Map RegNum StateType
 type Processes  = Map RegNum Process
 -- More abstract than concrete Map allows probing
 type RegIn = RegNum -> RegVal
-type CompState = (RegNum, StateTypes, RegVals, Processes)
+type Run = [(RegNum, RegUpdate)]
+type CompState = (RegNum, StateTypes, RegVals, Processes, Run)
 -- Memory state implementation
 type MemState = Map RegNum RegVal
 
@@ -59,12 +61,16 @@ data Process = Process Dynamic
 
 
 -- Primitive state manipulations.  Combine these with 'modify'
-appRegNum    f (n, t, v, e) = (f n, t, v, e) ; getRegNum    = do (n, _, _, _) <- get ; return n
-appTypes     f (n, t, v, e) = (n, f t, v, e) ; getTypes     = do (_, t, _, _) <- get ; return t
-appVals      f (n, t, v, e) = (n, t, f v, e)
-appProcesses f (n, t, v, e) = (n, t, v, f e) ; getProcesses = do (_, _, _, e) <- get ; return e
+appRegNum    f (n, t, v, e, p) = (f n, t, v, e, p) ; getRegNum    = do (n, _, _, _, _) <- get ; return n
+appTypes     f (n, t, v, e, p) = (n, f t, v, e, p) ; getTypes     = do (_, t, _, _, _) <- get ; return t
+appVals      f (n, t, v, e, p) = (n, t, f v, e, p)
+appProcesses f (n, t, v, e, p) = (n, t, v, f e, p) ; getProcesses = do (_, _, _, e, _) <- get ; return e
+appProgram   f (n, t, v, e, p) = (n, t, v, e, f p)
 
-  
+-- Efficiency of representation of the binding dictionary doesn't
+-- matter.  It will be "compiled" later anyway.
+addProgram (r, f) = do
+  modify $ appProgram $ \p -> p ++ [(r, f)]
 
 
 data R t = R { unR :: Signal } -- phantom wrapper
@@ -89,10 +95,6 @@ instance Seq M R where
 
   stype (R r) = styp r
 
-  slice (R a) u l = do
-    v <- sval a
-    return $ R $ sliceVal v u l
-
   -- driven signals
   op1 o (R a) = do
     SInt sza va <- sval a
@@ -115,6 +117,10 @@ instance Seq M R where
     let sz = fromRight' $ op3size IF szc szt szf
         vr = if vc /= 0 then vt else vf
     return $ R $ truncVal sz vr
+
+  slice (R a) u l = do
+    v <- sval a
+    return $ R $ sliceVal v u l
 
   -- register drive
   update (R (Reg a)) (R b) = do
@@ -202,8 +208,8 @@ makeRegNum = do
 -- to thread register state from one machine tick to another.
 runEmu :: M a -> RegIn -> Processes -> (a, StateTypes, RegVals, Processes)
 runEmu m regsenv extsi = (v, regtypes, regso, extso) where
-  state =  (0, Map.empty, Map.empty, extsi)
-  (v, (_, regtypes, regso, extso)) =
+  state =  (0, Map.empty, Map.empty, extsi, [])
+  (v, (_, regtypes, regso, extso, tick)) =
     runState (runReaderT (runM m) (initEnv, regsenv)) state
 
 -- To perform a simulation, we need two things.  Both are built on runEmu.
@@ -223,7 +229,7 @@ reset m = (r0, e0) where
   -- stored in the same type map.
   (regTypes, extTypes) = Map.partition isIntReg types
   isIntReg (IntReg _) = True
-  isIntReg ProcessReg = False
+  isIntReg (ProcessReg _) = False
 
   r0 = Map.map initReg regTypes
   initReg (IntReg (SInt size initVal)) = initVal
@@ -291,7 +297,7 @@ fromProcess (Process p) =
 process :: forall s. Typeable s => s -> M RegNum
 process init = do
   r <- makeRegNum
-  modify $ appTypes $ insert r $ ProcessReg
+  modify $ appTypes $ insert r $ ProcessReg $ toProcess init
 
   -- When running inside 'ticks', the first 'tick' or during 'probe',
   -- we'll have to initialize state.  This is a little quirky..
