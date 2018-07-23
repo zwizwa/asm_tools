@@ -46,13 +46,6 @@ nLet outputs bindings = exp where
   s  = tupP' $ map (nVarP . fst) stats
   s' = tupE' [nNodeE n | (_, (Delay _ n)) <- stats]
   
-
-_return :: Exp
-_return = VarE $ mkName "return"
-_next :: Exp
-_next   = VarE $ mkName "next"
-
-
 tupE' [a] = a
 tupE' as = TupE as
 
@@ -60,17 +53,18 @@ tupP' [a] = a
 tupP' as = TupP as
 
 nExp :: T -> Exp
-nExp (Comb1 _ opc a)   = AppE (nOp opc) (nNodeE a)
-nExp (Comb2 _ opc a b) = AppE (AppE (nOp opc) (nNodeE a)) (nNodeE b)
+nExp (Comb1 _ opc a)   =   AppE (opVar opc) (nNodeE a)
+nExp (Comb2 _ opc a b)   = AppE (AppE (opVar opc) (nNodeE a)) (nNodeE b)
+nExp (Comb3 _ opc a b c) = AppE (AppE (AppE (opVar opc) (nNodeE a)) (nNodeE b)) (nNodeE c)
 nExp e = error $ show e
 
-nOp :: Show t => t -> Exp
-nOp opc = VarE $ mkName $ "_" ++ show opc
+
+opVar :: Show t => t -> Exp
+opVar opc = VarE $ mkName $ "_" ++ show opc
 
 nNodeE :: N -> Exp          
 nNodeE (Node _ n) = nVarE n
 nNodeE (Const (SInt _ v)) = LitE $ IntegerL $ fromIntegral v
-
 
 nVarE :: Int -> Exp          
 nVarE n = VarE $ varName n
