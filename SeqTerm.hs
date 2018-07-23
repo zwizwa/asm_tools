@@ -220,7 +220,9 @@ driven c = do
 -- I/O ports direction is not known until it is driven, so start them
 -- out as Input nodes ...
 io :: [SType] -> M [R Seq.S]
-io ts = sequence $ [fmap R $ driven $ Input t | t <- ts]
+io ts = sequence $ map input ts
+
+input t = fmap R $ driven $ Input t
 
 -- ... and convert them to output here.  Other nodes cannot be driven
 -- more than once.  Note: using fix, this error is avoided.

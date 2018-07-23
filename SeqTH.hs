@@ -21,8 +21,10 @@ import Data.List
 
 x_seqTH = m where
   c@(outputs, bindings) = compile $ do
-    t <- SeqLib.counter (SInt (Just 4) 0)
-    return [t]
+    i <- SeqTerm.input SeqLib.bit
+    -- c <- SeqLib.counter (SInt (Just 4) 0)
+    o <- SeqLib.integral i
+    return [o]
   m = do
     putStrLn "-- x_seqTH"
     print outputs
@@ -34,17 +36,24 @@ type N = Op NodeNum
 type T = Term N
 nLet :: [N] -> [(Int, T)] -> Exp
 nLet outputs bindings = exp where
-  exp = LamE [TupP [s, tupP' []]] $ LetE bs $ TupE [s',o]
+  exp = LamE [TupP [s, i]] $ LetE bs $ TupE [s',o]
   bs = [ValD (nVarP n) (NormalB (nExp e)) [] | (n, e) <- exprs]
   o = tupE' $ map nNodeE outputs
 
-  (stats,exprs) = partition isStat bindings
-  -- Expressions are let bindings.
-  isStat (_,Delay _ _) = True
-  isStat _ = False
-  -- Delay statements are state i/o
-  s  = tupP' $ map (nVarP . fst) stats
-  s' = tupE' [nNodeE n | (_, (Delay _ n)) <- stats]
+  -- Delay
+  (delays,combs) = partition isDelay bindings
+  isDelay (_,Delay _ _) = True ; isDelay _ = False
+  s  = tupP' $ map (nVarP . fst) delays
+  s' = tupE' [nNodeE n | (_, (Delay _ n)) <- delays]
+
+  -- Inputs
+  (inputs,exprs) = partition isInput combs
+  isInput (_,Input _) = True ; isInput _ = False
+  i = tupP' $ map (nVarP . fst) inputs
+
+
+
+  
   
 tupE' [a] = a
 tupE' as = TupE as
