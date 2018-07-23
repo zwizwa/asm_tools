@@ -302,7 +302,7 @@ fpga name (portNames, mod) = MyHDL module_py where
 fpga' name (names, fun) pinMap = (py, pcf') where 
   names' = map (\('_':nm) -> nm) names
   py = fpga name (names', fun)
-  pcf' = PCF names' pinMap
+  pcf' = PCF ("CLK":"RST":names') pinMap
 
 --- ice40 PCF pin configuration files
 pcf :: [String] -> (String -> String) -> String

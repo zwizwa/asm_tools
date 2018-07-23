@@ -36,6 +36,7 @@ def inst_testbench(hdl_fun, ports, tb_input, tb_output):
 
     CLK = Signal(bool(False))
     RST = ResetSignal(1,0,True)
+    #RST = ResetSignal(0,1,True)
 
     # Inputs are assumed to be 1-bit signals.  We model them as
     # registers, so first input vector determines reset values.
@@ -93,7 +94,8 @@ def load_and_run(hdl_fun_name, filename):
     out_ports = ports[2:]
     # Which are special cases.
     CLK = Signal(bool(False))
-    RST = ResetSignal(1,0,True)
+    #RST = ResetSignal(1,0,True)
+    RST = ResetSignal(0,1,True)
     # For FPGA output, we assume 1-bit signals.
     out_signals = [Signal(modbv(0)[1:]) for _ in out_ports]
     signals = [CLK, RST] + out_signals

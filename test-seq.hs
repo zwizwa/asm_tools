@@ -293,22 +293,23 @@ x_ifs = do
     sequence $ zipWith connect [o1,o2] os'
     return io
 
+
+-- Blink-a-LED example for HX8K breakout
+-- 12MHz
 f_blink_fpga :: ([String], [SeqTerm.R S] -> SeqTerm.M ())
 f_blink_fpga =
   $(named
    [|
     \[ _LED0 ] -> do
-      c <- counter $ (bits 16)
-      led <- slice c (Just 15) 15
+      c <- counter $ (bits 24)
+      led <- slice c (Just 23) 23
       connect _LED0 led
     |])
-
--- FIXME: move to MyHDL
 x_blink_fpga = do
   putStrLn "-- x_blink_fpga"
   board <- CSV.readTagged id "specs/hx8k_breakout.csv"
-  let (py,pcf) = MyHDL.fpga' "x_blink_fpga" f_blink_fpga pin
-      pin = CSV.ff (\[k,_,v,_] -> (k,v)) board
+  let pin = CSV.ff (\[k,_,v,_] -> (k,v)) board
+      (py,pcf) = MyHDL.fpga' "x_blink_fpga" f_blink_fpga pin
   writeFile "x_blink_fpga.py" $ show py
   writeFile "x_blink_fpga.pcf" $ show pcf
 

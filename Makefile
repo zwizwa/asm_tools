@@ -94,6 +94,9 @@ build/testbench_gen.py: .stamp.generate
 %.icedude: %.bin  
 	PATH=~/.cabal/bin:$$PATH iCEDude -U flash:w:$<
 
+%.iceprog: %.bin
+	iceprog
+
 
 
 
