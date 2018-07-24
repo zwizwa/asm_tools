@@ -64,7 +64,8 @@ import Prelude hiding (zipWith, (.), id)
 import Data.List hiding (zipWith)
 import Data.Key(Zip(..),zipWith)
 import Data.Typeable
-
+import Language.Haskell.TH as TH
+  
 -- t_: trace
 -- h_: hdl port module
 -- x_: example
@@ -91,8 +92,8 @@ main = do
   x_syntax
   x_ifs
   x_blink_fpga
-  SeqTH.x_seqTH
-  
+  x_seqTH
+  x_app_share
 
 x_counter = do
   putStrLn "--- x_counter"
@@ -274,6 +275,22 @@ x_syntax = do
   let stx = $(seqFile "example.seq")
   print stx
 
+x_seqTH = m1 >> m2 where
+  m1 = do
+    -- Print syntax
+    putStrLn "-- x_seqTH (syntax)"
+    let c@(outputs, bindings) = SeqTerm.compile SeqTH.seqLamTest
+    print outputs
+    sequence $ map print bindings
+    -- expr <- runQ [| \f g x -> f (x*2 + 3) . g |]
+    putStrLn $ pprint $ SeqTH.seqLam c
+  m2 = do
+    -- Compile syntax
+    putStrLn "-- x_seqTH (staged)"
+    let f = $(return $ SeqTH.seqLam $ SeqTerm.compile SeqTH.seqLamTest)
+        seqADD = (+)
+    print $ f (0, 1) 
+    return ()
 
 x_vcd = do
   putStrLn "--- x_vcd"
@@ -295,6 +312,21 @@ x_ifs = do
     sequence $ zipWith connect [o1,o2] os'
     return io
 
+-- Applicative interface where all operations are expressed as pure
+-- functions.  The problem here seems to be sharing.  But that can be
+-- resolved like this:
+
+t_app_square :: Seq m r => m (r S) -> m (r S)
+t_app_square = (SeqApp.uncurry SeqApp.mul) . (fmap (\x->(x,x)))
+
+x_app_share = do
+  putStrLn "--- x_app_share"
+  let c@(outputs, bindings) = SeqTerm.compile m
+      m = do a <- inc 1
+             b <- t_app_square $ return a
+             return [b]
+  print outputs
+  sequence $ map print bindings
 
 -- Blink-a-LED example for HX8K breakout
 -- 12MHz

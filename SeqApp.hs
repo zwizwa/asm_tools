@@ -44,41 +44,20 @@ import Control.Monad
 -- The differences show up for multi-argument functions.  There, the
 -- latter interface cannot express sharing.
 
--- For more information, see SeqArr.hs
+
+-- To allow for sharing, it is possible to play with curry/uncurry.
+-- E.g. using fmapped versions of (,) fst snd it is possible to
+-- implement any kind of sharing, resulting in functions like:
+uncurry ::
+  Seq m r =>
+  (m (r S) -> m (r S) -> m (r S)) ->
+  m (r S, r S) -> m (r S)
+uncurry f mp =
+  f (fmap fst mp) (fmap snd mp)
 
 
 
--- EDIT: Jury is still out on this.  It seems that the core idea is
--- the Kleisli arrow, not m a -> m b.  The latter has sharing issues.
-
-
--- The base language is monadic.  Operations follow the pattern:
---
---   r S -> m (r S)
---   r S -> r S -> m (r S)
---   ...
---
--- However, this can be a little awkward to work with, so define an
--- applicative interface as well, lifting the primitives to:
---
---   m (r S) -> m (r S)
---   m (r S) -> m (r S) -> m (r S)
---   ...
---
--- While convenient, note that this cannot implement sharing
--- E.g. for a 2-argument f, the application 'f m m' will duplicate the
--- circuit needed to compute m.
---
--- Note: I keep coming back to the faulty intuition that "just adding
--- another bind and return pair" will solve the issue.  Clearly that
--- is not the case because return is an identity:
--- 'm >>= return' is the same as 'm'
-
--- So, operations are provided for convenience in the hope that the
--- sharing issue is understood.  The rule of thumb is that if there is
--- fanout, you should funnel composition through a binding operation.
-
-
+-- The rest of the language can then be represented as:
 
 type SeqApp1 m r = (m (r S)) -> (m (r S))
 type SeqApp2 m r = (m (r S)) -> (m (r S)) -> (m (r S))
@@ -128,62 +107,27 @@ instance Seq m r => Num (m (r S)) where
   signum = error $ "TODO: signum"
 
 
--- The above is not the whole story.
--- The real issue is that a couple of interfaces are needed:
+
+
+
+-- Notes:
+
+-- a) I went over this a couple of times and got really confused.
+-- E.g. the faulty intuition that "just adding another bind and return
+-- pair" will solve the issue.  Clearly that is not the case because
+-- return is an identity: 'm >>= return' is the same as 'm'
+
+-- b) I attempted to still use do notation and handle cases like this:
 --
 --    a ->   a -> m a
 --    a -> m a -> m a
 --  m a ->   a -> m a
 --  m a -> m a -> m a
 --
--- One solution is to solve it at the syntax level.  E.g. create a
--- 'lisp' on top of this.  Take s-expressions, perform macro
--- substitution, and reduce to ANF before mapping onto the monadic
--- form.
---b
--- Another solution is to use some a converter type class.  This turns
--- out to be very awkward to use.  I did not find a way to properly
--- constrain the conversions, requiring type annotations of the
--- intermediaries.  Leaving it here for reference.
+-- One solution is to solve it at the syntax level, which definitely
+-- seems like a valid way to work (essentially convert to ANF / do
+-- notation).
 
--- -- Convert any type to a monadic representation of a signal.
--- -- See SeqApp.hs
--- class Seq m r => SeqMRS m r t where
---   seqMR :: t -> m (r S)
-
-
-
-
--- -- The main use for this is in applicative interfaces.  See SeqApp.hs
--- instance forall m r t. Seq m r => SeqMRS m r (m (r S)) where seqMR = id  
--- instance forall m r t. Seq m r => SeqMRS m r    (r S)  where seqMR = return
-
--- lift1 f a   = do a' <- seqMR a                 ; f a'
--- lift2 f a b = do a' <- seqMR a ; b' <- seqMR b ; f a' b'
-
--- inv :: SeqMRS m r a => a -> m (r S)
--- inv = lift1 Seq.inv
-
--- add :: forall m r a b. (SeqMRS m r a, SeqMRS m r b) => a -> b -> m (r S)
--- sub :: forall m r a b. (SeqMRS m r a, SeqMRS m r b) => a -> b -> m (r S)
-
--- add = lift2 Seq.add
--- sub = lift2 Seq.sub
-
--- -- However it seems this will need quite a bit of type annotation at
--- -- the user end to constrain the types.  E.g. to use these in monadic
--- -- form works fine, and actually seems to remove the need for
--- -- annotation altogether:
-
--- f a = do
---   b <- add a a
---   c <- add b b
---   return c
-
--- -- But this will not work without constraining the intermediates.
--- -- Can this be solved somehow?
--- f' :: forall m r a. SeqMRS m r a => a ->  m (r S)
--- f' a = a `add` ((a `add` a) :: m (r S))
--- -- f' a = a `add` a `add` a
-
--- -- The whole thing seems like a bad idea...
+-- The other solution to use type classes to perform the a / m a
+-- selection turns out to be not very useful.  Too ambiguous,
+-- requiring a lot of type annotation.  See git for old versions.

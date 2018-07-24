@@ -10,7 +10,7 @@
 
 {-# LANGUAGE TemplateHaskell #-}
 
-module SeqTH where
+module SeqTH(seqLam, seqLamTest) where
 import SeqTerm
 import Seq
 import qualified SeqLib
@@ -19,69 +19,83 @@ import Language.Haskell.TH.Syntax
 import Data.List
 
 
-x_seqTH = m where
-  c@(outputs, bindings) = compile $ do
+seqLamTest = do
     i <- SeqTerm.input SeqLib.bit
     -- c <- SeqLib.counter (SInt (Just 4) 0)
     o <- SeqLib.integral i
     return [o]
-  m = do
-    putStrLn "-- x_seqTH"
-    print outputs
-    sequence $ map print bindings
-    -- expr <- runQ [| \f g x -> f (x*2 + 3) . g |]
-    putStrLn $ pprint $ nLet outputs bindings
 
+-- Abbrevs
 type N = Op NodeNum
 type T = Term N
-nLet :: [N] -> [(Int, T)] -> Exp
-nLet outputs bindings = exp where
+
+data Part = D | I | MR | MW | E deriving Eq
+
+-- Convert compiled Term to TH lambda expression
+seqLam :: ([N], [(Int, T)]) -> Exp
+seqLam  (outputs, bindings) = exp where
   exp = LamE [TupP [s, i]] $ LetE bs $ TupE [s',o]
-  bs = [ValD (nVarP n) (NormalB (nExp e)) [] | (n, e) <- exprs]
-  o = tupE' $ map nNodeE outputs
+  bs = [ValD (nodeNumPat n) (NormalB (termExp e)) [] | (n, e) <- partition E]
+  o = tupE' $ map nodeExp outputs
 
-  -- Delay
-  (delays,combs) = partition isDelay bindings
-  isDelay (_,Delay _ _) = True ; isDelay _ = False
-  s  = tupP' $ map (nVarP . fst) delays
-  s' = tupE' [nNodeE n | (_, (Delay _ n)) <- delays]
+  partition t = map snd $ filter ((t ==) . fst) tagged
+  tagged = map p' bindings
+  p' x = (p x, x)
+  p (_, Input _)   = I
+  p (_, Delay _ _) = D
+  p (_, MemRd _ _) = MR
+  p (_, MemWr _)   = MW
+  p _              = E
+    
+  ds = partition D
+  s  = tupP' $ map (nodeNumPat . fst) $ ds
+  s' = tupE' [nodeExp n | (_, (Delay _ n)) <- ds]
 
-  -- Inputs
-  (inputs,exprs) = partition isInput combs
-  isInput (_,Input _) = True ; isInput _ = False
-  i = tupP' $ map (nVarP . fst) inputs
+  i = tupP' $ map (nodeNumPat . fst) $ partition I
+
+  -- mr =
+  -- mw
 
 
 
-  
-  
+tupE' :: [Exp] -> Exp
 tupE' [a] = a
 tupE' as = TupE as
 
+tupP' :: [Pat] -> Pat
 tupP' [a] = a
 tupP' as = TupP as
 
-nExp :: T -> Exp
-nExp (Comb1 _ opc a)   =   AppE (opVar opc) (nNodeE a)
-nExp (Comb2 _ opc a b)   = AppE (AppE (opVar opc) (nNodeE a)) (nNodeE b)
-nExp (Comb3 _ opc a b c) = AppE (AppE (AppE (opVar opc) (nNodeE a)) (nNodeE b)) (nNodeE c)
-nExp e = error $ show e
-
-
+-- Primitive operation names
 opVar :: Show t => t -> Exp
-opVar opc = VarE $ mkName $ "_" ++ show opc
+opVar opc = VarE $ mkName $ "seq" ++ show opc
 
-nNodeE :: N -> Exp          
-nNodeE (Node _ n) = nVarE n
-nNodeE (Const (SInt _ v)) = LitE $ IntegerL $ fromIntegral v
+termExp :: T -> Exp
+termExp (Comb1 _ opc a)     = app1 (opVar opc) (nodeExp a)
+termExp (Comb2 _ opc a b)   = app2 (opVar opc) (nodeExp a) (nodeExp b)
+termExp (Comb3 _ opc a b c) = app3 (opVar opc) (nodeExp a) (nodeExp b) (nodeExp c)
+--termExp (Slice _ a b c)     = app3 (opVar "SLICE") (nodeExp a) (nodeExp b) (nodeExp c)
+termExp e = error $ show e
 
-nVarE :: Int -> Exp          
-nVarE n = VarE $ varName n
+app1 = AppE
+app2 a b c     = app1 (app1 a b) c
+app3 a b c d   = app1 (app2 a b c) d
+app4 a b c d e = app1 (app3 a b c d) e
 
-nVarP :: Int -> Pat          
-nVarP n = VarP $ varName n
 
-varName :: Int -> Name
-varName = mkName . varStr
-varStr n = "r" ++ show n
+
+
+nodeExp :: N -> Exp          
+nodeExp (Node _ n) = nodeNumExp n
+nodeExp (Const (SInt _ v)) = LitE $ IntegerL $ fromIntegral v
+
+nodeNumExp :: Int -> Exp          
+nodeNumExp n = VarE $ nodeNumName n
+
+nodeNumPat :: Int -> Pat          
+nodeNumPat n = VarP $ nodeNumName n
+
+nodeNumName :: Int -> Name
+nodeNumName = mkName . nodeNumStr
+nodeNumStr n = "r" ++ show n
 
