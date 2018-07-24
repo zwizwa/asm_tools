@@ -47,7 +47,8 @@ import Control.Monad
 
 -- To allow for sharing, it is possible to play with curry/uncurry.
 -- E.g. using fmapped versions of (,) fst snd it is possible to
--- implement any kind of sharing, resulting in functions like:
+-- implement any kind of sharing, e.g. using functions like:
+
 uncurry ::
   Seq m r =>
   (m (r S) -> m (r S) -> m (r S)) ->
@@ -55,7 +56,12 @@ uncurry ::
 uncurry f mp =
   f (fmap fst mp) (fmap snd mp)
 
+dup ::
+  Seq m r =>
+  m (r S) -> m (r S, r S)
+dup = fmap $ \a -> (a, a)
 
+  
 
 -- The rest of the language can then be represented as:
 
@@ -112,10 +118,12 @@ instance Seq m r => Num (m (r S)) where
 
 -- Notes:
 
--- a) I went over this a couple of times and got really confused.
--- E.g. the faulty intuition that "just adding another bind and return
--- pair" will solve the issue.  Clearly that is not the case because
--- return is an identity: 'm >>= return' is the same as 'm'
+-- I went over this a couple of times and got really confused.  Here
+-- are some dead ends.
+
+-- a) The faulty intuition that "just adding another bind and return
+-- pair" will solve the sharing issue.  Clearly that is not the case
+-- because return is an identity: 'm >>= return' is the same as 'm'
 
 -- b) I attempted to still use do notation and handle cases like this:
 --
