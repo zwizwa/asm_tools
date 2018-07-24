@@ -15,22 +15,28 @@ import SeqEmu
 
 -- Most generic: use standard Haskell type classes.
 
+
+
 class Applicative f => Causal f where
-  close :: (a -> (a, b)) -> a -> f b
+  close  :: (s -> (s, o)) -> s -> f o
+
+  -- Some inspection is needed to fish out the input value.
+  closei :: (s -> i -> (s, o)) -> s -> f i -> f o
 
 instance Causal [] where
   close u s0 = f s0 where
     f s = (o : f s) where
       (s, o) = u s
+  closei u s0 is  = f s0 is where
+    f s (i:is) = (o : f s' is) where
+      (s', o) = u s i
 
 -- This is straightforward
 counter :: (Num t, Causal f) => t -> f t
-counter = close (\s -> (s + 1, s))
+counter = close $ \s -> (s + 1, s)
 
--- But this needs a different approach.
--- integral :: (Num t, Causal f) => t -> f t -> f t
--- integral init ins =
-  
+integral :: (Num t, Causal f) => t -> f t -> f t
+integral = closei $ \s i -> (s + i, s)
 
 
 -- Allow Specialized instances.
