@@ -60,10 +60,13 @@ seqLam  (outputs, bindings) = exp where
   bindings' =
     [ValD (nodeNumPat n) (NormalB (termExp e)) []
     | (n, e) <- partition E]
-    
-  inputs = tupP' $ map (nodeNumPat . fst) $ partition I
 
-  outputs' = tupE' $ map nodeExp outputs
+  -- I/O is more conveniently exposed as lists, which would be the
+  -- same interface as the source code.  State can use tuples: it will
+  -- be treated as opaque.
+  
+  inputs   = ListP $ map (nodeNumPat . fst) $ partition I
+  outputs' = ListE $ map nodeExp outputs
 
   ds = partition D
   stateInit = tupE' [int v | (_, (Delay (SInt _ v) _)) <- ds]

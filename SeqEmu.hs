@@ -4,6 +4,10 @@
 -- operators, and uses Haskell as a macro language.  The main purpose
 -- of this module is to provide test benches through 'trace'.
 
+-- The implementation does not separate the "network construction" and
+-- "network evaluation" phases and is rather slow.  For a faster
+-- implementation, use SeqTH.
+
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}

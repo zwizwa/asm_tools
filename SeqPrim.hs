@@ -28,3 +28,10 @@ seqUpdateMem ((wEn,wAddr,wData,rAddr), mem) = (rData, mem') where
 
 seqInt :: Integer -> Int
 seqInt = fromIntegral
+
+run :: ((m, r, [Int]) -> (m, r, [Int])) -> (m, r) -> [[Int]] -> [[Int]]
+run f (m0, r0) is = u m0 r0 is where
+  u _ _ [] = []
+  u m r (i:is) = (o : u m' r' is) where
+    (m',r',o) = f (m,r,i)
+
