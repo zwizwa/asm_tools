@@ -316,15 +316,11 @@ x_ifs = do
 -- functions.  The problem here seems to be sharing.  But that can be
 -- resolved like this:
 
-t_app_square :: Seq m r => m (r S) -> m (r S)
-t_app_square = (SeqApp.uncurry SeqApp.mul) . (fmap (\x->(x,x)))
-
 x_app_share = do
   putStrLn "--- x_app_share"
   let c@(outputs, bindings) = SeqTerm.compile m
-      m = do a <- inc 1
-             b <- t_app_square $ return a
-             return [b]
+      m = do a <- SeqApp.square $ inc 1
+             return [a]
   print outputs
   sequence $ map print bindings
 

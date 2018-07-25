@@ -45,24 +45,32 @@ import Control.Monad
 -- latter interface cannot express sharing.
 
 
--- To allow for sharing, it is possible to play with curry/uncurry.
--- E.g. using fmapped versions of (,) fst snd it is possible to
--- implement any kind of sharing, e.g. using functions like:
+-- The ensure sharing, make sure values pass through bind in some way,
+-- e.g. using a let/bind-like construct:
 
-dup ::
-  Seq m r =>
-  m (r S) -> m (r S, r S)
+var :: forall m r t. Seq m r => m (r S) -> (m (r S) -> m t) -> m t
+var mv f = mv >>= \v -> f $ return v
+
+-- or point-free operators and tuples
+
+dup :: Seq m r => m (r S) -> m (r S, r S)
 dup = fmap $ \a -> (a, a)
 
-uncurry ::
-  Seq m r =>
-  (m (r S) -> m (r S) -> m (r S)) ->
-  m (r S, r S) -> m (r S)
-uncurry f mp =
-  f (fmap fst mp) (fmap snd mp)
+uncur :: Seq m r => (m (r S) -> m (r S) -> m (r S)) -> m (r S, r S) -> m (r S)
+uncur f mp = f (fmap fst mp) (fmap snd mp)
 
 
-  
+
+-- Examples
+
+square :: Seq m r => m (r S) -> m (r S)
+square x' = var x' $ \x -> x `mul` x
+
+square' :: Seq m r => m (r S) -> m (r S)
+square' = (uncur mul) . dup
+
+
+
 
 -- The rest of the language can then be represented as:
 
