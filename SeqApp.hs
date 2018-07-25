@@ -49,17 +49,17 @@ import Control.Monad
 -- E.g. using fmapped versions of (,) fst snd it is possible to
 -- implement any kind of sharing, e.g. using functions like:
 
+dup ::
+  Seq m r =>
+  m (r S) -> m (r S, r S)
+dup = fmap $ \a -> (a, a)
+
 uncurry ::
   Seq m r =>
   (m (r S) -> m (r S) -> m (r S)) ->
   m (r S, r S) -> m (r S)
 uncurry f mp =
   f (fmap fst mp) (fmap snd mp)
-
-dup ::
-  Seq m r =>
-  m (r S) -> m (r S, r S)
-dup = fmap $ \a -> (a, a)
 
 
   

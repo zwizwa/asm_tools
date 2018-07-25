@@ -52,7 +52,6 @@ import qualified CPU
 import qualified VCD
 import qualified CSV
 import qualified NetFun
-import qualified Causal
 
 import Data.Map.Lazy (empty, foldrWithKey, insert)
 import qualified Data.Map.Lazy as Map
