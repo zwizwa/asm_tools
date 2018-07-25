@@ -40,6 +40,7 @@ import Seq
 import SeqLib
 import SeqSyntax
 import Names
+import SeqPrim
 import qualified SeqArr
 import qualified SeqApp
 import qualified SeqStatic
@@ -55,6 +56,7 @@ import qualified NetFun
 
 import Data.Map.Lazy (empty, foldrWithKey, insert, Map)
 import qualified Data.Map.Lazy as Map
+import qualified Data.IntMap.Strict as IntMap
 import qualified Control.Applicative as Applicative
 import Control.Applicative (ZipList(..))
 import Control.Category
@@ -288,14 +290,7 @@ x_seqTH = m1 >> m2 where
     -- Compile syntax
     putStrLn "-- x_seqTH (staged)"
     let (f,i@(mi,si)) = $(return $ SeqTH.seqLam $ SeqTerm.compile SeqTH.seqLamTest)
-        seqADD t = (+)
-        seqInitMem = Map.empty
-        -- FIXME: These should be Int and IntMap
-        seqUpdateMem :: ((Int,Int,Int,Int),Map Int Int) -> (Int,  Map Int Int)
-        seqUpdateMem (_,m) = (0::Int,m)
-        seqInt :: Integer -> Int
-        seqInt = fromIntegral
-    -- print i
+    print i
     print $ f (mi,si,1::Int)
     return ()
 

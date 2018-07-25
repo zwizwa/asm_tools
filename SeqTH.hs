@@ -66,7 +66,7 @@ seqLam  (outputs, bindings) = exp where
   outputs' = tupE' $ map nodeExp outputs
 
   ds = partition D
-  stateInit = tupE' $ map (const $ int 0) ds
+  stateInit = tupE' [int v | (_, (Delay (SInt _ v) _)) <- ds]
   stateIn   = tupP' $ map (nodeNumPat . fst) $ ds
   stateOut  = tupE' [nodeExp n | (_, (Delay _ n)) <- ds]
 
@@ -82,6 +82,7 @@ seqLam  (outputs, bindings) = exp where
           | (n, (MemWr (a,b,c,d))) <- partition MW]
 
 
+-- FIXME: Use nested tuples for the state, memory collections.
 
 tupE' :: [Exp] -> Exp
 tupE' [a] = a
