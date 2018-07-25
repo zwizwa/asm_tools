@@ -16,9 +16,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleContexts #-}
---{-# LANGUAGE UndecidableInstances #-}
---{-# LANGUAGE AllowAmbiguousTypes #-}
---{-# LANGUAGE IncoherentInstances #-}
 
 module SeqApp where
 
@@ -31,25 +28,14 @@ import Control.Arrow
 import Control.Monad
 
 
--- There are two main ways I can think of to abstract composition.
-
--- A) Kleisli Arrows
---
---     r a -> m ( r b ),
---
--- B) "pure" Applicative interface
---
---     m ( r a ) -> m ( r b ).
---
--- The differences show up for multi-argument functions.  There, the
--- latter interface cannot express sharing.
-
-
 -- The ensure sharing, make sure values pass through bind in some way,
 -- e.g. using a let/bind-like construct:
 
 var :: forall m r t. Seq m r => m (r S) -> (m (r S) -> m t) -> m t
 var mv f = mv >>= \v -> f $ return v
+
+square :: Seq m r => m (r S) -> m (r S)
+square x' = var x' $ \x -> x `mul` x
 
 -- or point-free operators and tuples
 
@@ -59,20 +45,14 @@ dup = fmap $ \a -> (a, a)
 uncur :: Seq m r => (m (r S) -> m (r S) -> m (r S)) -> m (r S, r S) -> m (r S)
 uncur f mp = f (fmap fst mp) (fmap snd mp)
 
-
-
--- Examples
-
-square :: Seq m r => m (r S) -> m (r S)
-square x' = var x' $ \x -> x `mul` x
-
 square' :: Seq m r => m (r S) -> m (r S)
 square' = (uncur mul) . dup
 
 
 
 
--- The rest of the language can then be represented as:
+-- The rest of the language can then be represented as "pure"
+-- operations on m (r S).
 
 type SeqApp1 m r = (m (r S)) -> (m (r S))
 type SeqApp2 m r = (m (r S)) -> (m (r S)) -> (m (r S))
@@ -130,11 +110,15 @@ instance Seq m r => Num (m (r S)) where
 -- I went over this a couple of times and got really confused.  Here
 -- are some dead ends.
 
--- a) The faulty intuition that "just adding another bind and return
+-- a)
+--
+-- The faulty intuition that "just adding another bind and return
 -- pair" will solve the sharing issue.  Clearly that is not the case
 -- because return is an identity: 'm >>= return' is the same as 'm'
 
--- b) I attempted to still use do notation and handle cases like this:
+-- b)
+--
+-- I attempted to still use do notation and handle cases like this:
 --
 --    a ->   a -> m a
 --    a -> m a -> m a
@@ -143,8 +127,9 @@ instance Seq m r => Num (m (r S)) where
 --
 -- One solution is to solve it at the syntax level, which definitely
 -- seems like a valid way to work (essentially convert to ANF / do
--- notation).
+-- notation), but requires a lot of infrastructure.
 
 -- The other solution to use type classes to perform the a / m a
--- selection turns out to be not very useful.  Too ambiguous,
--- requiring a lot of type annotation.  See git for old versions.
+-- selection turns out to be not very useful.  Intermediate nodes are
+-- ambiguous, requiring a lot of type annotation.  See git for old
+-- versions.

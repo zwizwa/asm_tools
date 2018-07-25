@@ -20,10 +20,11 @@ import Data.List
 
 
 seqLamTest = do
+  closeMem [(SeqLib.bits 8)] $ \[rd] -> do
     i <- SeqTerm.input SeqLib.bit
     -- c <- SeqLib.counter (SInt (Just 4) 0)
     o <- SeqLib.integral i
-    return [o]
+    return ([(0,0,0,0)], [o])
 
 -- Abbrevs
 type N = Op NodeNum
@@ -34,10 +35,15 @@ data Part = D | I | MR | MW | E deriving Eq
 -- Convert compiled Term to TH lambda expression
 seqLam :: ([N], [(Int, T)]) -> Exp
 seqLam  (outputs, bindings) = exp where
-  exp = LamE [TupP [s, i]] $ LetE bs $ TupE [s',o]
-  bs = [ValD (nodeNumPat n) (NormalB (termExp e)) [] | (n, e) <- partition E]
-  o = tupE' $ map nodeExp outputs
 
+  -- Generate update function and initial values.
+  exp = TupE [update, init]
+  init = tupE' [memInit, stateInit]
+  update =
+    LamE [TupP [memIn, stateIn, inputs]] $
+    LetE bindings' $
+    TupE [memOut, stateOut, outputs']
+  
   partition t = map snd $ filter ((t ==) . fst) tagged
   tagged = map p' bindings
   p' x = (p x, x)
@@ -47,14 +53,29 @@ seqLam  (outputs, bindings) = exp where
   p (_, MemWr _)   = MW
   p _              = E
     
+  bindings' =
+    [ValD (nodeNumPat n) (NormalB (termExp e)) []
+    | (n, e) <- partition E]
+    
+  inputs = tupP' $ map (nodeNumPat . fst) $ partition I
+
+  outputs' = tupE' $ map nodeExp outputs
+
   ds = partition D
-  s  = tupP' $ map (nodeNumPat . fst) $ ds
-  s' = tupE' [nodeExp n | (_, (Delay _ n)) <- ds]
+  stateInit = tupE' $ map (const $ int 0) ds
+  stateIn   = tupP' $ map (nodeNumPat . fst) $ ds
+  stateOut  = tupE' [nodeExp n | (_, (Delay _ n)) <- ds]
 
-  i = tupP' $ map (nodeNumPat . fst) $ partition I
-
-  -- mr =
-  -- mw
+  mrs = partition MR
+  mi _ = tupE' $ [int 0, var "InitMem"]
+  mr (rd, MemRd _ (MemNode mem)) = tupP' [nodeNumPat rd, nodeNumPat mem]
+  memInit  = tupE' $ map mi mrs
+  memIn  = tupP' $ map mr mrs
+  memOut =
+    tupE' [AppE (var "UpdateMem") $
+            TupE [tupE' $ map nodeExp [a,b,c,d],
+                   nodeNumExp n]
+          | (n, (MemWr (a,b,c,d))) <- partition MW]
 
 
 
@@ -68,7 +89,9 @@ tupP' as = TupP as
 
 -- Primitive operation names
 opVar :: Show t => t -> Exp
-opVar opc = VarE $ mkName $ "seq" ++ show opc
+opVar opc = var $ show opc
+var str = VarE $ mkName $ "seq" ++ str
+
 
 termExp :: T -> Exp
 termExp (Comb1 _ opc a)     = app1 (opVar opc) (nodeExp a)
@@ -87,8 +110,11 @@ app4 a b c d e = app1 (app3 a b c d) e
 
 nodeExp :: N -> Exp          
 nodeExp (Node _ n) = nodeNumExp n
-nodeExp (Const (SInt _ v)) = LitE $ IntegerL $ fromIntegral v
+nodeExp (Const (SInt _ v)) = int v
 
+-- Fixme: should be Int
+int i = AppE (var "Int") (LitE $ IntegerL $ fromIntegral i)
+                 
 nodeNumExp :: Int -> Exp          
 nodeNumExp n = VarE $ nodeNumName n
 

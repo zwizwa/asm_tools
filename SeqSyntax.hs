@@ -31,6 +31,13 @@ atom a@(a0:_) =
 
 -- Conversion to ANF is simplest using the state-continuation monad.
 
+-- EDIT: Probably not necessary to convert to ANF: the different kinds
+-- of "app" can just be implemented in haskell.
+--
+--    a ->   a -> m a
+--    a -> m a -> m a
+--  m a ->   a -> m a
+--  m a -> m a -> m a
 
 expr (Free (Pure "some_macro" : _)) = error "NI: some_macro"
 expr (Free ((Pure op) : as)) = app (atom op) as

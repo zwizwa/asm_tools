@@ -53,7 +53,7 @@ import qualified VCD
 import qualified CSV
 import qualified NetFun
 
-import Data.Map.Lazy (empty, foldrWithKey, insert)
+import Data.Map.Lazy (empty, foldrWithKey, insert, Map)
 import qualified Data.Map.Lazy as Map
 import qualified Control.Applicative as Applicative
 import Control.Applicative (ZipList(..))
@@ -287,9 +287,16 @@ x_seqTH = m1 >> m2 where
   m2 = do
     -- Compile syntax
     putStrLn "-- x_seqTH (staged)"
-    let f = $(return $ SeqTH.seqLam $ SeqTerm.compile SeqTH.seqLamTest)
+    let (f,i@(mi,si)) = $(return $ SeqTH.seqLam $ SeqTerm.compile SeqTH.seqLamTest)
         seqADD = (+)
-    print $ f (0, 1) 
+        seqInitMem = Map.empty
+        -- FIXME: These should be Int and IntMap
+        seqUpdateMem :: ((Int,Int,Int,Int),Map Int Int) -> (Int,  Map Int Int)
+        seqUpdateMem (_,m) = (0::Int,m)
+        seqInt :: Integer -> Int
+        seqInt = fromIntegral
+    -- print i
+    print $ f (mi,si,1::Int)
     return ()
 
 x_vcd = do
