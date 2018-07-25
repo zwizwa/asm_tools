@@ -65,7 +65,7 @@ appTypes     f (n, t, v, e) = (n, f t, v, e) ; getTypes     = do (_, t, _, _) <-
 appVals      f (n, t, v, e) = (n, t, f v, e)
 appProcesses f (n, t, v, e) = (n, t, v, f e) ; getProcesses = do (_, _, _, e) <- get ; return e
 
-data R t = R { unR :: Signal } -- phantom wrapper
+data R t = R { unR :: Signal }
 data Signal = Reg Int
             | Val SType
             deriving Show
@@ -132,7 +132,6 @@ instance Seq M R where
   memory = memory'
   updateMemory = updateMemory'
   
-
 
 
 -- This can happen due to []'s applicative functor.

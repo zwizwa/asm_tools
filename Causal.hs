@@ -9,34 +9,46 @@
 
 module Causal where
 
+import Data.Functor.Compose
+
 import Seq
 import SeqTerm
 import SeqEmu
 
 -- Most generic: use standard Haskell type classes.
 
-
-
+-- Causal sequences.   How to express this as a law?
 class Applicative f => Causal f where
-  close  :: (s -> (s, o)) -> s -> f o
+  close :: (s -> i -> (s, o)) -> s -> f i -> f o
 
-  -- Some inspection is needed to fish out the input value.
-  closei :: (s -> i -> (s, o)) -> s -> f i -> f o
-
+-- Instance for list is straightforward.  
 instance Causal [] where
-  close u s0 = f s0 where
-    f s = (o : f s) where
-      (s, o) = u s
-  closei u s0 is  = f s0 is where
+  close u s0 is  = f s0 is where
     f s (i:is) = (o : f s' is) where
       (s', o) = u s i
 
--- This is straightforward
-counter :: (Num t, Causal f) => t -> f t
-counter = close $ \s -> (s + 1, s)
+-- instance Causal (SeqTerm.M SeqTerm. where close = close'
+-- instance Causal SeqEmu.M  where close = close'
+
+-- close' :: Seq m r => (
+
+--   close u s0 mi = do
+--     closeReg $ \[s] -> do
+--       let (s', o) = u (return s) mi
+--       return ([s'], o)
+    
 
 integral :: (Num t, Causal f) => t -> f t -> f t
-integral = closei $ \s i -> (s + i, s)
+integral = close $ \s i -> (s + i, s)
+counter s = integral s (pure 1)
+
+-- Just use Compose.  No need for a specialzed data type.
+
+-- This needs to go in each implementation.
+-- instance Seq m r => Causal (SeqF m r) where
+  
+
+
 
 
 -- Allow Specialized instances.

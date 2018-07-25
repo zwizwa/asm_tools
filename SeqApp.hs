@@ -61,6 +61,7 @@ dup ::
   m (r S) -> m (r S, r S)
 dup = fmap $ \a -> (a, a)
 
+
   
 
 -- The rest of the language can then be represented as:
