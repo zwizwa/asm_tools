@@ -21,10 +21,14 @@ import Data.List
 
 seqLamTest = do
   closeMem [(SeqLib.bits 8)] $ \[rd] -> do
-    i <- SeqTerm.input SeqLib.bit
+    en <- SeqTerm.input SeqLib.bit
     -- c <- SeqLib.counter (SInt (Just 4) 0)
-    o <- SeqLib.integral i
-    return ([(0,0,0,0)], [o])
+    o <- SeqLib.integral en
+    a <- SeqLib.counter $ SeqLib.bits 4
+    b <- SeqLib.counter $ SeqLib.bits 5
+    c <- SeqLib.counter $ SeqLib.bits 6
+    
+    return ([(en,a,b,c)], [o])
 
 -- Abbrevs
 type N = Op NodeNum
@@ -94,10 +98,10 @@ var str = VarE $ mkName $ "seq" ++ str
 
 
 termExp :: T -> Exp
-termExp (Comb1 _ opc a)     = app1 (opVar opc) (nodeExp a)
-termExp (Comb2 _ opc a b)   = app2 (opVar opc) (nodeExp a) (nodeExp b)
-termExp (Comb3 _ opc a b c) = app3 (opVar opc) (nodeExp a) (nodeExp b) (nodeExp c)
---termExp (Slice _ a b c)     = app3 (opVar "SLICE") (nodeExp a) (nodeExp b) (nodeExp c)
+termExp (Comb1 t opc a)     = app2 (opVar opc) (bits t) (nodeExp a)
+termExp (Comb2 t opc a b)   = app3 (opVar opc) (bits t) (nodeExp a) (nodeExp b)
+termExp (Comb3 t opc a b c) = app4 (opVar opc) (bits t) (nodeExp a) (nodeExp b) (nodeExp c)
+--termExp (Slice _ a b c)     = app5 (opVar "SLICE") (nodeExp a) (nodeExp b) (nodeExp c)
 termExp e = error $ show e
 
 app1 = AppE
@@ -105,7 +109,7 @@ app2 a b c     = app1 (app1 a b) c
 app3 a b c d   = app1 (app2 a b c) d
 app4 a b c d e = app1 (app3 a b c d) e
 
-
+bits (SInt (Just n) _) = int n
 
 
 nodeExp :: N -> Exp          

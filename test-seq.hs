@@ -288,7 +288,7 @@ x_seqTH = m1 >> m2 where
     -- Compile syntax
     putStrLn "-- x_seqTH (staged)"
     let (f,i@(mi,si)) = $(return $ SeqTH.seqLam $ SeqTerm.compile SeqTH.seqLamTest)
-        seqADD = (+)
+        seqADD t = (+)
         seqInitMem = Map.empty
         -- FIXME: These should be Int and IntMap
         seqUpdateMem :: ((Int,Int,Int,Int),Map Int Int) -> (Int,  Map Int Int)
