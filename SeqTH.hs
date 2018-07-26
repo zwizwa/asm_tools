@@ -10,7 +10,7 @@
 
 {-# LANGUAGE TemplateHaskell #-}
 
-module SeqTH(seqLam, seqLamTest, compile) where
+module SeqTH(compile', compile, run, test) where
 
 import Seq
 import SeqTerm hiding(compile)
@@ -21,7 +21,7 @@ import Language.Haskell.TH.Syntax
 import Data.List
 
 
-seqLamTest = do
+test = do
   closeMem [(SeqLib.bits 8)] $ \[rd] -> do
     en <- SeqTerm.input SeqLib.bit
     -- c <- SeqLib.counter (SInt (Just 4) 0)
@@ -39,8 +39,8 @@ type T = Term N
 data Part = D | I | MR | MW | E deriving Eq
 
 -- Convert compiled Term to TH lambda expression
-seqLam :: ([N], [(Int, T)]) -> Exp
-seqLam  (outputs, bindings) = exp where
+compile' :: ([N], [(Int, T)]) -> Exp
+compile'  (outputs, bindings) = exp where
 
   -- Generate update function and initial values.
   exp = TupE [update, init]
@@ -139,4 +139,16 @@ nodeNumStr n = "r" ++ show n
 compile :: [Int] -> ([R S] -> M [R S]) -> Q Exp
 compile sizes mf = return compiled where
   ins = io [SInt (Just sz) 0 | sz <- sizes]
-  compiled = seqLam $ SeqTerm.compile $ ins >>= mf
+  compiled = compile' $ SeqTerm.compile $ ins >>= mf
+
+
+-- Second stage
+run ::
+  ((m, r, [Int]) -> (m, r, [Int]),
+   (m, r))
+  -> [[Int]] -> [[Int]]
+run (f, (m0, r0)) is = u m0 r0 is where
+  u _ _ [] = []
+  u m r (i:is) = (o : u m' r' is) where
+    (m',r',o) = f (m,r,i)
+

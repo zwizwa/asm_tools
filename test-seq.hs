@@ -281,18 +281,18 @@ x_seqTH = m1 >> m2 where
   m1 = do
     -- Print syntax
     putStrLn "-- x_seqTH (syntax)"
-    let c@(outputs, bindings) = SeqTerm.compile SeqTH.seqLamTest
+    let c@(outputs, bindings) = SeqTerm.compile SeqTH.test
     print outputs
     sequence $ map print bindings
-    -- expr <- runQ [| \f g x -> f (x*2 + 3) . g |]
-    putStrLn $ pprint $ SeqTH.seqLam c
+    putStrLn $ pprint $ SeqTH.compile' c
+
   m2 = do
     -- Compile syntax
     putStrLn "-- x_seqTH (staged)"
-    let p@(f,i@(mi,si)) = $(return $ SeqTH.seqLam $ SeqTerm.compile SeqTH.seqLamTest)
+    let p@(f,i@(mi,si)) = $(SeqTH.compile [] $ \[] -> SeqTH.test)
     print i
     print $ f (mi,si,[1])
-    printl $ seqPrimRun p $ map (:[]) [0..9]
+    printl $ SeqTH.run p $ map (:[]) [0..9]
 
 x_vcd = do
   putStrLn "--- x_vcd"
