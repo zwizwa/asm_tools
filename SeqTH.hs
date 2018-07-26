@@ -10,7 +10,7 @@
 
 {-# LANGUAGE TemplateHaskell #-}
 
-module SeqTH(compile', compile, run, test) where
+module SeqTH(toExp, compile', compile, run, test) where
 
 import Seq
 import SeqTerm hiding(compile)
@@ -36,8 +36,8 @@ type T = Term N
 data Part = D | I | MR | MW | E deriving Eq
 
 -- Convert compiled Term to TH lambda expression
-compile' :: ([N], [(Int, T)]) -> Exp
-compile'  (outputs, bindings) = exp where
+toExp :: ([N], [(Int, T)]) -> Exp
+toExp  (outputs, bindings) = exp where
 
   -- Generate update function and initial values.
   exp = TupE [update, init]
@@ -142,11 +142,12 @@ nodeNumName :: Int -> Name
 nodeNumName = mkName . nodeNumStr
 nodeNumStr n = "r" ++ show n
 
-compile :: [Int] -> ([R S] -> M [R S]) -> Q Exp
-compile sizes mf = return compiled where
+compile' :: [Int] -> ([R S] -> M [R S]) -> Exp
+compile' sizes mf = compiled where
   ins = io [SInt (Just sz) 0 | sz <- sizes]
-  compiled = compile' $ SeqTerm.compile $ ins >>= mf
+  compiled = toExp $ SeqTerm.compile $ ins >>= mf
 
+compile sizes mf = return $ compile' sizes mf
 
 -- Second stage
 run ::

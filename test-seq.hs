@@ -286,7 +286,7 @@ x_seqTH = m1 >> m2 where
           SeqTH.test [en]
     print outputs
     sequence $ map print bindings
-    putStrLn $ pprint $ SeqTH.compile' c
+    putStrLn $ pprint $ SeqTH.toExp c
 
   m2 = do
     -- Compile syntax

@@ -37,6 +37,7 @@ import Data.List
 import Data.List.Split
 import Test.QuickCheck hiding ((.&.),(.|.))
 import Test.QuickCheck.Gen hiding (bitSize, getLine)
+import Language.Haskell.TH
 
 
 main = do
@@ -45,15 +46,16 @@ main = do
   -- print $ toBitList 4 8
   -- print $ downSample' $ t_clocked_shift 4 $ [[1,i] | i <- [1,1,1,1,0,0,0,0,0,0,0,1]]
 
+  -- x_async_receiver_sample
+  x_th_async_receiver
+  x_async_receiver
+  x_mem
+  x_fifo
+  
   qc "p_bits" p_bits
   qc "p_sample" p_sample
   qc "p_clocked_shift" p_clocked_shift
   qc "p_async_receiver" p_async_receiver
-  -- x_async_receiver_sample
-  x_async_receiver
-
-  x_mem
-  x_fifo
 
 
 
@@ -118,6 +120,11 @@ t_async_receiver nb_bits = trace [1] $ \[i] ->
 -- FIXME: still has bugs
 t_async_receiver' nb_bits@8 =
   SeqTH.run $(SeqTH.compile [1] $ \[i] -> d_async_receiver 8 i)
+
+x_th_async_receiver = do
+  putStrLn "-- x_th_async_receiver"
+  putStr $ pprint $ SeqTH.compile' [1] $ \[i] -> d_async_receiver 8 i
+
 
 x_async_receiver = do
   putStrLn "-- x_async_receiver"
