@@ -58,6 +58,7 @@ main = do
   qc "p_sample" p_sample
   qc "p_clocked_shift" p_clocked_shift
   qc "p_async_receiver" p_async_receiver
+  qc "p_fifo" p_fifo
 
 
 
@@ -79,7 +80,8 @@ printC l = sequence $ zipWith f l [0..] where
 -- FIXME: Make better generators for fixed bit size sequences.
 
 -- Tests for library code.
---    t_  Trace wrapper
+--    t_  Trace wrapper (_emu or _th)
+--    e_  Higher level test evaluator  fst=bool
 --    x_  Example printout
 --    p_  Property test
 
@@ -125,6 +127,7 @@ x_async_receiver_sample_for t = do
     [[i] | i <- rle (1,[8,8*9,8])]
 
 
+-- async_receiver
 
 t_async_receiver_emu nb_bits = trace [1] $ \[i] ->
   d_async_receiver nb_bits i
@@ -155,11 +158,10 @@ x_async_receiver_for t = do
   -- printC $ chunksOf 8 out
   print $ out'
 
--- Use the _th version in the property test.  It is a lot faster.
 p_async_receiver = forAll (listOf $ word 8) pred where
   pred words = words == words' where
     ins    = map (:[]) $ uartBits oversample words
-    outs   = t_async_receiver_th nb_bits $ ins
+    outs   = t_async_receiver_th nb_bits $ ins  -- th is a lot faster
     words' = downSample sample outs
     sample [v,i,bc,wc@1,state,count] = Just v
     sample _ = Nothing
@@ -167,6 +169,8 @@ p_async_receiver = forAll (listOf $ word 8) pred where
   oversample = 8
   nb_bits = 8
 
+
+-- mem
 
 t_mem = trace [8,1,8,8] $ \i@[ra,we,wa,wd] -> do
   t <- stype wd
@@ -180,23 +184,29 @@ x_mem = do
   putStrLn "-- x_mem rd,ra,we,wa,wd"
   printL outs
 
--- d_fifo is in TestSeqLib.hs to allow staging.
--- t_fifo = trace [1,1,8] d_fifo
+
+-- fifo  (d_fifo is in TestSeqLib.hs to allow staging)
+
+-- t_fifo_emu = trace [1,1,8] d_fifo
 t_fifo = SeqTH.run $(SeqTH.compile [1,1,8] d_fifo)
 
+e_fifo lst = (lst == lst, (lst',outs)) where
+  lst'   = map head $ downSample' outs
+  -- Write a data into the buffer, read it out.
+  outs   = t_fifo $ writes ++ reads ++ idle
+  writes = [[0,1,x] | x <- lst]
+  reads  = replicate 10 $ [1,0,0]
+  idle   = replicate  3 $ [0,0,0]
+
 x_fifo = do
-  -- Write a data into the buffer, then read it out.
   let lst = [1..10]
-      writes = [[0,1,x] | x <- lst]
-      reads  = replicate 10 $ [1,0,0]
-      idle = replicate 3 $ [0,0,0]
-      outs = t_fifo $ writes ++ reads ++ idle
-      lst' = map head $ downSample' outs
+      (_, (lst',outs)) = e_fifo lst
   putStrLn "-- x_fifo rd,wa,ra,re,we,wd"
   printL outs
   print lst
   print lst'
 
+p_fifo = forAll (listOf $ word 8) (fst . e_fifo)
     
 
 
