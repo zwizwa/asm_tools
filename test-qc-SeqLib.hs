@@ -46,11 +46,11 @@ main = do
   -- print $ toBitList 4 8
   -- print $ downSample' $ t_clocked_shift 4 $ [[1,i] | i <- [1,1,1,1,0,0,0,0,0,0,0,1]]
 
-  x_async_receiver_sample
-  x_async_receiver_sample'
+  -- x_async_receiver_sample_emu
+  -- x_async_receiver_sample_th
   x_th_async_receiver
-  x_async_receiver
-  x_async_receiver'
+  x_async_receiver_emu
+  x_async_receiver_th
   x_mem
   x_fifo
   
@@ -106,21 +106,19 @@ t_clocked_shift nb_bits = trace [1,1] $ \[bc,bv] -> do
 
 -- async_receiver_sample
 
-t_async_receiver_sample nb_bits = trace [1] $ \[i] -> do
-  -- use debug version which dumps internal state
-  sample <- d_async_receiver_sample nb_bits i
-  return sample
+t_async_receiver_sample_emu nb_bits = trace [1] $ \[i] -> do
+  d_async_receiver_sample nb_bits i
 
-t_async_receiver_sample' nb_bits@8 =
+t_async_receiver_sample_th nb_bits@8 =
   SeqTH.run $(SeqTH.compile [1] $ \[i] -> d_async_receiver_sample 8 i)
 
-x_async_receiver_sample = do
-  putStrLn "-- x_async_receiver_sample"
-  x_async_receiver_sample_for t_async_receiver_sample
+x_async_receiver_sample_emu = do
+  putStrLn "-- x_async_receiver_sample_emu"
+  x_async_receiver_sample_for t_async_receiver_sample_emu
 
-x_async_receiver_sample' = do
-  putStrLn "-- x_async_receiver_sample'"
-  x_async_receiver_sample_for t_async_receiver_sample'
+x_async_receiver_sample_th = do
+  putStrLn "-- x_async_receiver_sample_th"
+  x_async_receiver_sample_for t_async_receiver_sample_th
   
 x_async_receiver_sample_for t = do
   printC $ chunksOf 8 $ t 8
@@ -128,40 +126,40 @@ x_async_receiver_sample_for t = do
 
 
 
-t_async_receiver nb_bits = trace [1] $ \[i] ->
+t_async_receiver_emu nb_bits = trace [1] $ \[i] ->
   d_async_receiver nb_bits i
 
--- FIXME: still has bugs
-t_async_receiver' nb_bits@8 =
+t_async_receiver_th nb_bits@8 =
   SeqTH.run $(SeqTH.compile [1] $ \[i] -> d_async_receiver 8 i)
 
 x_th_async_receiver = do
   putStrLn "-- x_th_async_receiver"
   putStr $ pprint $ SeqTH.compile' [1] $ \[i] -> d_async_receiver 8 i
 
-x_async_receiver = do
-  putStrLn "-- x_async_receiver"
-  x_async_receiver_for t_async_receiver
+x_async_receiver_emu = do
+  putStrLn "-- x_async_receiver_emu"
+  x_async_receiver_for t_async_receiver_emu
 
-x_async_receiver' = do
-  putStrLn "-- x_async_receiver'"
-  x_async_receiver_for t_async_receiver'
+x_async_receiver_th = do
+  putStrLn "-- x_async_receiver_th"
+  x_async_receiver_for t_async_receiver_th
 
-x_async_receiver_for t_async_receiver = do
+x_async_receiver_for t = do
   let
     -- ins = map ord "ABCDEF"
     ins = [0,7..255]
-    out = t_async_receiver 8 $ map (:[]) $ uartBits 8 ins
+    out = t 8 $ map (:[]) $ uartBits 8 ins
     sample [v,i,bc,wc@1,state,count] = Just v
     sample _ = Nothing
     out' = downSample sample out
   -- printC $ chunksOf 8 out
   print $ out'
 
+-- Use the _th version in the property test.  It is a lot faster.
 p_async_receiver = forAll (listOf $ word 8) pred where
   pred words = words == words' where
     ins    = map (:[]) $ uartBits oversample words
-    outs   = t_async_receiver nb_bits $ ins
+    outs   = t_async_receiver_th nb_bits $ ins
     words' = downSample sample outs
     sample [v,i,bc,wc@1,state,count] = Just v
     sample _ = Nothing
