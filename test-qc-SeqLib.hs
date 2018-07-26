@@ -180,38 +180,22 @@ x_mem = do
   putStrLn "-- x_mem rd,ra,we,wa,wd"
   printL outs
 
+-- d_fifo is in TestSeqLib.hs to allow staging.
+-- t_fifo = trace [1,1,8] d_fifo
+t_fifo = SeqTH.run $(SeqTH.compile [1,1,8] d_fifo)
 
-
--- FIXME: generalize this to Seq
-fifo ta (rc,wc,wd) = do
-  -- t: type
-  -- d: data
-  -- a: address
-  -- c: clock enable
-  td <- stype wd
-  (wa,ra) <- closeReg [ta, ta] $ \[wa, ra] -> do
-    wa1 <- inc wa
-    ra1 <- inc ra
-    ra' <- if' rc ra1 ra
-    wa' <- if' wc wa1 wa
-    return ([wa',ra'], (wa,ra))
-  closeMem [td] $ \[rd] -> do
-    return ([(wc, wa, wd, ra)], rd)
-
-t_fifo = trace [1,1,8] $ \i@[rc,wc,wd] -> do
-  let ta = SInt (Just 4) 0
-  td <- stype wd
-  rd <- fifo ta (rc,wc,wd)
-  return (rd:i)
-  
 x_fifo = do
-  -- Write a bunch of data into the memory, then read it out.
-  let writes = [[0,1,x] | x <- [1..10]]
+  -- Write a data into the buffer, then read it out.
+  let lst = [1..10]
+      writes = [[0,1,x] | x <- lst]
       reads  = replicate 10 $ [1,0,0]
-      outs = t_fifo $ writes ++ reads
+      idle = replicate 3 $ [0,0,0]
+      outs = t_fifo $ writes ++ reads ++ idle
+      lst' = map head $ downSample' outs
   putStrLn "-- x_fifo rd,wa,ra,re,we,wd"
   printL outs
-
+  print lst
+  print lst'
 
     
 
@@ -271,6 +255,12 @@ downSample' :: [[Int]] -> [[Int]]
 downSample' = downSample sel where
   sel (1:a) = Just a
   sel (0:a) = Nothing
+
+-- Isolate (enable,value)
+downSampleBus unpack = downSample sel where
+  sel bus = case unpack bus of
+    (1,v) -> Just v
+    (0,_) -> Nothing
 
 trace ::
   [Int]
