@@ -173,9 +173,9 @@ conc' (SInt _ va) (SInt (Just szb) vb) = (shiftL va szb) .|. vb
 -- Upper can be left unspecified as Nothing, which means the entire
 -- signal is taken.
 sliceVal :: SType -> Maybe Int -> Int -> Signal
-sliceVal (SInt sa va) upper lower = truncVal sa' va' where
+sliceVal (SInt _ va) upper lower = truncVal sa' va' where
   va' = shiftR va lower
-  sa'= fmap (+ (-lower)) upper
+  sa' = slice2size upper lower
 
 f1 INV = complement
 

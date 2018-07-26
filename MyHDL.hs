@@ -213,17 +213,17 @@ type R = SeqTerm.R
 connectIO :: [SType] -> ([R S] -> M [R S]) -> M [R S]
 connectIO inTyp mod = do
   -- FIXME: assumes inputs are binary
-  in'    <- SeqTerm.io inTyp
+  in'    <- SeqTerm.inputs inTyp
   out'   <- mod in'
   stypes <- sequence $ fmap stype out'
-  out    <- SeqTerm.io stypes
+  out    <- SeqTerm.inputs stypes  -- When assigned, type changes from in->out
   sequence_ $ zipWith connect out out'
   return $ in' ++ out
 
 toPy :: String -> [SType] -> ([R S] -> M [R S]) -> String
 toPy name inTyp mod = module_py where
 
-  (ports, bindings) = SeqTerm.compile $ connectIO inTyp mod
+  (ports, bindings) = SeqTerm.compileTerm $ connectIO inTyp mod
   module_py = show $ myhdl name ports' $ SeqExpr.inlined bindings'
 
   -- Replace nodes with named nodes.
@@ -283,10 +283,11 @@ fpga name (portNames, mod) = MyHDL module_py where
   -- Assume all input are single pins.
   pinType = (SInt (Just 1) 0)
   mod' = do
-    io <- SeqTerm.io $ [pinType | _ <- portNames]
+    -- When assigned, type changes from in->out
+    io <- SeqTerm.inputs $ [pinType | _ <- portNames]
     mod io ; return io
     
-  (ports, bindings) = SeqTerm.compile mod'
+  (ports, bindings) = SeqTerm.compileTerm mod'
   module_py = show $ myhdl name ports' $ SeqExpr.inlined bindings'
 
   -- Assign names

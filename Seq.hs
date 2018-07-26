@@ -325,8 +325,6 @@ closeMem typ memAccess = do
 -- Nothing: constants not specialized to fixed bit length.
 -- Just _:  specialized to bit length.  Once specialized, it has to match.
 
--- FIXME: integrate this in the different interpretations.
-
 combine :: Maybe Int -> Maybe Int -> Either String (Maybe Int)
 combine a b = combine' (sizeError $ show (a,b)) a b
 
@@ -353,6 +351,11 @@ op3size IF c t f = sz c t f where
   sz (Just 1) t f = sz Nothing t f
   sz Nothing t f  = combine' err t f
   sz c t f        = Left $ sizeError err
+
+slice2size upper lower =
+  fmap (+ (-lower)) upper
+  
+
   
 sizeError = ("Seq.sizeError: " ++)
 

@@ -46,9 +46,11 @@ main = do
   -- print $ toBitList 4 8
   -- print $ downSample' $ t_clocked_shift 4 $ [[1,i] | i <- [1,1,1,1,0,0,0,0,0,0,0,1]]
 
-  -- x_async_receiver_sample
+  x_async_receiver_sample
+  x_async_receiver_sample'
   x_th_async_receiver
   x_async_receiver
+  x_async_receiver'
   x_mem
   x_fifo
   
@@ -109,10 +111,22 @@ t_async_receiver_sample nb_bits = trace [1] $ \[i] -> do
   sample <- d_async_receiver_sample nb_bits i
   return sample
 
+t_async_receiver_sample' nb_bits@8 =
+  SeqTH.run $(SeqTH.compile [1] $ \[i] -> d_async_receiver_sample 8 i)
+
 x_async_receiver_sample = do
   putStrLn "-- x_async_receiver_sample"
-  printC $ chunksOf 8 $ t_async_receiver_sample 8
+  x_async_receiver_sample_for t_async_receiver_sample
+
+x_async_receiver_sample' = do
+  putStrLn "-- x_async_receiver_sample'"
+  x_async_receiver_sample_for t_async_receiver_sample'
+  
+x_async_receiver_sample_for t = do
+  printC $ chunksOf 8 $ t 8
     [[i] | i <- rle (1,[8,8*9,8])]
+
+
 
 t_async_receiver nb_bits = trace [1] $ \[i] ->
   d_async_receiver nb_bits i
@@ -125,9 +139,15 @@ x_th_async_receiver = do
   putStrLn "-- x_th_async_receiver"
   putStr $ pprint $ SeqTH.compile' [1] $ \[i] -> d_async_receiver 8 i
 
-
 x_async_receiver = do
   putStrLn "-- x_async_receiver"
+  x_async_receiver_for t_async_receiver
+
+x_async_receiver' = do
+  putStrLn "-- x_async_receiver'"
+  x_async_receiver_for t_async_receiver'
+
+x_async_receiver_for t_async_receiver = do
   let
     -- ins = map ord "ABCDEF"
     ins = [0,7..255]

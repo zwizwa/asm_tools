@@ -1,7 +1,7 @@
 -- Template Haskell rendering of a Seq program to remove
 -- interpretative overhead.
 
--- Since Template Haskell is still a little unfamilar to me, I'm not
+-- Since Template Haskell is still a little unfamiliar to me, I'm not
 -- writing this as a tagless final interpreter, but as an explicit
 -- compiler using SeqTerm
 
@@ -13,7 +13,7 @@
 module SeqTH(toExp, compile', compile, run, test) where
 
 import Seq
-import SeqTerm hiding(compile)
+import SeqTerm
 import qualified SeqTerm
 import qualified SeqLib
 import Language.Haskell.TH
@@ -63,8 +63,8 @@ toExp  (outputs, bindings) = exp where
   -- I/O is more conveniently exposed as lists, which would be the
   -- same interface as the source code.  State can use tuples: it will
   -- be treated as opaque.
-  
-  inputs   = ListP $ map (nodeNumPat . fst) $ partition I
+
+  inputs   = ListP $ map (nodeNumPat . fst)  $ partition I
   outputs' = ListE $ map nodeExp outputs
 
   ds = partition D
@@ -74,13 +74,14 @@ toExp  (outputs, bindings) = exp where
 
   mrs = partition MR
   mi _ = tupE' $ [int 0, var "InitMem"]
-  mr (rd, MemRd _ (MemNode mem)) = tupP' [nodeNumPat rd, nodeNumPat mem]
+  mr (rd, MemRd _ (MemNode mem)) =
+    tupP' [nodeNumPat rd, nodeNumPat mem]
   memInit  = tupE' $ map mi mrs
   memIn  = tupP' $ map mr mrs
   memOut =
     tupE' [AppE (var "UpdateMem") $
             TupE [tupE' $ map nodeExp [a,b,c,d],
-                   nodeNumExp n]
+                  nodeNumExp n]
           | (n, (MemWr (a,b,c,d))) <- partition MW]
 
 
@@ -104,8 +105,7 @@ termExp :: T -> Exp
 
 -- Special cases
 termExp (Comb2 t CONC a b) = exp where
-  bits' (Node  (SInt (Just b) _) _) = int b
-  bits' (Const (SInt (Just b) _))   = int b
+  bits' n = int b where (SInt (Just b) _) = opType n
   exp = app4 (opVar CONC) (bits t) (bits' b) (nodeExp a) (nodeExp b)
 termExp (Slice t a _ r) =
   app3 (var "SLICE") (bits t) (nodeExp a) (int r)
@@ -143,9 +143,14 @@ nodeNumName = mkName . nodeNumStr
 nodeNumStr n = "r" ++ show n
 
 compile' :: [Int] -> ([R S] -> M [R S]) -> Exp
-compile' sizes mf = compiled where
-  ins = io [SInt (Just sz) 0 | sz <- sizes]
-  compiled = toExp $ SeqTerm.compile $ ins >>= mf
+compile' sizes mf = exp where
+  -- SeqPrim expects internal values to be truncated, so perform a
+  -- slice operation on arbitrary Int inputs to assure this.
+  truncIns = sequence $ map truncIn sizes
+  truncIn sz = do
+    i <- input $ SInt (Just sz) 0
+    slice i (Just sz) 0
+  exp = toExp $ SeqTerm.compileTerm $ truncIns >>= mf
 
 compile sizes mf = return $ compile' sizes mf
 

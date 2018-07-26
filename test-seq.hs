@@ -242,7 +242,7 @@ h_hdl = do
   -- Define types and signals
   let t    = SInt (Just 1) 0
       t_sr = SInt (Just 8) 0
-  io@[i,o,sr_o] <- SeqTerm.io [t,t,t_sr]
+  io@[i,o,sr_o] <- SeqTerm.inputs [t,t,t_sr]
   -- Instantiate circuits
   i1    <- delay i
   i2    <- delay i1
@@ -258,7 +258,7 @@ x_hdl_sync = do
   
 h_sync :: SeqTerm.M [SeqTerm.R S]
 h_sync = do
-  io@[i,o] <- SeqTerm.io [SInt (Just 2) 0, SInt (Just 2) 0]
+  io@[i,o] <- SeqTerm.inputs [SInt (Just 2) 0, SInt (Just 2) 0]
   o' <- sync (SInt (Just 2) 0) i
   connect o o'
   return io
@@ -277,11 +277,11 @@ x_syntax = do
   let stx = $(seqFile "example.seq")
   print stx
 
-x_seqTH = m1 >> m2 where
+x_seqTH = m1 >> m2 >> m3 where
   m1 = do
     -- Print syntax
     putStrLn "-- x_seqTH (syntax)"
-    let c@(outputs, bindings) = SeqTerm.compile $ do
+    let c@(outputs, bindings) = SeqTerm.compileTerm $ do
           en <- SeqTerm.input SeqLib.bit
           SeqTH.test [en]
     print outputs
@@ -294,7 +294,19 @@ x_seqTH = m1 >> m2 where
     let p@(f,i@(mi,si)) = $(SeqTH.compile [1] SeqTH.test)
     print i
     print $ f (mi,si,[1])
-    printl $ SeqTH.run p $ map (:[]) [0..9]
+    -- printl $ SeqTH.run p $ map (:[]) [0..9]
+
+  m3 = do
+    -- Some ad-hoc tests for SeqTH,SeqPrim combo.
+    let test p = print $ SeqTH.run p $ map (:[]) [0..9]
+    test $(SeqTH.compile [1] $ \[i] -> do c <- counter $ bits 3 ; return [c])
+    test $(SeqTH.compile [4] $ \[i] -> do c <- integral i ; return [c])
+    test $(SeqTH.compile [4] $ \[i] -> do c <- conc i (constant $ bits 1) ; return [c])
+    test $(SeqTH.compile [4] $ \[i] -> do c <- slice i (Just 4) 1 ; return [c])
+    test $(SeqTH.compile [1] $ \[i] -> do c <- if' i (constant $ bits' 2 3) (constant $ bits' 2 2) ; return [c])
+    test $(SeqTH.compile [4] $ \[i] -> do c <- i `equ` 3; return [i,c])
+    test $(SeqTH.compile [4] $ \[i] -> do c <- i `band` 5; return [i,c])
+    test $(SeqTH.compile [4] $ \[i] -> do c <- i `sub` 2; return [i,c])
 
 x_vcd = do
   putStrLn "--- x_vcd"
@@ -311,7 +323,7 @@ x_netfun = do
 x_ifs = do
   putStrLn "--- x_ifs"
   print_hdl $ do
-    io@[c,i1,i2,o1,o2] <- SeqTerm.io $ replicate 5 bit
+    io@[c,i1,i2,o1,o2] <- SeqTerm.inputs $ replicate 5 bit
     os' <- ifs c [i1,i2] [0,0]
     sequence $ zipWith connect [o1,o2] os'
     return io
@@ -322,7 +334,7 @@ x_ifs = do
 
 x_app_share = do
   putStrLn "--- x_app_share"
-  let c@(outputs, bindings) = SeqTerm.compile m
+  let c@(outputs, bindings) = SeqTerm.compileTerm m
       m = do a <- SeqApp.square $ inc 1
              return [a]
   print outputs
@@ -352,7 +364,7 @@ x_blink_fpga = do
 -- printSeqTerm :: Functor f => SeqTerm.M (f (SeqTerm.R S)) -> IO ()
 printSeqTerm :: SeqTerm.M [SeqTerm.R S] -> IO ()
 printSeqTerm src = do
-  let (output, bindings) = SeqTerm.compile src
+  let (output, bindings) = SeqTerm.compileTerm src
   putStrLn "-- bindings: "
   printl $ bindings
   putStrLn "-- output: "
@@ -394,7 +406,7 @@ trace' m = trace [] (\[] -> m) $ cycle [[]]
 
 print_hdl :: SeqTerm.M [SeqTerm.R S] -> IO ()
 print_hdl src = do
-  let (ports, bindings) = SeqTerm.compile src
+  let (ports, bindings) = SeqTerm.compileTerm src
   putStrLn "-- ports: "
   print ports
   putStrLn "-- bindings: "

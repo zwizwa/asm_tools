@@ -128,17 +128,22 @@ instance Seq.Seq M R where
   op1 o (R a) =
     fmap R $ driven $ Comb1 (combTypes [a]) o a
 
-  op2 o@Seq.EQU (R a) (R b) =
-    fmap R $ driven $ Comb2 (SInt (Just 1) 0) o a b
-    
-  op2 o (R a) (R b) =
-    fmap R $ driven $ Comb2 (combTypes [a,b]) o a b
+  op2 o (R a) (R b) = m where
+    ta@(SInt sza _) = opType a
+    tb@(SInt szb _) = opType b
+    sz = fromRight' $ Seq.op2size o sza szb
+    m = fmap R $ driven $ Comb2 (SInt sz 0) o a b
 
-  op3 o@Seq.IF (R a) (R b) (R c) =
-    fmap R $ driven $ Comb3 (combTypes [b,c]) o a b c
+  op3 o (R a) (R b) (R c) = m where
+    ta@(SInt sza _) = opType a
+    tb@(SInt szb _) = opType b
+    tc@(SInt szc _) = opType c
+    sz = fromRight' $ Seq.op3size o sza szb szc
+    m = fmap R $ driven $ Comb3 (SInt sz 0) o a b c
 
-  slice (R a) b c =
-    fmap R $ driven $ Slice (combTypes [a]) a b c
+  slice (R a) upper lower = m where
+    sz = Seq.slice2size upper lower
+    m = fmap R $ driven $ Slice (SInt sz 0) a upper lower
 
   -- Combinatorial drive is needed to support combinatorial module
   -- outputs, but otherwise not used in Seq.hs code.
@@ -158,6 +163,10 @@ instance Seq.Seq M R where
 
   updateMemory (R (MemNode n)) (R wEn, R wAddr, R wData, R rAddr) = do
     driveNode n $ MemWr (wEn, wAddr, wData, rAddr)
+
+
+fromRight' (Right a) = a
+fromRight' (Left e) = error e
 
 bind cons (R (Node t' dst)) (R src) = do
     let t = opType src
@@ -191,7 +200,6 @@ combTypes ns = SInt size 0 where
   sizes = [s | (SInt s _) <- map opType ns]
   size = mergeSize sizes
 
-
 mergeSize :: [Maybe Seq.NbBits] -> Maybe Seq.NbBits
 mergeSize [] = error "mergeSize internal error"
 mergeSize [t] = t
@@ -217,11 +225,13 @@ driven c = do
   return s
 
 
--- I/O ports direction is not known until it is driven, so start them
--- out as Input nodes ...
-io :: [SType] -> M [R Seq.S]
-io ts = sequence $ map input ts
+-- To support "connect", i/o ports start out as input, and will switch
+-- role when driven.  Note that the Input nodes will appear in the
+-- compiled output in order.
+inputs :: [SType] -> M [R Seq.S]
+inputs ts = sequence $ map input ts
 
+input :: SType -> M (R Seq.S)
 input t = fmap R $ driven $ Input t
 
 -- ... and convert them to output here.  Other nodes cannot be driven
@@ -230,10 +240,20 @@ driveNode n c = do
   tell [(n, c)]
   
 -- Compile to list of I/O ports and network map.
-compile :: M [R t] -> ([Op NodeNum], [(NodeNum, Term (Op NodeNum))])
-compile m = (map unR ports, cleanPorts nodes) where
+compileTerm :: M [R Seq.S] -> ([Op NodeNum], [(NodeNum, Term (Op NodeNum))])
+compileTerm m = (map unR ports, cleanPorts nodes) where
   ((ports, nodes), nbNodes) =
     runState (runWriterT (runReaderT (unM m) initEnv)) 0
+
+-- Compile an i/o function based on types.  Note that Input nodes will
+-- appear in order in the bindings.
+
+compileFun ::
+  [SType]
+  -> ([R Seq.S] -> M [R Seq.S])
+  -> ([Op NodeNum], [(NodeNum, Term (Op NodeNum))])
+compileFun ts fm = compileTerm $ (inputs ts) >>= fm
+
 
 -- Remove duplicates, keeping last, preserving order.
 -- FIXME: generalize to functor output?
