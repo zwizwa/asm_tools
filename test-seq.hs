@@ -258,8 +258,8 @@ x_hdl_sync = do
   
 h_sync :: SeqTerm.M [SeqTerm.R S]
 h_sync = do
-  io@[i,o] <- SeqTerm.inputs [SInt (Just 2) 0, SInt (Just 2) 0]
-  o' <- sync (SInt (Just 2) 0) i
+  io@[i,o] <- SeqTerm.inputs [SInt (Just 1) 0, SInt (Just 1) 0]
+  o' <- sync (SInt (Just 1) 0) i
   connect o o'
   return io
 

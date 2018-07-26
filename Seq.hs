@@ -346,6 +346,8 @@ op2size CONC (Just a) (Just b) = Right $ Just $ a + b
 
 op2size o a b = combine' (show (o,a,b)) a b
 
+-- The condition c needs to be a single bit.
+-- Use an explicit equ to compare a bit vector to 0.
 op3size IF c t f = sz c t f where
   err             = show (IF,c,t,f)
   sz (Just 1) t f = sz Nothing t f
