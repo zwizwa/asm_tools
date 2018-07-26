@@ -292,7 +292,7 @@ x_seqTH = m1 >> m2 where
     let p@(f,i@(mi,si)) = $(return $ SeqTH.seqLam $ SeqTerm.compile SeqTH.seqLamTest)
     print i
     print $ f (mi,si,[1])
-    printl $ run f i $ map (:[]) [0..9]
+    printl $ seqPrimRun p $ map (:[]) [0..9]
 
 x_vcd = do
   putStrLn "--- x_vcd"

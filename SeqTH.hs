@@ -10,9 +10,11 @@
 
 {-# LANGUAGE TemplateHaskell #-}
 
-module SeqTH(seqLam, seqLamTest) where
-import SeqTerm
+module SeqTH(seqLam, seqLamTest, compile) where
+
 import Seq
+import SeqTerm hiding(compile)
+import qualified SeqTerm
 import qualified SeqLib
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax
@@ -105,7 +107,7 @@ termExp :: T -> Exp
 termExp (Comb1 t opc a)     = app2 (opVar opc) (bits t) (nodeExp a)
 termExp (Comb2 t opc a b)   = app3 (opVar opc) (bits t) (nodeExp a) (nodeExp b)
 termExp (Comb3 t opc a b c) = app4 (opVar opc) (bits t) (nodeExp a) (nodeExp b) (nodeExp c)
---termExp (Slice _ a b c)     = app5 (opVar "SLICE") (nodeExp a) (nodeExp b) (nodeExp c)
+termExp (Slice _ a b c)     = int 123 -- app5 (opVar "SLICE") (nodeExp a) (nodeExp b) (nodeExp c)
 termExp e = error $ show e
 
 app1 = AppE
@@ -114,6 +116,7 @@ app3 a b c d   = app1 (app2 a b c) d
 app4 a b c d e = app1 (app3 a b c d) e
 
 bits (SInt (Just n) _) = int n
+bits _ = int 64 -- FIXME
 
 
 nodeExp :: N -> Exp          
@@ -133,3 +136,7 @@ nodeNumName :: Int -> Name
 nodeNumName = mkName . nodeNumStr
 nodeNumStr n = "r" ++ show n
 
+compile :: [Int] -> ([R S] -> M [R S]) -> Q Exp
+compile sizes mf = return compiled where
+  ins = io [SInt (Just sz) 0 | sz <- sizes]
+  compiled = seqLam $ SeqTerm.compile $ ins >>= mf

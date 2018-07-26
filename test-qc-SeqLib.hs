@@ -26,6 +26,10 @@
 import Seq
 import SeqLib
 import SeqEmu
+import SeqPrim
+import TestSeqLib
+
+import qualified SeqTH 
 
 import Data.Char
 import Data.Bits
@@ -110,6 +114,10 @@ x_async_receiver_sample = do
 
 t_async_receiver nb_bits = trace [1] $ \[i] ->
   d_async_receiver nb_bits i
+
+-- FIXME: needs the rest of the primitives
+-- t_async_receiver' nb_bits@8 =
+--   seqPrimRun $(SeqTH.compile [1] $ \[i] -> d_async_receiver 8 i)
 
 x_async_receiver = do
   putStrLn "-- x_async_receiver"
@@ -245,6 +253,12 @@ trace ::
   -> [[Int]] -> [[Int]]
 trace inputBitSizes fm ins =
   iticks (onInts inputBitSizes fm) ins
+
+-- th_
+
+-- traceTH fm ins =
+--   let p@(f,i@(mi,si)) = $(return $ SeqTH.seqLam $ SeqTerm.compile SeqTH.seqLamTest)
+  
 
 
 word :: Int -> Gen Int
