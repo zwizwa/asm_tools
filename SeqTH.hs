@@ -23,7 +23,6 @@ import Data.List
 
 test [en] = do
   closeMem [(SeqLib.bits 8)] $ \[rd] -> do
-    -- c <- SeqLib.counter (SInt (Just 4) 0)
     o <- SeqLib.integral en
     a <- SeqLib.counter $ SeqLib.bits 4
     b <- SeqLib.counter $ SeqLib.bits 5
@@ -102,10 +101,19 @@ var str = VarE $ mkName $ "seq" ++ str
 
 
 termExp :: T -> Exp
+
+-- Special cases
+termExp (Comb2 t CONC a b) = exp where
+  bits' (Node  (SInt (Just b) _) _) = int b
+  bits' (Const (SInt (Just b) _))   = int b
+  exp = app4 (opVar CONC) (bits t) (bits' b) (nodeExp a) (nodeExp b)
+termExp (Slice t a _ r) =
+  app3 (var "SLICE") (bits t) (nodeExp a) (int r)
+-- Generic 1,2,3 op
 termExp (Comb1 t opc a)     = app2 (opVar opc) (bits t) (nodeExp a)
 termExp (Comb2 t opc a b)   = app3 (opVar opc) (bits t) (nodeExp a) (nodeExp b)
 termExp (Comb3 t opc a b c) = app4 (opVar opc) (bits t) (nodeExp a) (nodeExp b) (nodeExp c)
-termExp (Slice _ a b c)     = int 123 -- app5 (opVar "SLICE") (nodeExp a) (nodeExp b) (nodeExp c)
+
 termExp e = error $ show e
 
 app1 = AppE
