@@ -281,7 +281,9 @@ x_seqTH = m1 >> m2 where
   m1 = do
     -- Print syntax
     putStrLn "-- x_seqTH (syntax)"
-    let c@(outputs, bindings) = SeqTerm.compile SeqTH.test
+    let c@(outputs, bindings) = SeqTerm.compile $ do
+          en <- SeqTerm.input SeqLib.bit
+          SeqTH.test [en]
     print outputs
     sequence $ map print bindings
     putStrLn $ pprint $ SeqTH.compile' c
@@ -289,7 +291,7 @@ x_seqTH = m1 >> m2 where
   m2 = do
     -- Compile syntax
     putStrLn "-- x_seqTH (staged)"
-    let p@(f,i@(mi,si)) = $(SeqTH.compile [] $ \[] -> SeqTH.test)
+    let p@(f,i@(mi,si)) = $(SeqTH.compile [1] SeqTH.test)
     print i
     print $ f (mi,si,[1])
     printl $ SeqTH.run p $ map (:[]) [0..9]

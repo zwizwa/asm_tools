@@ -21,15 +21,13 @@ import Language.Haskell.TH.Syntax
 import Data.List
 
 
-test = do
+test [en] = do
   closeMem [(SeqLib.bits 8)] $ \[rd] -> do
-    en <- SeqTerm.input SeqLib.bit
     -- c <- SeqLib.counter (SInt (Just 4) 0)
     o <- SeqLib.integral en
     a <- SeqLib.counter $ SeqLib.bits 4
     b <- SeqLib.counter $ SeqLib.bits 5
     c <- SeqLib.counter $ SeqLib.bits 6
-    
     return ([(en,a,b,c)], [o])
 
 -- Abbrevs
