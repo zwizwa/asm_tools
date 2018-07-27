@@ -77,8 +77,6 @@ printC l = sequence $ zipWith f l [0..] where
     printL l'
   
 
--- FIXME: Make better generators for fixed bit size sequences.
-
 -- Tests for library code.
 --    t_  Trace wrapper (_emu or _th)
 --    e_  Higher level test evaluator  fst=bool
@@ -87,7 +85,6 @@ printC l = sequence $ zipWith f l [0..] where
 
 
 -- clocked_shift
-
 
 p_clocked_shift = forAll vars pred where
   vars = do
