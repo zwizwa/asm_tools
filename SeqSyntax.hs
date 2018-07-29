@@ -50,5 +50,11 @@ app f ((Pure a):as) = app (AppE f (atom a)) as
 
 
 
+-- Full ANF conversion isn't necessary.  It suffices to insert the
+-- proper "app", which is implenmented using (>>=).  This allows the
+-- continuation monad to be avoided.
+
+-- It seems simplest to use SeqApp primitives, and wrap them with
+-- return when they are primitive.
 
 

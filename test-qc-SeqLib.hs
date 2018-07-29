@@ -83,6 +83,8 @@ printC l = sequence $ zipWith f l [0..] where
 --    x_  Example printout
 --    p_  Property test
 
+--    _emu SeqEmu code.  Slow, but flexible.
+--    _th  TH code. Fast, but only pure target semantics.
 
 -- clocked_shift
 
