@@ -22,6 +22,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE Arrows #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE QuasiQuotes #-}
 
 import Seq
 import SeqLib

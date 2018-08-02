@@ -9,16 +9,29 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FunctionalDependencies #-}
 module SeqStatic where
 
-data Nat = Z | S Nat
+import qualified Seq
 
-infixl 6 :+
+-- https://downloads.haskell.org/~ghc/7.10.1/docs/html/users_guide/type-level-literals.html
+import GHC.TypeLits
+import Data.Word
+import Foreign
 
-type family   (n :: Nat) :+ (m :: Nat) :: Nat
-type instance Z     :+ m = m
-type instance (S n) :+ m = S (n :+ m)
+newtype S (n :: Nat) a = S1 Seq.S
 
+class Monad m => Seq m r | r -> m, m -> r where
+  op2 :: r (S n) -> r (S n) -> m (r (S n))
+  signal :: m (r (S n))
 
+  -- signal = do
+  --   let n = natVal
+  --   s <- Seq.signal $ Seq.SInt (Just n) 0 
+  --   return $ s
 
-123
+-- op2 o (S a) (S b) = do
+--   c <- Seq.op2 o a b
+--   return $ S c
+
