@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE Arrows #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE RankNTypes #-}
 
 
 -- Is it possible to capture enough of a synchronous state machine to
@@ -283,7 +284,7 @@ x_syntax = do
   let stx = $(seqFile "example.seq")
   print stx
 
-x_seqTH = m1 >> m2 >> m3 where
+x_seqTH = m1 >> m2 where
   m1 = do
     -- Print syntax
     putStrLn "-- x_seqTH (syntax)"
@@ -295,16 +296,9 @@ x_seqTH = m1 >> m2 >> m3 where
     putStrLn $ pprint $ SeqTH.toExp c
 
   m2 = do
-    -- Compile syntax
-    putStrLn "-- x_seqTH (staged)"
-    let p@(f,i@(mi,si)) = $(SeqTH.compile [1] SeqTH.test)
-    print i
-    print $ f (mi,si,[1])
-    -- printl $ SeqTH.run p $ map (:[]) [0..9]
-
-  m3 = do
     -- Some ad-hoc tests for SeqTH,SeqPrim combo.
-    let test p = print $ SeqTH.run p $ map (:[]) [0..9]
+    let test f = print $ f $ map (:[]) [0..9]
+
         -- FIXME: test is rank-2
     test $(SeqTH.compile [1] $ \[i] -> do c <- counter $ bits 3 ; return [c])
     test $(SeqTH.compile [4] $ \[i] -> do c <- integral i ; return [c])

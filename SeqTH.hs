@@ -41,7 +41,15 @@ toExp :: ([N], [(Int, T)]) -> Exp
 toExp  (outputs, bindings) = exp where
 
   -- Generate update function and initial values.
-  exp = TupE [update, init]
+
+  -- Note: I've been running into "impredicative polymorphism" errors
+  -- trying to make the loop function and initial state explicit,
+  -- which I don't want to understand yet.  It seems best to just
+  -- generate a closed expression.
+  
+  
+  exp = app2 (seqVar "Run") update init
+  
   init = TupE [memInit, stateInit]
   update =
     LamE [TupP [memIn, stateIn, inputs]] $
@@ -49,7 +57,7 @@ toExp  (outputs, bindings) = exp where
     bindings' ++
     [NoBindS $ AppE
      (VarE $ mkName "return")
-     (TupE [memOut, stateOut, outputs'])]
+     (TupE [stateOut, outputs'])]
   
   partition t = map snd $ filter ((t ==) . fst) tagged
   tagged = map p' bindings

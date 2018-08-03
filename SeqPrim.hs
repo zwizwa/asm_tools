@@ -72,6 +72,7 @@ seqInt = fromIntegral
 
 seqRun :: ((a, r, [Int]) -> forall s. ST s (r, [Int])) -> (a, r) -> [[Int]] -> [[Int]]
 seqRun f (a,r0) i = runST $ u r0 i where
+  u _ [] = return []
   u r (i:is) = do
     (r',o) <- f (a, r,i)
     os <- u r' is
