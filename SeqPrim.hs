@@ -7,7 +7,7 @@
 
 module SeqPrim(
   seqADD, seqSUB, seqAND, seqEQU, seqIF, seqCONC, seqSLICE,
-  seqInt, seqInitMem, seqUpdateMem,
+  seqInt, seqMemInit, seqMemUpdate,
   seqRun
   ) where
 import Data.IntMap.Strict
@@ -51,15 +51,20 @@ seqEQU = op2 $ \a b   -> if a == b then 1 else 0
 seqCONC  = op3 $ \bs a b -> (a `shiftL` bs) .|. b
 seqSLICE = op2 $ shiftR
 
-seqInitMem :: IntMap Int
-seqInitMem = empty
+type Mem s = STUArray s Int Int
 
-seqUpdateMem :: ((Int, Int, Int, Int), IntMap Int) -> (Int,  IntMap Int)
-seqUpdateMem ((wEn,wAddr,wData,rAddr), mem) = (rData, mem') where
-  rData = findWithDefault 0 rAddr mem
-  mem' = case wEn == 0 of
-           True  -> mem
-           False -> insert wAddr wData mem
+seqMemInit :: ST s (Mem s)
+seqMemInit = newArray (0, 256) 0  -- FIXME: size!
+
+seqMemRd _ = return 0
+
+seqMemUpdate :: Mem s -> (Int, Int, Int, Int) -> ST s Int
+seqMemUpdate arr (wEn,wAddr,wData,rAddr) = do
+  rData <- readArray arr rAddr
+  case wEn of
+    0 -> return ()
+    _ -> writeArray arr wAddr wData
+  return rData
 
 seqInt :: Integer -> Int
 seqInt = fromIntegral
@@ -70,35 +75,21 @@ seqInt = fromIntegral
 -- r: register state (tuple of Int)
 -- i/o is collected in a concrete [] type to make it easier to handle.
 
-seqRun :: ((a, r, [Int]) -> forall s. ST s (r, [Int])) -> (a, r) -> [[Int]] -> [[Int]]
-seqRun f (a,r0) i = runST $ u r0 i where
-  u _ [] = return []
-  u r (i:is) = do
-    (r',o) <- f (a, r,i)
-    os <- u r' is
-    return (o:os)
+seqRun ::
+  (forall s. ([Mem s], rd, r, [Int]) -> ST s (rd, r, [Int]))
+  -> [Int]
+  -> (rd, r)
+  -> [[Int]] -> [[Int]]
+seqRun f ac (rd0, r0) i = 
+  runST $ do
+    a <- sequence $ [ seqMemInit | _ <- ac ]
+    let u _ _ [] = return []
+        u rd r (i:is) = do
+          (rd',r',o) <- f (a, rd, r, i)
+          os <- u rd' r' is
+          return (o:os)
+    u rd0 r0 i
 
-
--- seqRun' ::
---   (forall s. (m,r,[Int]) -> ST s (m, r, [Int])
---   ,(m,r)) -> [[Int]] -> [[Int]]
--- seqRun' (f, (m0, r0)) is = runST $ u m0 r0 is where
-
---   u _ _ [] = return []
---   u m r (i:is) = do
---     (m',r',o) <- f' (m,r,i)
---     os <- (u m' r' is)
---     return (o:os)
-
-
-seqRun' :: ((m,r,[Int]) -> forall s. ST s (m, r, [Int])) -> (m, r) ->  [[Int]] -> [[Int]]
-seqRun' f (m0, r0) is = runST $ u m0 r0 is where
-  u _ _ [] = return []
-  u m r (i:is) = do
-    (m',r',o) <- f (m,r,i)
-    os <- (u m' r' is)
-    return (o:os)
-    
 
 -- seqRun = undefined
 

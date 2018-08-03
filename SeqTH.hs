@@ -20,7 +20,7 @@ import qualified SeqLib
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax
 import Data.List
-
+import qualified Data.Map.Strict as Map
 
 test [en] = do
   closeMem [(SeqLib.bits 8)] $ \[rd] -> do
@@ -31,13 +31,12 @@ test [en] = do
     return ([(en,a,b,c)], [o])
 
 -- Abbrevs
-type N = Op NodeNum
-type T = Term N
+type O = Op NodeNum
 
 data Part = D | I | MR | MW | E deriving Eq
 
 -- Convert compiled Term to TH expression
-toExp :: ([N], [(Int, T)]) -> Exp
+toExp :: ([O], [(Int, Term O)]) -> Exp
 toExp  (outputs, bindings) = exp where
 
   -- Generate update function and initial values.
@@ -48,17 +47,14 @@ toExp  (outputs, bindings) = exp where
   -- generate a closed expression.
   
   
-  exp = app2 (seqVar "Run") update init
-  
-  init = TupE [memInit, stateInit]
+  exp = app3 (seqVar "Run") update memInit $ TupE [memRdInit, stateInit]
   update =
-    LamE [TupP [memIn, stateIn, inputs]] $
+    LamE [TupP [arrP, memRdIn, stateIn, inputs]] $
     DoE $
     bindings' ++
-    updateMem ++
-    [NoBindS $ return' $ TupE [stateOut, outputs']]
+    memUpdate ++ 
+    [NoBindS $ return' $ TupE [memRdOut, stateOut, outputs']]
 
-  return' = AppE (VarE $ mkName "return")
   
   partition t = map snd $ filter ((t ==) . fst) tagged
   tagged = map p' bindings
@@ -70,27 +66,21 @@ toExp  (outputs, bindings) = exp where
   p _              = E
     
   bindings' =
-    [BindS (nodeNumPat n) (termExp e)
+    [BindS (rP n) (termExp e)
     | (n, e) <- partition E]
 
   -- I/O is more conveniently exposed as lists, which would be the
   -- same interface as the source code.  State can use tuples: it will
   -- be treated as opaque.
 
-  inputs   = ListP $ map (nodeNumPat . fst)  $ partition I
-  outputs' = ListE $ map nodeExp outputs
+  inputs   = ListP $ map (rP . fst)  $ partition I
+  outputs' = ListE $ map oE outputs
 
   ds = partition D
   stateInit = tupE' [int v | (_, (Delay (SInt _ v) _)) <- ds]
-  stateIn   = tupP' $ map (nodeNumPat . fst) $ ds
-  stateOut  = tupE' [nodeExp n | (_, (Delay _ n)) <- ds]
+  stateIn   = tupP' $ map (rP . fst) $ ds
+  stateOut  = tupE' [oE n | (_, (Delay _ n)) <- ds]
 
-  mrs = partition MR
-  mi _ = tupE' $ [int 0, seqVar "InitMem"]
-  mr (rd, MemRd _ (MemNode mem)) =
-    tupP' [nodeNumPat rd, nodeNumPat mem]
-  memInit  = tupE' $ map mi mrs
-  memIn  = tupP' $ map mr mrs
 
   -- TODO:
   -- . initializers
@@ -98,25 +88,46 @@ toExp  (outputs, bindings) = exp where
   -- . rData feedback (but not arr)
 
   -- Variable declarations (P) and references (E)
-  rDataP  = [nodeNumPat n  | (n, (MemRd _ _)) <- mrs]
-  rDataP' = [nodeNumPat' n | (n, (MemRd _ _)) <- mrs]
-  arrP    = [nodePat n     | (_, (MemRd _ n)) <- mrs]
-  arrE    = [nodeExp n     | (_, (MemRd _ n)) <- mrs]
 
-  -- Memory write statement.  Produces next wData which is fed back.
-  -- updateMemS = [BindS rData
-  updateMem = [BindS p (return' $ int 0) | p <- rDataP']
+  -- We'll need to create another node for the intermediate result of
+  -- MemWr, so maintain an assoc list.
+  ards = [(o2n on, n) | (n, (MemRd _ on)) <- partition MR]
+  arr2rData = Map.fromList ards
+  
+  as = map fst ards
+  rds = map snd ards
 
-  memOut =
-    tupE' [AppE (seqVar "UpdateMem") $
-            TupE [tupE' $ map nodeExp [a,b,c,d],
-                  nodeNumExp n]
-          | (n, (MemWr (a,b,c,d))) <- partition MW]
+  -- Reuse it for the register tuples
+  arrP    = ListP $ map rP  as
+
+
+  memUpdate =
+    [BindS
+      (rP' $ arr2rData Map.! arr)
+      (app2
+       (seqVar "MemUpdate")
+       (rE arr)
+       (tupE' $ map oE [rEn,wAddr,wData,rAddr]))
+    | (arr, (MemWr (rEn,wAddr,wData,rAddr))) <- partition $ MW]
+
+  -- It's simplest to just feed back the read data register.
+  memRdInit = tupE' [ int 0            | _ <- rds ]
+  memRdIn   = tupP' $ map rP rds
+  memRdOut  = tupE' $ map rE' rds
+
+  memInit   = ListE [ int 0 | _ <- rds ]
+
+
+  -- memOut = tupE' $ 
+  --   tupE' [AppE (seqVar "UpdateMem") $
+  --           TupE [tupE' $ map oE [a,b,c,d],
+  --                 rE n]
+  --         | (n, (MemWr (a,b,c,d))) <- partition MW]
 
   -- memOut =
   --   tupE' [AppE (seqVar "UpdateMem") $
-  --           TupE [tupE' $ map nodeExp [a,b,c,d],
-  --                 nodeNumExp n]
+  --           TupE [tupE' $ map oE [a,b,c,d],
+  --                 rE n]
   --         | (n, (MemWr (a,b,c,d))) <- partition MW]
     
 
@@ -136,18 +147,18 @@ opVar opc = seqVar $ show opc
 seqVar str = VarE $ mkName $ "seq" ++ str
 
 
-termExp :: T -> Exp
+termExp :: Term O -> Exp
 
 -- Special cases
 termExp (Comb2 t CONC a b) = exp where
   bits' n = int b where (SInt (Just b) _) = opType n
-  exp = app4 (opVar CONC) (bits t) (bits' b) (nodeExp a) (nodeExp b)
+  exp = app4 (opVar CONC) (bits t) (bits' b) (oE a) (oE b)
 termExp (Slice t a _ r) =
-  app3 (seqVar "SLICE") (bits t) (nodeExp a) (int r)
+  app3 (seqVar "SLICE") (bits t) (oE a) (int r)
 -- Generic 1,2,3 op
-termExp (Comb1 t opc a)     = app2 (opVar opc) (bits t) (nodeExp a)
-termExp (Comb2 t opc a b)   = app3 (opVar opc) (bits t) (nodeExp a) (nodeExp b)
-termExp (Comb3 t opc a b c) = app4 (opVar opc) (bits t) (nodeExp a) (nodeExp b) (nodeExp c)
+termExp (Comb1 t opc a)     = app2 (opVar opc) (bits t) (oE a)
+termExp (Comb2 t opc a b)   = app3 (opVar opc) (bits t) (oE a) (oE b)
+termExp (Comb3 t opc a b c) = app4 (opVar opc) (bits t) (oE a) (oE b) (oE c)
 
 termExp e = error $ show e
 
@@ -159,29 +170,41 @@ app4 a b c d e = app1 (app3 a b c d) e
 bits (SInt (Just n) _) = int n
 bits _ = int 64 -- FIXME
 
+-- Node numbers appear in two contexts: Op and plain.
+-- Instead of specializing functions to both, we take NodeNum as the canonical representation.
+o2n :: Op NodeNum -> NodeNum
+o2n (Node _ n) = n
+o2n (MemNode n) = n
+o2n c@(Const _) = error $ "o2n: expecting Node reference: " ++ show c
 
-nodeExp :: N -> Exp          
-nodeExp (Node _ n) = nodeNumExp n
-nodeExp (Const (SInt _ v)) = int v
+oE :: O -> Exp          
+oE (Node _ n) = rE n
+oE (Const (SInt _ v)) = int v
 
-nodePat :: N -> Pat          
-nodePat (Node _ n) = nodeNumPat n
-nodePat (Const _) = error $ "nodePat: impossible case"
 
 int i = AppE (seqVar "Int") (LitE $ IntegerL $ fromIntegral i)
                  
-nodeNumExp :: Int -> Exp          
-nodeNumExp n = VarE $ nodeNumName n
+rE  = VarE . rN
+rE' = VarE . rN'
 
-nodeNumPat :: Int -> Pat          
-nodeNumPat n = VarP $ nodeNumName n
+rP  = VarP . rN
+rP' = VarP . rN'
 
-nodeNumPat' :: Int -> Pat          
-nodeNumPat' n = VarP $ mkName $ "r" ++ show n ++ "'"
+rN  = mkName . rStr
+rN' = mkName . rStr'
 
-nodeNumName :: Int -> Name
-nodeNumName = mkName . nodeNumStr
-nodeNumStr n = "r" ++ show n
+rStr  n = "r" ++ show n
+rStr' n = "r" ++ show n ++ "'"
+
+    
+return' = AppE (VarE $ mkName "return")
+
+-- sequenceTupE :: String -> [Exp] -> Exp
+-- sequenceTupE prefix ms = e where
+--   v n = mkName $ prefix ++ show n
+--   e = DoE $
+--       [BindS (VarP $ v n) m | (n,m) <- zip [0..] ms] ++
+--       [NoBindS $ return' $ tupE' [VarE $ v n | (n,m) <- zip [0..] ms]]
 
 compile' :: [Int] -> ([R S] -> M [R S]) -> Exp
 compile' sizes mf = exp where
@@ -193,16 +216,12 @@ compile' sizes mf = exp where
     slice i (Just sz) 0
   exp = toExp $ SeqTerm.compileTerm $ truncIns >>= mf
 
-compile sizes mf = return $
-  compile' sizes mf
+compile sizes mf = return $ compile' sizes mf
 
 
 
 -- second stage
 run = SeqPrim.seqRun
-
-
-
 
 
 -- Change it to run in ST, returning the value of the memories as well.

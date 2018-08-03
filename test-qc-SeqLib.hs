@@ -190,7 +190,7 @@ x_mem = do
 -- t_fifo_emu = trace [1,1,8] d_fifo
 t_fifo = $(SeqTH.compile [1,1,8] d_fifo)
 
-e_fifo lst = (lst == lst, (lst',outs)) where
+e_fifo lst = (lst == lst', (lst',outs)) where
   lst'   = map head $ downSample' outs
   -- Write a data into the buffer, read it out.
   outs   = t_fifo $ writes ++ reads ++ idle

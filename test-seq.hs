@@ -298,7 +298,6 @@ x_seqTH = m1 >> m2 where
   m2 = do
     -- Some ad-hoc tests for SeqTH,SeqPrim combo.
     let test f = print $ f $ map (:[]) [0..9]
-
         -- FIXME: test is rank-2
     test $(SeqTH.compile [1] $ \[i] -> do c <- counter $ bits 3 ; return [c])
     test $(SeqTH.compile [4] $ \[i] -> do c <- integral i ; return [c])
