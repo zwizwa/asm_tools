@@ -1,12 +1,14 @@
 -- Template Haskell rendering of a Seq program to remove
 -- interpretative overhead.
 
--- Since Template Haskell is still a little unfamiliar to me, I'm not
--- writing this as a tagless final interpreter, but as an explicit
--- compiler using SeqTerm
+-- Since Template Haskell is untyped, it's OK to just use SeqTerm
+-- instead of a tagless final compiler.
 
--- Interestingly, this doesn't need to be monadic.  The resulting
--- function can be constructed as pure  ((s,i)->(s,o))
+-- Memories are best implemented imperatively, in the ST monad.
+
+-- Note that without memories, language can be compiled to a pure
+-- state update function ((s,i)->(s,o))
+
 
 {-# LANGUAGE TemplateHaskell #-}
 
@@ -33,7 +35,7 @@ test [en] = do
 -- Abbrevs
 type O = Op NodeNum
 
-data Part = D | I | MR | MW | E deriving Eq
+data Part = Delays | Inputs | MemRds | MemWrs | Exprs deriving Eq
 
 -- Convert compiled Term to TH expression
 toExp :: ([O], [(Int, Term O)]) -> Exp
@@ -41,97 +43,74 @@ toExp  (outputs, bindings) = exp where
 
   -- Generate update function and initial values.
 
-  -- Note: I've been running into "impredicative polymorphism" errors
-  -- trying to make the loop function and initial state explicit,
-  -- which I don't want to understand yet.  It seems best to just
-  -- generate a closed expression.
+  -- The rank-2 types impose some constraints.  I made it work by 1)
+  -- generating a closed expression to avoid "impredicative
+  -- polymorphism" errors, and 2) placing the arrays in a list and
+  -- giving them all the same type, instead of a tuple.
   
+  exp = app3
+    (seqVar "Run")
+    update
+    memSpec $
+    TupE [memRdInit, stateInit]
   
-  exp = app3 (seqVar "Run") update memInit $ TupE [memRdInit, stateInit]
   update =
-    LamE [TupP [arrP, memRdIn, stateIn, inputs]] $
+    LamE [TupP [memRef, memRdIn, stateIn, inputs]] $
     DoE $
     bindings' ++
     memUpdate ++ 
     [NoBindS $ return' $ TupE [memRdOut, stateOut, outputs']]
 
-  
   partition t = map snd $ filter ((t ==) . fst) tagged
   tagged = map p' bindings
   p' x = (p x, x)
-  p (_, Input _)   = I
-  p (_, Delay _ _) = D
-  p (_, MemRd _ _) = MR
-  p (_, MemWr _)   = MW
-  p _              = E
+  p (_, Input _)   = Inputs
+  p (_, Delay _ _) = Delays
+  p (_, MemRd _ _) = MemRds
+  p (_, MemWr _)   = MemWrs
+  p _              = Exprs
     
   bindings' =
-    [BindS (rP n) (termExp e)
-    | (n, e) <- partition E]
+    [BindS (regP n) (termExp e)
+    | (n, e) <- partition Exprs]
 
   -- I/O is more conveniently exposed as lists, which would be the
   -- same interface as the source code.  State can use tuples: it will
   -- be treated as opaque.
 
-  inputs   = ListP $ map (rP . fst)  $ partition I
-  outputs' = ListE $ map oE outputs
+  inputs   = ListP $ map (regP . fst)  $ partition Inputs
+  outputs' = ListE $ map opE outputs
 
-  ds = partition D
-  stateInit = tupE' [int v | (_, (Delay (SInt _ v) _)) <- ds]
-  stateIn   = tupP' $ map (rP . fst) $ ds
-  stateOut  = tupE' [oE n | (_, (Delay _ n)) <- ds]
+  delays = partition Delays
+  stateInit = tupE' [int v | (_, (Delay (SInt _ v) _)) <- delays]
+  stateIn   = tupP' $ map (regP . fst) $ delays
+  stateOut  = tupE' [opE n | (_, (Delay _ n)) <- delays]
 
 
-  -- TODO:
-  -- . initializers
-  -- . seqUpdateMem as monadic operation
-  -- . rData feedback (but not arr)
-
-  -- Variable declarations (P) and references (E)
-
-  -- We'll need to create another node for the intermediate result of
-  -- MemWr, so maintain an assoc list.
-  ards = [(o2n on, n) | (n, (MemRd _ on)) <- partition MR]
+  -- Keep track of arr to rData mapping.
+  ards = [(op2reg op, n) | (n, (MemRd _ op)) <- partition MemRds]
+  arrays  = map fst ards
+  rDatas  = map snd ards
   arr2rData = Map.fromList ards
-  
-  as = map fst ards
-  rds = map snd ards
 
-  -- Reuse it for the register tuples
-  arrP    = ListP $ map rP  as
-
-
+  memSpec   = ListE [ int 123 | _ <- rDatas ]  -- FIXME: sizes!
+  memRef    = ListP $ map regP arrays
+  memRdInit = tupE' [ int 0 | _ <- rDatas ]
+  memRdIn   = tupP' $ map regP  rDatas
+  memRdOut  = tupE' $ map regE' rDatas
   memUpdate =
     [BindS
-      (rP' $ arr2rData Map.! arr)
+      (regP' $ arr2rData Map.! arr)
       (app2
        (seqVar "MemUpdate")
-       (rE arr)
-       (tupE' $ map oE [rEn,wAddr,wData,rAddr]))
-    | (arr, (MemWr (rEn,wAddr,wData,rAddr))) <- partition $ MW]
-
-  -- It's simplest to just feed back the read data register.
-  memRdInit = tupE' [ int 0            | _ <- rds ]
-  memRdIn   = tupP' $ map rP rds
-  memRdOut  = tupE' $ map rE' rds
-
-  memInit   = ListE [ int 0 | _ <- rds ]
+       (regE arr)
+       (tupE' $ map opE [rEn,wAddr,wData,rAddr]))
+    | (arr, (MemWr (rEn,wAddr,wData,rAddr))) <- partition $ MemWrs]
 
 
-  -- memOut = tupE' $ 
-  --   tupE' [AppE (seqVar "UpdateMem") $
-  --           TupE [tupE' $ map oE [a,b,c,d],
-  --                 rE n]
-  --         | (n, (MemWr (a,b,c,d))) <- partition MW]
 
-  -- memOut =
-  --   tupE' [AppE (seqVar "UpdateMem") $
-  --           TupE [tupE' $ map oE [a,b,c,d],
-  --                 rE n]
-  --         | (n, (MemWr (a,b,c,d))) <- partition MW]
-    
-
--- FIXME: Use nested tuples for the state, memory collections.
+-- FIXME: Use nested tuples for large state.  Maybe it is even OK to
+-- put this in a list.  Check assembly output.
 
 tupE' :: [Exp] -> Exp
 tupE' [a] = a
@@ -152,13 +131,13 @@ termExp :: Term O -> Exp
 -- Special cases
 termExp (Comb2 t CONC a b) = exp where
   bits' n = int b where (SInt (Just b) _) = opType n
-  exp = app4 (opVar CONC) (bits t) (bits' b) (oE a) (oE b)
+  exp = app4 (opVar CONC) (bits t) (bits' b) (opE a) (opE b)
 termExp (Slice t a _ r) =
-  app3 (seqVar "SLICE") (bits t) (oE a) (int r)
+  app3 (seqVar "SLICE") (bits t) (opE a) (int r)
 -- Generic 1,2,3 op
-termExp (Comb1 t opc a)     = app2 (opVar opc) (bits t) (oE a)
-termExp (Comb2 t opc a b)   = app3 (opVar opc) (bits t) (oE a) (oE b)
-termExp (Comb3 t opc a b c) = app4 (opVar opc) (bits t) (oE a) (oE b) (oE c)
+termExp (Comb1 t opc a)     = app2 (opVar opc) (bits t) (opE a)
+termExp (Comb2 t opc a b)   = app3 (opVar opc) (bits t) (opE a) (opE b)
+termExp (Comb3 t opc a b c) = app4 (opVar opc) (bits t) (opE a) (opE b) (opE c)
 
 termExp e = error $ show e
 
@@ -170,41 +149,34 @@ app4 a b c d e = app1 (app3 a b c d) e
 bits (SInt (Just n) _) = int n
 bits _ = int 64 -- FIXME
 
--- Node numbers appear in two contexts: Op and plain.
+-- Node (register) numbers appear in two contexts: Op and plain.
 -- Instead of specializing functions to both, we take NodeNum as the canonical representation.
-o2n :: Op NodeNum -> NodeNum
-o2n (Node _ n) = n
-o2n (MemNode n) = n
-o2n c@(Const _) = error $ "o2n: expecting Node reference: " ++ show c
+op2reg :: Op NodeNum -> NodeNum
+op2reg (Node _ n) = n
+op2reg (MemNode n) = n
+op2reg c@(Const _) = error $ "op2reg: expecting Node reference: " ++ show c
 
-oE :: O -> Exp          
-oE (Node _ n) = rE n
-oE (Const (SInt _ v)) = int v
+opE :: O -> Exp          
+opE (Node _ n) = regE n
+opE (Const (SInt _ v)) = int v
 
 
 int i = AppE (seqVar "Int") (LitE $ IntegerL $ fromIntegral i)
                  
-rE  = VarE . rN
-rE' = VarE . rN'
+regE  = VarE . regN
+regE' = VarE . regN'
 
-rP  = VarP . rN
-rP' = VarP . rN'
+regP  = VarP . regN
+regP' = VarP . regN'
 
-rN  = mkName . rStr
-rN' = mkName . rStr'
+regN  = mkName . regStr
+regN' = mkName . regStr'
 
-rStr  n = "r" ++ show n
-rStr' n = "r" ++ show n ++ "'"
+regStr  n = "r" ++ show n
+regStr' n = "r" ++ show n ++ "'"
 
     
 return' = AppE (VarE $ mkName "return")
-
--- sequenceTupE :: String -> [Exp] -> Exp
--- sequenceTupE prefix ms = e where
---   v n = mkName $ prefix ++ show n
---   e = DoE $
---       [BindS (VarP $ v n) m | (n,m) <- zip [0..] ms] ++
---       [NoBindS $ return' $ tupE' [VarE $ v n | (n,m) <- zip [0..] ms]]
 
 compile' :: [Int] -> ([R S] -> M [R S]) -> Exp
 compile' sizes mf = exp where
@@ -222,6 +194,3 @@ compile sizes mf = return $ compile' sizes mf
 
 -- second stage
 run = SeqPrim.seqRun
-
-
--- Change it to run in ST, returning the value of the memories as well.
