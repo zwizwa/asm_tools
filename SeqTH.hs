@@ -14,6 +14,7 @@ module SeqTH(toExp, compile', compile, run, test) where
 
 import Seq
 import SeqTerm
+import SeqPrim
 import qualified SeqTerm
 import qualified SeqLib
 import Language.Haskell.TH
@@ -44,8 +45,11 @@ toExp  (outputs, bindings) = exp where
   init = TupE [memInit, stateInit]
   update =
     LamE [TupP [memIn, stateIn, inputs]] $
-    LetE bindings' $
-    TupE [memOut, stateOut, outputs']
+    DoE $
+    bindings' ++
+    [NoBindS $ AppE
+     (VarE $ mkName "return")
+     (TupE [memOut, stateOut, outputs'])]
   
   partition t = map snd $ filter ((t ==) . fst) tagged
   tagged = map p' bindings
@@ -57,7 +61,7 @@ toExp  (outputs, bindings) = exp where
   p _              = E
     
   bindings' =
-    [ValD (nodeNumPat n) (NormalB (termExp e)) []
+    [BindS (nodeNumPat n) (termExp e)
     | (n, e) <- partition E]
 
   -- I/O is more conveniently exposed as lists, which would be the
@@ -154,16 +158,13 @@ compile' sizes mf = exp where
 compile sizes mf = return $
   compile' sizes mf
 
--- Second stage: execute the generated Haskell code.
--- m: memory state (tuple of IntMap Int)
--- r: register state (tuple of Int)
--- i/o is collected in a concrete [] type to make it easier to handle.
-run ::
-  ((m, r, [Int]) -> (m, r, [Int]),
-   (m, r))
-  -> [[Int]] -> [[Int]]
-run (f, (m0, r0)) is = u m0 r0 is where
-  u _ _ [] = []
-  u m r (i:is) = (o : u m' r' is) where
-    (m',r',o) = f (m,r,i)
 
+
+-- second stage
+run = SeqPrim.seqRun
+
+
+
+
+
+-- Change it to run in ST, returning the value of the memories as well.

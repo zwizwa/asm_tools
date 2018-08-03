@@ -67,6 +67,11 @@ import Data.List hiding (zipWith)
 import Data.Key(Zip(..),zipWith)
 import Data.Typeable
 import Language.Haskell.TH as TH
+
+import Control.Monad.ST
+import Data.Array.Unboxed
+import Data.Array.ST
+
   
 -- t_: trace
 -- h_: hdl port module
@@ -96,6 +101,7 @@ main = do
   x_blink_fpga
   x_seqTH
   x_app_share
+  x_st
 
 x_counter = do
   putStrLn "--- x_counter"
@@ -448,4 +454,25 @@ x_arrow2 = runKleisli a where
 x_arrow3 :: Seq m r => SeqA m r S S
 x_arrow3 x = (add x <=< add x) x
 
+
+
+
+-- ST Monad doodling for SeqTH
+-- The output should be a state transformer, e.g.
+
+type A = ()
+
+x_st = do
+  print "-- x_st"
+  print $ runST $ f_st
+
+f_st :: ST s Int
+f_st = do
+  let addr = 3
+      val  = 4
+      size = 256
+  a <- newArray (0, size) 0 :: ST s (STUArray s Int Int)
+  writeArray a addr val
+  v <- readArray a addr
+  return v
 
