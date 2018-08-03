@@ -55,9 +55,10 @@ toExp  (outputs, bindings) = exp where
     LamE [TupP [memIn, stateIn, inputs]] $
     DoE $
     bindings' ++
-    [NoBindS $ AppE
-     (VarE $ mkName "return")
-     (TupE [stateOut, outputs'])]
+    updateMem ++
+    [NoBindS $ return' $ TupE [stateOut, outputs']]
+
+  return' = AppE (VarE $ mkName "return")
   
   partition t = map snd $ filter ((t ==) . fst) tagged
   tagged = map p' bindings
@@ -90,12 +91,34 @@ toExp  (outputs, bindings) = exp where
     tupP' [nodeNumPat rd, nodeNumPat mem]
   memInit  = tupE' $ map mi mrs
   memIn  = tupP' $ map mr mrs
+
+  -- TODO:
+  -- . initializers
+  -- . seqUpdateMem as monadic operation
+  -- . rData feedback (but not arr)
+
+  -- Variable declarations (P) and references (E)
+  rDataP  = [nodeNumPat n  | (n, (MemRd _ _)) <- mrs]
+  rDataP' = [nodeNumPat' n | (n, (MemRd _ _)) <- mrs]
+  arrP    = [nodePat n     | (_, (MemRd _ n)) <- mrs]
+  arrE    = [nodeExp n     | (_, (MemRd _ n)) <- mrs]
+
+  -- Memory write statement.  Produces next wData which is fed back.
+  -- updateMemS = [BindS rData
+  updateMem = [BindS p (return' $ int 0) | p <- rDataP']
+
   memOut =
     tupE' [AppE (seqVar "UpdateMem") $
             TupE [tupE' $ map nodeExp [a,b,c,d],
                   nodeNumExp n]
           | (n, (MemWr (a,b,c,d))) <- partition MW]
 
+  -- memOut =
+  --   tupE' [AppE (seqVar "UpdateMem") $
+  --           TupE [tupE' $ map nodeExp [a,b,c,d],
+  --                 nodeNumExp n]
+  --         | (n, (MemWr (a,b,c,d))) <- partition MW]
+    
 
 -- FIXME: Use nested tuples for the state, memory collections.
 
@@ -141,6 +164,10 @@ nodeExp :: N -> Exp
 nodeExp (Node _ n) = nodeNumExp n
 nodeExp (Const (SInt _ v)) = int v
 
+nodePat :: N -> Pat          
+nodePat (Node _ n) = nodeNumPat n
+nodePat (Const _) = error $ "nodePat: impossible case"
+
 int i = AppE (seqVar "Int") (LitE $ IntegerL $ fromIntegral i)
                  
 nodeNumExp :: Int -> Exp          
@@ -148,6 +175,9 @@ nodeNumExp n = VarE $ nodeNumName n
 
 nodeNumPat :: Int -> Pat          
 nodeNumPat n = VarP $ nodeNumName n
+
+nodeNumPat' :: Int -> Pat          
+nodeNumPat' n = VarP $ mkName $ "r" ++ show n ++ "'"
 
 nodeNumName :: Int -> Name
 nodeNumName = mkName . nodeNumStr
