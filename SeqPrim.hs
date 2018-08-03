@@ -66,42 +66,38 @@ seqInt = fromIntegral
 
 
 -- Second stage: execute the generated Haskell code.
--- m: memory state (tuple of IntMap Int)
+-- a: memory arrays (tuble of STUArray)
 -- r: register state (tuple of Int)
 -- i/o is collected in a concrete [] type to make it easier to handle.
 
--- Error about skolem variable: something tries to unify but is bound
--- at some other place.
-
--- seqRun ::
---   forall m r s.
---   ((m, r, [Int]) -> ST _ (m, r, [Int]),
---    (m, r))
---   -> [[Int]] -> [[Int]]
-
-
--- seqRun ::
---   (forall s. (m,r,[Int]) -> ST s (m, r, [Int])
---   ,(m,r)) -> [[Int]] -> [[Int]]
-seqRun (f, (m0, r0)) is = runST $ u m0 r0 is where
-
-  -- u :: m -> r -> [[Int]] -> ST s [[Int]]
-  -- f' :: ()
-  f' (m,r,(i:_)) = do
-    v <- SeqPrim.seqADD 1 i i
-    return (m, r, [v])
-
-  u _ _ [] = return []
-  u m r (i:is) = do
-    (m',r',o) <- f' (m,r,i)
-    os <- (u m' r' is)
+seqRun :: ((a, r, [Int]) -> forall s. ST s (r, [Int])) -> (a, r) -> [[Int]] -> [[Int]]
+seqRun f (a,r0) i = runST $ u r0 i where
+  u r (i:is) = do
+    (r',o) <- f (a, r,i)
+    os <- u r' is
     return (o:os)
 
 
--- Derive the correct form by adding stuff to runST.
-seqRun' f i = runST $ f i
-seqRun' :: (i -> forall s. ST s a) -> i -> a 
+-- seqRun' ::
+--   (forall s. (m,r,[Int]) -> ST s (m, r, [Int])
+--   ,(m,r)) -> [[Int]] -> [[Int]]
+-- seqRun' (f, (m0, r0)) is = runST $ u m0 r0 is where
 
+--   u _ _ [] = return []
+--   u m r (i:is) = do
+--     (m',r',o) <- f' (m,r,i)
+--     os <- (u m' r' is)
+--     return (o:os)
+
+
+seqRun' :: ((m,r,[Int]) -> forall s. ST s (m, r, [Int])) -> (m, r) ->  [[Int]] -> [[Int]]
+seqRun' f (m0, r0) is = runST $ u m0 r0 is where
+  u _ _ [] = return []
+  u m r (i:is) = do
+    (m',r',o) <- f (m,r,i)
+    os <- (u m' r' is)
+    return (o:os)
+    
 
 -- seqRun = undefined
 
