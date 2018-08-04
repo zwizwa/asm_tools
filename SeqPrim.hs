@@ -42,7 +42,7 @@ seqSLICE = op2 $ shiftR
 type Mem s = STUArray s Int Int
 
 seqMemInit :: Int -> ST s (Mem s)
-seqMemInit addrBits = newArray (0, 1 `shiftL` addrBits) 0  -- FIXME: size!
+seqMemInit addrBits = newArray (0, 1 `shiftL` addrBits) 0
 
 seqMemRd _ = return 0
 

@@ -206,10 +206,8 @@ x_fifo = do
   print lst
   print lst'
 
-p_fifo = forAll (listOf $ word 8) (fst . e_fifo)
+p_fifo = forAll (listOfMaxSize 16 $ word 8) (fst . e_fifo)
     
-
-
 
 
 -- Tools
@@ -295,6 +293,10 @@ wordList = do
   lst <- listOf $ word nb_bits
   return (nb_bits, lst)
 
+listOfMaxSize :: Int -> Gen a -> Gen [a]
+listOfMaxSize n gen = do
+  k <- choose (0,n)
+  vectorOf k gen
 
 
 
