@@ -75,25 +75,31 @@ toExp  (outputs, bindings) = exp where
     | (n, e) <- partition Exprs]
 
   -- I/O is more conveniently exposed as lists, which would be the
-  -- same interface as the source code.  State can use tuples: it will
-  -- be treated as opaque.
+  -- same interface as the source code.
 
   inputs   = ListP $ map (regP . fst)  $ partition Inputs
   outputs' = ListE $ map opE outputs
 
+  -- State can use tuples: it will be treated as opaque.
+  
   delays = partition Delays
   stateInit = tupE' [int v | (_, (Delay (SInt _ v) _)) <- delays]
   stateIn   = tupP' $ map (regP . fst) $ delays
   stateOut  = tupE' [opE n | (_, (Delay _ n)) <- delays]
 
+  -- Memories.
 
-  -- Keep track of arr to rData mapping.
-  ards = [(op2reg op, n) | (n, (MemRd _ op)) <- partition MemRds]
-  arrays  = map fst ards
-  rDatas  = map snd ards
-  arr2rData = Map.fromList ards
+  memrds = partition MemRds
+  memwrs = partition MemWrs
 
-  memSpec   = ListE [ int 123 | _ <- rDatas ]  -- FIXME: sizes!
+  arrays   = [op2reg op | (_, (MemRd _ op)) <- memrds]
+  rDatas   = [n         | (n, (MemRd _ _ )) <- memrds]
+
+  arr2rData = Map.fromList $ zip arrays rDatas
+  arr2size  = Map.fromList $ [(arr, opBits wAddr)
+                             | (arr, (MemWr (_,wAddr,_,_))) <- memwrs]
+
+  memSpec   = ListE [ int $ arr2size Map.! a | a <- arrays ]
   memRef    = ListP $ map regP arrays
   memRdInit = tupE' [ int 0 | _ <- rDatas ]
   memRdIn   = tupP' $ map regP  rDatas
@@ -101,11 +107,12 @@ toExp  (outputs, bindings) = exp where
   memUpdate =
     [BindS
       (regP' $ arr2rData Map.! arr)
-      (app2
+      (app3
        (seqVar "MemUpdate")
        (regE arr)
+       (int $ opBits wData)
        (tupE' $ map opE [rEn,wAddr,wData,rAddr]))
-    | (arr, (MemWr (rEn,wAddr,wData,rAddr))) <- partition $ MemWrs]
+    | (arr, (MemWr (rEn,wAddr,wData,rAddr))) <- memwrs]
 
 
 
@@ -146,8 +153,17 @@ app2 a b c     = app1 (app1 a b) c
 app3 a b c d   = app1 (app2 a b c) d
 app4 a b c d e = app1 (app3 a b c d) e
 
-bits (SInt (Just n) _) = int n
-bits _ = int 64 -- FIXME
+bits :: SType -> Exp
+bits = int . tbits
+
+tbits (SInt (Just n) _) = n
+tbits (SInt Nothing _) = -1 -- See SeqPrim
+
+opBits :: Op NodeNum -> Int
+opBits (Node t _) = tbits t
+opBits (Const t) = tbits t
+
+
 
 -- Node (register) numbers appear in two contexts: Op and plain.
 -- Instead of specializing functions to both, we take NodeNum as the canonical representation.

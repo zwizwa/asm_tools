@@ -192,15 +192,15 @@ t_fifo = $(SeqTH.compile [1,1,8] d_fifo)
 
 e_fifo lst = (lst == lst', (lst',outs)) where
   lst'   = map head $ downSample' outs
-  -- Write a data into the buffer, read it out.
+  -- Write data into the buffer, read it out.
   outs   = t_fifo $ writes ++ reads ++ idle
   writes = [[0,1,x] | x <- lst]
-  reads  = replicate 10 $ [1,0,0]
-  idle   = replicate  3 $ [0,0,0]
+  reads  = replicate (length lst) $ [1,0,0]
+  idle   = replicate  3           $ [0,0,0]
 
 x_fifo = do
   let lst = [1..10]
-      (_, (lst',outs)) = e_fifo lst
+      (_, (lst', outs)) = e_fifo lst
   putStrLn "-- x_fifo rd,wa,ra,re,we,wd"
   printL outs
   print lst

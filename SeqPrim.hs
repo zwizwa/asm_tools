@@ -10,7 +10,6 @@ module SeqPrim(
   seqInt, seqMemInit, seqMemUpdate,
   seqRun
   ) where
-import Data.IntMap.Strict
 import Data.Bits
 import Control.Monad.ST
 import Data.Array.Unboxed
@@ -19,12 +18,9 @@ import Data.Array.ST
 type T = Int
 
 trunc :: T -> T -> T
+trunc (-1) = id
 trunc bits = (.&. mask) where
   mask = (1 `shiftL` bits) - 1
-
--- op1 :: (T -> T)           -> T -> T -> forall s. (ST s T)
--- op2 :: (T -> T -> T)      -> T -> T -> T -> forall s. (ST s T)
--- op3 :: (T -> T -> T -> T) -> T -> T -> T -> T -> forall s. (ST s T)
 
 op1 :: (T -> T)           -> T -> T -> ST s T
 op2 :: (T -> T -> T)      -> T -> T -> T -> ST s T
@@ -33,14 +29,6 @@ op3 :: (T -> T -> T -> T) -> T -> T -> T -> T -> ST s T
 op1 op bits a     = return $ trunc bits $ op a
 op2 op bits a b   = return $ trunc bits $ op a b
 op3 op bits a b c = return $ trunc bits $ op a b c
-
--- seqADD   :: Monad m => T -> T -> T -> m T
--- seqSUB   :: Monad m => T -> T -> T -> m T
--- seqAND   :: Monad m => T -> T -> T -> m T
--- seqEQU   :: Monad m => T -> T -> T -> m T
--- seqSLICE :: Monad m => T -> T -> T -> m T
--- seqIF    :: Monad m => T -> T -> T -> T -> m T
--- seqCONC  :: Monad m => T -> T -> T -> T -> m T
 
 seqADD = op2 (+)
 seqSUB = op2 $ \a b -> a - b
@@ -53,13 +41,13 @@ seqSLICE = op2 $ shiftR
 
 type Mem s = STUArray s Int Int
 
-seqMemInit :: ST s (Mem s)
-seqMemInit = newArray (0, 256) 0  -- FIXME: size!
+seqMemInit :: Int -> ST s (Mem s)
+seqMemInit addrBits = newArray (0, 1 `shiftL` addrBits) 0  -- FIXME: size!
 
 seqMemRd _ = return 0
 
-seqMemUpdate :: Mem s -> (Int, Int, Int, Int) -> ST s Int
-seqMemUpdate arr (wEn,wAddr,wData,rAddr) = do
+seqMemUpdate :: Mem s -> Int -> (Int, Int, Int, Int) -> ST s Int
+seqMemUpdate arr bits (wEn,wAddr,wData,rAddr) = do
   rData <- readArray arr rAddr
   case wEn of
     0 -> return ()
@@ -80,19 +68,12 @@ seqRun ::
   -> [Int]
   -> (rd, r)
   -> [[Int]] -> [[Int]]
-seqRun f ac (rd0, r0) i = 
+seqRun f specs (rd0, r0) i = 
   runST $ do
-    a <- sequence $ [ seqMemInit | _ <- ac ]
+    a <- sequence $ map seqMemInit specs
     let u _ _ [] = return []
         u rd r (i:is) = do
           (rd',r',o) <- f (a, rd, r, i)
           os <- u rd' r' is
           return (o:os)
     u rd0 r0 i
-
-
--- seqRun = undefined
-
--- For ST, it is important to understand which s parameters are
--- specific, and which are generic.
--- https://stackoverflow.com/questions/34494893/how-to-understand-the-state-type-in-haskells-st-monad
