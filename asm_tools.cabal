@@ -27,9 +27,15 @@ Library
 --     build-depends: base
 
 Test-Suite test-seq
-    build-depends: base, containers, mtl, free, keys, set-extra, template-haskell, parsec, QuickCheck, array
+    build-depends: base, containers, mtl, free, keys, set-extra, template-haskell, parsec, QuickCheck, array, mios
     type:       exitcode-stdio-1.0
     main-is:    test-seq.hs
+    build-depends: base
+
+Test-Suite test-sat
+    build-depends: base, containers, mtl, mios
+    type:       exitcode-stdio-1.0
+    main-is:    test-sat.hs
     build-depends: base
 
 Test-Suite test-qc-SeqLib.hs
