@@ -49,8 +49,12 @@ edge d = do
   d `bxor` d0
 
 
--- bit b = band b 1
+-- 1,1,1 and delayed versions
+seq1 :: Seq m r => m (r S)
+seq1 = closeReg [bit' 0] $ \[r] -> return ([1], r)
 
+seq01 :: Seq m r => m (r S)
+seq01 = delay =<< seq1
 
 
 -- A test of completeness is to implement a clock synchronizer.

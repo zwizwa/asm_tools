@@ -134,6 +134,7 @@ cpu ([i]) = do
 -- jump.
 
 data Ins r  = Ins {
+  insRun  :: r S,
   insWord :: r S
   }
 
@@ -171,17 +172,16 @@ closeIMem (IMemWrite wEn wAddr wData) run f = do
   t_wData <- stype wData
   closeMem [t_wData] $ \[iw] -> do
     (ipNext, o) <- closeReg [t_wAddr] $ \[ip] -> do
-      (Jump jmp ipJmp, o) <- f (Ins iw)
-      ipCont  <- inc ip
-      ipNext' <- if' jmp ipJmp ipCont
-      ipNext  <- if' run ipNext' ip
+      (Jump jmp ipJmp, o) <- f (Ins run iw)
+      ipSeq   <- inc ip
+      ipNext' <- if' jmp ipJmp ipSeq
+      ipNext  <- if' run ipNext' 0
       return ([ipNext], (ipNext, o))  -- comb ip' to avoid extra delay
     return ([(wEn, wAddr, wData, ipNext)], o) 
 
 -- A simple test for closeIMem:
 -- . program outputs iw as output
 -- . tied to a memory writer defined in the test lib
-      
 
 
 -- A generic bus.  Same structure as the memory interface.  Note that
