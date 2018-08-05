@@ -150,27 +150,33 @@ data IMemWrite r = IMemWrite {
   iMemWriteAddr :: r S,
   iMemWriteData :: r S
   }
--- FIXME: Currently it is not yet possible to initialize memories
--- before running a simulation, or initialize an FPGA image.
-noIMemWrite :: Seq m r => IMemWrite r
-noIMemWrite = IMemWrite 0 0 0
+
+-- Reads are closed, so sizes are necessarily taken from the size of
+-- the write bus address and data registers.  If there is none
+-- (e.g. if IMem is a ROM), then this can be used to specify size.
+noIMemWrite :: Seq m r => Int -> Int -> IMemWrite r
+noIMemWrite ibits abits = IMemWrite e w d where
+  e = constant $ bit
+  w = constant $ bits abits
+  d = constant $ bits ibits
 
 
 closeIMem :: Seq m r =>
   IMemWrite r
-  -> (Ins r -> i -> m (Jump r, o))
-  -> i
+  -> r S
+  -> (Ins r -> m (Jump r, o))
   -> m o
-closeIMem (IMemWrite wEn wAddr wData) f i = do
+closeIMem (IMemWrite wEn wAddr wData) run f = do
   t_wAddr <- stype wAddr
   t_wData <- stype wData
   closeMem [t_wData] $ \[iw] -> do
-    (ip', o) <- closeReg [t_wAddr] $ \[ip] -> do
-      (Jump jmp dst, o) <- f (Ins iw) i
-      ipNext <- inc ip
-      ip' <- if' jmp dst ipNext
-      return ([ip'], (ip', o))  -- comb ip' to avoid extra delay
-    return ([(wEn, wAddr, wData, ip')], o) 
+    (ipNext, o) <- closeReg [t_wAddr] $ \[ip] -> do
+      (Jump jmp ipJmp, o) <- f (Ins iw)
+      ipCont  <- inc ip
+      ipNext' <- if' jmp ipJmp ipCont
+      ipNext  <- if' run ipNext' ip
+      return ([ipNext], (ipNext, o))  -- comb ip' to avoid extra delay
+    return ([(wEn, wAddr, wData, ipNext)], o) 
 
 -- A simple test for closeIMem:
 -- . program outputs iw as output

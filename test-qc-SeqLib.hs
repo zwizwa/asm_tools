@@ -61,6 +61,7 @@ main = do
   qc "p_async_receiver" p_async_receiver
   qc "p_fifo" p_fifo
 
+  x_cpu_ins
 
 
 qc str f = do
@@ -209,7 +210,25 @@ x_fifo = do
   print lst'
 
 p_fifo = forAll (listOfMaxSize 16 $ word 8) (fst . e_fifo)
-    
+
+
+-- CPU
+
+memRef :: [Int] -> Int -> Int
+memRef mem n = v where
+  v = case (n >= length mem) of
+    True -> 0
+    False -> mem !! n
+
+t_cpu_ins = $(SeqTH.compile [] d_cpu_ins) [iMemInit] where
+  iMemInit = memRef iMem
+  iMem = [ 0x8004,    -- jump 4
+           0, 0, 0,   -- nop
+           0x8000 ]   -- jump 0
+
+x_cpu_ins = do
+  putStrLn "-- x_cpu_ins"
+  printL $ t_cpu_ins $ replicate 10 []
 
 
 -- Tools

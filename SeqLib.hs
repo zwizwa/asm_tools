@@ -48,6 +48,7 @@ edge d = do
   d0 <- delay d
   d `bxor` d0
 
+
 -- bit b = band b 1
 
 
@@ -76,6 +77,11 @@ shiftReg dir tr i = do
     return $ ([r_shift], r)
 
 data ShiftDir = ShiftLeft | ShiftRight
+
+
+slice' :: Seq m r => r S -> Int -> Int -> m (r S)
+slice' s hi lo = slice s (Just hi) lo
+
 
 -- Inner routine is useful without feedback.
 -- This is "natural order", or MSB first.
