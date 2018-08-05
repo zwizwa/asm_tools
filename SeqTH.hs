@@ -15,6 +15,7 @@
 module SeqTH(toExp, compile', compile, test) where
 
 import Seq
+import SeqLib hiding (bits)
 import SeqTerm
 import SeqPrim
 import qualified SeqTerm

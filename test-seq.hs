@@ -91,8 +91,6 @@ main = do
   x_hdl
   x_hdl_sync
   x_closeReg
-  x_cpu_term
-  x_cpu
   x_mem_write_to_read_delay
   x_vcd
   x_netfun
@@ -215,26 +213,6 @@ x_mem_write_to_read_delay = do
   print $ take 10 $ t_mem_write_to_read_delay
 
     
-
--- Stub out what doesn't fit.  The idea is to find a way to gracefully
--- have these two interpretations produce something useful: MyHDL code
--- and an emulation test.
-cpu_net = do
-  ([(a,b,c,d)], o) <- CPU.cpu $ [0]
-  return $ o ++ [a,b,c,d]
-cpu_emu =  trace' m where
-  t = SInt Nothing 0
-  m = closeMem ([t]) CPU.cpu
-  mem = Map.fromList $ [(n,n+1) | n <- [0..2]]
-x_cpu_term = do
-  putStrLn "--- x_cpu_term"
-  printSeqTerm $ cpu_net
-  
-x_cpu = do
-  putStrLn "--- x_cpu"
-  print $ take 10 $ cpu_emu
-
-
 
 
 

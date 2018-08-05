@@ -15,6 +15,96 @@ import Data.Key(Zip(..),zipWith)
 import Prelude hiding (zipWith)
 import Data.Bits hiding (bit)
 
+
+
+
+-- Convert a register update equation to to monadic output value,
+-- "tucking away" the registers.  This effectively computes the fixed
+-- point with register decoupling, defining a sequence.
+
+-- The idea here is that using 'signal' and 'update' in the same
+-- function will avoid the creation of undriven or multiply-driven
+-- signals.  This is preferred over using the low-level primitives
+-- directly.
+
+-- A meta-level container is used to bundle registers.  Typically, a
+-- List will do, but the interface is generic.  Note: liftA2 doesn't
+-- do the right thing on lists.
+
+-- This is the general form, parameterized by a generic next operator.
+
+closeReg' ::
+  forall f m r o. (Zip f, Traversable f, Seq m r) =>
+  (r S -> r S -> m ())
+  -> f SType
+  -> (f (r S) -> m (f (r S), o))
+  -> m o
+closeReg' update' ts f = do
+  rs <- sequence $ fmap signal ts
+  (rs', o) <- f rs
+  sequence_ $ zipWith update' rs rs'
+  return o
+
+
+-- The default closeReg uses a "update" that is parameterized by the
+-- enable bit for the local context.  This is useful for building
+-- state machines that are updated at a lower rate.
+
+closeReg ::
+  forall f m r o. (Zip f, Traversable f, Seq m r) =>
+  f SType
+  -> (f (r S) -> m (f (r S), o))
+  -> m o
+closeReg = closeReg' updateEnable
+
+closeRegEn ::
+  forall f m r o. (Zip f, Traversable f, Seq m r) =>
+  r S
+  -> f SType
+  -> (f (r S) -> m (f (r S), o))
+  -> m o
+closeRegEn en = closeReg' $ updateIf en
+
+updateEnable :: forall m r. Seq m r => r S -> r S -> m ()
+updateEnable r v = do
+  env <- getEnv
+  case env ClockEnable of
+    Nothing ->
+      update r v
+    Just en' ->
+      updateIf en' r v
+
+-- Note that when using clock enables, it is important to only ever
+-- use the outputs of the register, and not the input combinatorial
+-- networks!
+withClockEnable val m = do
+  let f _ ClockEnable = Just val
+      f env var = env var
+  withEnv f m
+
+updateIf :: forall m r. Seq m r => r S -> r S -> r S -> m ()
+updateIf en r v = do
+  v' <- if' en v r
+  update r v'
+  
+
+
+-- Similar, but for memories
+closeMem :: 
+  forall m r f o. (Seq m r, Zip f, Traversable f) =>
+  f SType -> (f (r S) -> m (f (r S, r S, r S, r S), o)) -> m o
+
+closeMem typ memAccess = do
+  mems <- sequence $ fmap memory typ
+  let rds     = fmap fst mems
+      memRefs = fmap snd mems
+  (memInputs, o) <- memAccess rds
+  sequence $ zipWith updateMemory memRefs memInputs
+  return o
+
+
+
+
 -- Shortcuts for common type constructions.
 bits :: Int -> SType
 bits' n = SInt (Just n)
@@ -24,8 +114,8 @@ bit = bits 1
 bit' = bits' 1
 
 -- Special closeReg case: single register, with register as output
-reg :: Seq m r => SType -> (r S -> m (r S)) -> m (r S)
-reg t f = do closeReg [t] $ \[r] -> do r' <- f r ; return ([r'], r)
+reg' :: Seq m r => SType -> (r S -> m (r S)) -> m (r S)
+reg' t f = do closeReg [t] $ \[r] -> do r' <- f r ; return ([r'], r)
 
 
 -- Some simple building blocks
@@ -37,12 +127,12 @@ dec :: Seq m r => r S -> m (r S)
 dec c = sub c 1
 
 counter :: Seq m r => SType -> m (r S)
-counter t = reg t inc
+counter t = reg' t inc
 
 delay :: Seq m r => r S -> m (r S)
 delay x = do
   t <- stype x
-  reg t $ \_ -> return x
+  reg' t $ \_ -> return x
 
 edge d = do
   d0 <- delay d
@@ -70,7 +160,7 @@ sync' s0 i s = do
 -- Bound to register
 sync :: Seq m r => SType -> r S -> m (r S)
 sync t i = do
-  reg t $ sync' (constant t) i
+  reg' t $ sync' (constant t) i
 
 
 -- Shift register in terms of slice + conc.
@@ -106,7 +196,7 @@ shiftUpdate dir r i = do
 integral :: Seq m r => r S -> m (r S)
 integral x = do
   t <- stype x
-  reg t $ add x
+  reg' t $ add x
 
 
 -- Multi-argument versions
@@ -305,3 +395,86 @@ async_receiver nb_bits i = do
   (sr:_:_:wc:_) <- d_async_receiver nb_bits i
   return (wc,sr)
   
+
+-- FIFO
+-- Note: single cycle read-after-write hazard
+
+fifo ta (rc,wc,wd) = do
+  -- t: type
+  -- d: data
+  -- a: address
+  -- c: clock enable
+  td <- stype wd
+  (wa,ra) <- closeReg [ta, ta] $ \[wa, ra] -> do
+    wa1 <- inc wa
+    ra1 <- inc ra
+    ra' <- if' rc ra1 ra
+    wa' <- if' wc wa1 wa
+    return ([wa',ra'], (wa,ra))
+  closeMem [td] $ \[rd] -> do
+    return ([(wc, wa, wd, ra)], rd)
+
+
+
+-- Stack / LIFO
+-- Note: single cycle read-after-write hazard
+
+-- 1. push A
+-- 2. use rData == old value
+-- 3. use rData == A
+
+-- en:     write enable
+-- upDown: 1:inc, 0:dec if enabled
+-- out:    top
+
+
+
+stack :: Seq m r => SType -> r S -> r S -> r S -> m (r S)
+stack t_a en upDown wData = do
+  t_d <- stype wData
+  closeReg [t_a] $ \[ptr] -> do
+    closeMem [t_d] $ \[rData] -> do
+      up        <- inc ptr
+      down      <- dec ptr
+      ptrUpDown <- if' upDown up down
+      ptrNext   <- if' en ptrUpDown ptr
+      return ([(en, ptrNext, wData, ptrNext)],
+               ([ptrNext], rData))
+
+
+-- Variant: allow write without inc/dec
+-- More suitable for stack CPU
+
+-- 00 idle
+-- 01 predec
+-- 10 preinc
+-- 11 update
+
+stackUpDown :: Seq m r => SType -> r S -> r S -> r S -> m (r S)
+stackUpDown t_a up down wData = do
+  t_d <- stype wData
+  closeReg [t_a] $ \[ptr] -> do
+    closeMem [t_d] $ \[rData] -> do
+      en        <- up `bor`  down
+      move      <- up `bxor` down
+      ptrUp     <- inc ptr
+      ptrDown   <- dec ptr
+      ptrUpDown <- if' up   ptrUp     ptrDown
+      ptrNext   <- if' move ptrUpDown ptr
+      return ([(en, ptrNext, wData, ptrNext)],
+               ([ptrNext], rData))
+
+-- FIXME: make it complementary preinc/postdec, whichever is easiest
+
+
+    
+               
+
+-- vmm f a mb mc = do
+--   b <- mb
+--   c <- mc
+--   f a b c
+
+-- vvm f a b mc = do
+--   c <- mc
+--   f a b c

@@ -1,7 +1,8 @@
 -- A CPU?
 
--- It is the natural progression from Seq and Pru.  Factor out some
--- Pru code to make a generic assembler, and implement the CPU in Seq.
+-- It is the natural progression from Seq and Pru.
+-- . implement CPU in Seq
+-- . generalize assembler from Pru
 
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
@@ -19,10 +20,14 @@ import SeqLib
 import Control.Monad
 import Control.Applicative
 
--- How to begin?  Memory seems to be the most important component.
--- I'm going to target the iCE40, which has a bunch of individual
--- memories, allowing separate busses for instruction, data and return
--- stack, and the rest bundled as data memory.
+-- How to begin?
+
+-- First: architecture: a stack machine.
+
+-- Memory seems to be the most important component.  I'm going to
+-- target the iCE40, which has a bunch of individual memories,
+-- allowing separate busses for instruction, data and return stack,
+-- and the rest bundled as data memory.
 
 -- At every clock, each of the 4 memories has a word sitting on its
 -- read port:
@@ -38,80 +43,6 @@ import Control.Applicative
 -- not necessarily general purpose CPUs.  This can then be gradually
 -- extended to more abstract operations.
 
--- data In s = In { i :: s } deriving (Functor, Foldable, Traversable)
-
-
-cpu :: forall m r. (Num (r S), Seq m r) =>
-  [(r S)] -> m ([(r S, r S, r S, r S)], [r S])
-cpu ([i]) = do
-
-  -- dispatch the instruction
-  
-  --c <- counter (SInt Nothing 0)
-  --c' <- reg (SInt Nothing 0) $ \x -> add x 2
-  let ip = i -- pointer chaser
-  -- Instruction memory input registers.  Write is disabled.
-  let iregs = (0, 0, 0, ip)
-  return $ ([iregs],[i])
-
-
-
--- I have a particular problem in mind.  Some instructions needed
--- a) loop n times
--- b) write UART byte, wait until done
--- c) wait
--- d) set I/O
--- e) read I/O into memory and advance pointer
-
--- To implement loops, it would be useful to have a stack to be able
--- to have nested loop counters.  This would mean less registers.  I'm
--- not going to be able to make this simpler than making a small forth
--- machine..  This way:
-
--- UART out can be bit-banged.
--- Multiple counters not needed for timing control.
--- No "wait" instruction needed: instruction counting suffices.
--- Add a data stack when needed.  Probably a single top register is enough.
-
--- The basic instructions seem straightforward.  This is just a
--- decoder that fans out into mux controls.  The unknown part to me is
--- the call/return.
-
--- Call:   move IP+1 -> rtop write port
---         inc rpointer
---         set ip from instruction word
--- Ret:    dec rpointer
---         move rtop -> IP
-
--- This could also be microcoded:
--- a) load literal into rdata
--- b) increment rstack
--- c) unconditional jump
-
--- The operations that can be reused are:
--- write, postinc  (stacks + buffers)
--- read, predec
-
--- So there is a clear tradeoff between the complexity of the
--- instruction decoder, and the amount of instructions needed.
-
--- Where to start?  Conditional memory write.
-
--- So for unidirectional flow, this is easy.  For bi-directional such
--- as a stack, two pointers need to be maintained.  It might be
--- simplest to initialize them such that the write/read operation can
--- happen immediately?  Both will have individual adders.  Maybe not a
--- good idea?
-
-
-
-
-
--- EDIT 20180805
-
--- Something simpler.  Make the simplest test case that allows the
--- generation of an output pattern based on a program.  The simplest I
--- can think of is a PWM pattern.  This is to test the JMP instruction.
 
 -- The main problem for building a CPU is to properly decompose the
 -- decoder.  I'm not sure how to do this exactly, so just start in an
@@ -183,6 +114,61 @@ closeIMem (IMemWrite wEn wAddr wData) run f = do
 -- . program outputs iw as output
 -- . tied to a memory writer defined in the test lib
 
+-- The next thing should be to test this on hardware, but this
+-- requires code initialization primitives.
+
+
+-- The origianl problem that drove this exploration is meanwhile
+-- implemented on PRU.  These were the instructions needed:
+-- 
+-- a) loop n times
+-- b) write UART byte, wait until done
+-- c) wait
+-- d) set I/O
+-- e) read I/O into memory and advance pointer
+
+-- To implement loops, it would be useful to have a stack to be able
+-- to have nested loop counters.  This would mean less registers.  I'm
+-- not going to be able to make this simpler than making a small forth
+-- machine..  This way:
+
+-- UART out can be bit-banged.
+-- Multiple counters not needed for timing control.
+-- No "wait" instruction needed: instruction counting suffices.
+-- Add a data stack when needed.  Probably a single top register is enough.
+
+-- The basic instructions seem straightforward.  This is just a
+-- decoder that fans out into mux controls.  The unknown part to me is
+-- the call/return.
+
+-- Call:   move IP+1 -> rtop write port
+--         inc rpointer
+--         set ip from instruction word
+-- Ret:    dec rpointer
+--         move rtop -> IP
+
+-- This could also be microcoded:
+-- a) load literal into rdata
+-- b) increment rstack
+-- c) unconditional jump
+
+-- The operations that can be reused are:
+-- write, postinc  (stacks + buffers)
+-- read, predec
+
+-- So there is a clear tradeoff between the complexity of the
+-- instruction decoder, and the amount of instructions needed.
+
+-- Where to start?  Conditional memory write.
+
+-- So for unidirectional flow, this is easy.  For bi-directional such
+-- as a stack, two pointers need to be maintained.  It might be
+-- simplest to initialize them such that the write/read operation can
+-- happen immediately?  Both will have individual adders.  Maybe not a
+-- good idea?
+
+
+
 
 -- A generic bus.  Same structure as the memory interface.  Note that
 -- we do not need to make this explicit in closeIMem.
@@ -196,4 +182,13 @@ data BUSOut r = BUSOut {
   busReadAddr  :: r S
 }
 
-  
+
+
+
+-- Memory reads take an extra cycle.  For instructions this is ok as
+-- the instruction only needs to be available on the next cycle, but
+-- for any other operation, the data will only be ready the next cycle.
+
+-- Is that ok?
+
+-- It seems so.

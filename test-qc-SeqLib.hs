@@ -62,6 +62,7 @@ main = do
   qc "p_fifo" p_fifo
 
   x_cpu_ins
+  x_stack
 
 
 qc str f = do
@@ -211,6 +212,18 @@ x_fifo = do
 
 p_fifo = forAll (listOfMaxSize 16 $ word 8) (fst . e_fifo)
 
+
+-- Stack
+
+t_stack = $(SeqTH.compile [1,1,8] d_stack) memZero
+
+x_stack = do
+  let pushes = [[1,0,n] | n <- [1..10]]
+      pops   = [[0,1,0] | n <- [1..10]]
+      nop    = [[0,0,0]]
+  putStrLn "-- stack"
+  printL $ t_stack $ pushes ++ nop ++ pops ++ nop
+  
 
 -- CPU
 
