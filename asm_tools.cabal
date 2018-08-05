@@ -33,7 +33,7 @@ Test-Suite test-seq
     build-depends: base
 
 Test-Suite test-sat
-    build-depends: base, containers, mtl, mios
+    build-depends: base, containers, mtl, mios, z3
     type:       exitcode-stdio-1.0
     main-is:    test-sat.hs
     build-depends: base

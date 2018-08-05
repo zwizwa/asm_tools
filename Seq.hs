@@ -144,7 +144,11 @@ class (Monad m, Num (r S)) => Seq m r | r -> m, m -> r where
   getEnv :: m (Env r)
   withEnv :: (Env r -> Env r) -> m t -> m t
   
-  -- Memories
+  -- Memories.  The interface guarantees the order of read and write
+  -- through (r Mem).  The read data returned by 'memory' always
+  -- refers to the address provided by 'updateMemory' in the previous
+  -- step.  If possible, use 'closeMem' instead.  It makes the
+  -- dataflow more explicit.
   memory       :: SType -> m (r S, r Mem)
   updateMemory :: r Mem -> (r S, r S, r S, r S) -> m ()
 

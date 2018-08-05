@@ -38,11 +38,6 @@ import Control.Applicative
 -- not necessarily general purpose CPUs.  This can then be gradually
 -- extended to more abstract operations.
 
--- So memory was not easy to implement.  Got side tracked by a couple
--- of things.  Eventually, the implementation is quite simple though.
--- Next is to make a simple sequencer for a deterministic language
--- that can generate a sequence.
-
 -- data In s = In { i :: s } deriving (Functor, Foldable, Traversable)
 
 
@@ -112,3 +107,79 @@ cpu ([i]) = do
 
 
 
+-- EDIT 20180805
+
+-- Something simpler.  Make the simplest test case that allows the
+-- generation of an output pattern based on a program.  The simplest I
+-- can think of is a PWM pattern.  This is to test the JMP instruction.
+
+-- The main problem for building a CPU is to properly decompose the
+-- decoder.  I'm not sure how to do this exactly, so just start in an
+-- ad-hoc way.
+
+-- There is some arbitraryness here: a hierarchy is created in the
+-- nesting of the "close" operations.  The guideline is to abstract
+-- away a register as soon as possible, i.e. move it to the inner part
+-- of the hierarchy.
+
+-- At the very top, there is:
+-- . instruction memory access:
+--   . read:  program sequencing
+--   . write: bootloader
+-- . BUS I/O (i.e. containing GPIO)
+
+-- Each hierarchy level is an adaptation.  closeIW will abstract the
+-- inner decoder as an iw -> jump operation, and insert the necessary
+-- logic to either just advance to the next instruction, or perform a
+-- jump.
+
+data Ins r  = Ins {
+  insWord :: r S
+  }
+
+data Jump r = Jump {
+  jumpEn   :: r S,
+  jumpAddr :: r S
+  }
+
+-- The interface to the outside consists of GPIO and iMem write access.
+-- Maybe it is time to start parameterizing.
+
+data IMemWrite r = IMemWrite {
+  iMemWriteEn   :: r S,
+  iMemWriteAddr :: r S,
+  iMemWriteData :: r S
+  }
+
+
+closeIMem :: Seq m r =>
+  IMemWrite r
+  -> (Ins r -> i -> m (Jump r, o))
+  -> i
+  -> m o
+closeIMem (IMemWrite wEn wAddr wData) f i = do
+  t_wAddr <- stype wAddr
+  t_wData <- stype wData
+  closeMem [t_wData] $ \[iw] -> do
+    (ip', o) <- closeReg [t_wAddr] $ \[ip] -> do
+      (Jump jmp dst, o) <- f (Ins iw) i
+      ipNext <- inc ip
+      ip' <- if' jmp dst ipNext
+      return ([ip'], (ip', o))  -- comb ip' to avoid extra delay
+    return ([(wEn, wAddr, wData, ip')], o) 
+             
+
+
+-- A generic bus.  Same structure as the memory interface.  Note that
+-- we do not need to make this explicit in closeIMem.
+data BUSIn r = BUSIn {
+  busReadData :: r S
+}
+data BUSOut r = BUSOut {
+  busWriteEn   :: r S,
+  busWriteAddr :: r S,
+  busWriteData :: r S,
+  busReadAddr  :: r S
+}
+
+  
