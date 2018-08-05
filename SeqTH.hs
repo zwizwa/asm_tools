@@ -12,7 +12,7 @@
 
 {-# LANGUAGE TemplateHaskell #-}
 
-module SeqTH(toExp, compile', compile, run, test) where
+module SeqTH(toExp, compile', compile, test) where
 
 import Seq
 import SeqTerm
@@ -195,18 +195,16 @@ regStr' n = "r" ++ show n ++ "'"
 return' = AppE (VarE $ mkName "return")
 
 compile' :: [Int] -> ([R S] -> M [R S]) -> Exp
-compile' sizes mf = exp where
+compile' inSizes mf = exp where
   -- SeqPrim expects internal values to be truncated.
   -- Perform a slice operation to assure this.
-  truncIns = sequence $ map truncIn sizes
+  mf' = truncIns >>= mf
+  truncIns = sequence $ map truncIn inSizes
   truncIn sz = do
     i <- input $ SInt (Just sz) 0
     slice i (Just sz) 0
-  exp = toExp $ SeqTerm.compileTerm $ truncIns >>= mf
-
-compile sizes mf = return $ compile' sizes mf
+  exp = toExp $ SeqTerm.compileTerm $ mf'
 
 
+compile inSizes mf = return $ compile' inSizes mf
 
--- second stage
-run = SeqPrim.seqRun

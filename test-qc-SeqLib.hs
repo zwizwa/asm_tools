@@ -112,7 +112,7 @@ t_async_receiver_sample_emu nb_bits = trace [1] $ \[i] -> do
   d_async_receiver_sample nb_bits i
 
 t_async_receiver_sample_th nb_bits@8 =
-  $(SeqTH.compile [1] $ \[i] -> d_async_receiver_sample 8 i)
+  $(SeqTH.compile [1] $ \[i] -> d_async_receiver_sample 8 i) memZero
 
 x_async_receiver_sample_emu = do
   putStrLn "-- x_async_receiver_sample_emu"
@@ -133,7 +133,9 @@ t_async_receiver_emu nb_bits = trace [1] $ \[i] ->
   d_async_receiver nb_bits i
 
 t_async_receiver_th nb_bits@8 =
-  $(SeqTH.compile [1] $ \[i] -> d_async_receiver 8 i)
+  $(SeqTH.compile [1] $ \[i] -> d_async_receiver 8 i) memZero
+
+memZero = cycle [const 0]
 
 x_th_async_receiver = do
   putStrLn "-- x_th_async_receiver"
@@ -188,7 +190,7 @@ x_mem = do
 -- fifo  (d_fifo is in TestSeqLib.hs to allow staging)
 
 -- t_fifo_emu = trace [1,1,8] d_fifo
-t_fifo = $(SeqTH.compile [1,1,8] d_fifo)
+t_fifo = $(SeqTH.compile [1,1,8] d_fifo) memZero
 
 e_fifo lst = (lst == lst', (lst',outs)) where
   lst'   = map head $ downSample' outs

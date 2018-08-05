@@ -41,8 +41,11 @@ seqSLICE = op2 $ shiftR
 
 type Mem s = STUArray s Int Int
 
-seqMemInit :: Int -> ST s (Mem s)
-seqMemInit addrBits = newArray (0, 1 `shiftL` addrBits) 0
+seqMemInit :: Int -> (Int -> Int) -> ST s (Mem s)
+seqMemInit addrBits init = do
+  let size  = 1 `shiftL` addrBits
+      inits = map init [0 .. size-1]
+  newListArray (0, size) inits
 
 seqMemRd _ = return 0
 
@@ -67,10 +70,11 @@ seqRun ::
   (forall s. ([Mem s], rd, r, [Int]) -> ST s (rd, r, [Int]))
   -> [Int]
   -> (rd, r)
+  -> [Int -> Int]
   -> [[Int]] -> [[Int]]
-seqRun f specs (rd0, r0) i = 
+seqRun f memBits (rd0, r0) memInits i = 
   runST $ do
-    a <- sequence $ map seqMemInit specs
+    a <- sequence $ zipWith seqMemInit memBits memInits
     let u _ _ [] = return []
         u rd r (i:is) = do
           (rd',r',o) <- f (a, rd, r, i)

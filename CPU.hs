@@ -150,6 +150,10 @@ data IMemWrite r = IMemWrite {
   iMemWriteAddr :: r S,
   iMemWriteData :: r S
   }
+-- FIXME: Currently it is not yet possible to initialize memories
+-- before running a simulation, or initialize an FPGA image.
+noIMemWrite :: Seq m r => IMemWrite r
+noIMemWrite = IMemWrite 0 0 0
 
 
 closeIMem :: Seq m r =>
@@ -167,7 +171,11 @@ closeIMem (IMemWrite wEn wAddr wData) f i = do
       ip' <- if' jmp dst ipNext
       return ([ip'], (ip', o))  -- comb ip' to avoid extra delay
     return ([(wEn, wAddr, wData, ip')], o) 
-             
+
+-- A simple test for closeIMem:
+-- . program outputs iw as output
+-- . tied to a memory writer defined in the test lib
+      
 
 
 -- A generic bus.  Same structure as the memory interface.  Note that
