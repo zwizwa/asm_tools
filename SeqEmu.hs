@@ -269,10 +269,12 @@ onInts ::
   -> (i (R S) -> M (o (R S)))
   -> (i Int   -> M (o Int))
 onInts bitSizes mod ints = do
-  outs <- mod $ zipWith (\s i -> constant $ SInt (Just s) i) bitSizes ints
+  outs <- mod $ zipWith (\s i -> constant $ SInt (size2type s) i) bitSizes ints
   sequence $ fmap (val . unR) outs
 
-
+-- This is lazy, but a convenient way to reprsent infinite bit size.
+size2type (-1) = Nothing
+size2type s    = (Just s)
 
 
 
@@ -422,3 +424,20 @@ downSample :: (b -> Maybe a) -> [b] -> [a]
 downSample sel = catMaybes . (map sel)
 
 
+
+
+-- There are several variants of this function, but this is the
+-- canonical one.
+trace ::
+  [Int]
+  -> ([R S] -> M [R S])
+  -> [[Int]] -> [[Int]]
+trace inputBitSizes fm ins =
+  iticks (onInts inputBitSizes fm) ins
+
+-- Just one tick.  Useful for stateless functions.
+eval ::
+  [Int]
+  -> ([R S] -> M [R S])
+  -> [Int] -> [Int]
+eval ts f i = head $ trace ts f [i]

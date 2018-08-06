@@ -304,12 +304,6 @@ downSampleBus unpack = downSample sel where
     (1,v) -> Just v
     (0,_) -> Nothing
 
-trace ::
-  [Int]
-  -> ([R S] -> M [R S])
-  -> [[Int]] -> [[Int]]
-trace inputBitSizes fm ins =
-  iticks (onInts inputBitSizes fm) ins
 
 -- th_
 

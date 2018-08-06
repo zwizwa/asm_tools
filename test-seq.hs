@@ -458,6 +458,6 @@ x_SeqC = do
         return [o]
 
   print "-- x_SeqC"
-  print $ SeqC.C ct
+  print $ SeqC.C ("fun", ct)
 
 

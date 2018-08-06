@@ -5,12 +5,12 @@ import Seq
 import SeqTerm
 import Data.List
 
-newtype C = C ([Op NodeNum], [(NodeNum, Term (Op NodeNum))])
+newtype C = C (String,([Op NodeNum], [(NodeNum, Term (Op NodeNum))]))
 
 showL :: Show a => [a] -> String
 showL = concat . (map ((++ "\n") . show))
 
-compile (outputs, bindings) = code where
+compile funName (outputs, bindings) = code where
   part = SeqTerm.partition bindings
   inputs = part Inputs
   -- FIXME: Only combinatorial for now
@@ -19,34 +19,33 @@ compile (outputs, bindings) = code where
   -- memwrs = part MemWrs
   exprs  = part Exprs
 
-  reg n = "r" ++ show n
+  reg  n = "r"  ++ show n
+  oreg i = "o[" ++ show i ++ "]"
 
   cInputDecl (n, Input (SInt _ _)) = intType ++ " " ++ reg n
-  cBinding (n, e) = "\t" ++ reg n ++ " = " ++ cExpr e ++ ";\n"
+  cBinding (n, e) = "\t" ++ intType ++ " " ++ reg n ++ " = " ++ cExpr e ++ ";\n"
   cExpr (Comb2 _ op a b) = cPrim (show op) [a,b]
   cOperand (Const (SInt _ v)) = show v
   cOperand (Node _ n) = reg n
   cOperands os = argList $ map cOperand os
   cPrim opcode operands = "seq" ++ opcode ++ cOperands operands
     
-  cOutputAssign (Node _ n) = "\t*o_" ++ reg n ++ " = " ++ reg n ++ ";\n"
-  cOutputDecl (Node _ n) = intType ++ " *o_" ++ reg n
+  cOutputAssign i opr ="\t" ++ oreg i ++ " = " ++ cOperand opr ++ ";\n"
 
   argList as = "(" ++ (concat $ intersperse ", " as) ++ ")"
 
-  funName = "fun"
-  intType = "T"
+  intType = "seq_t"
   
   code =
-    "void " ++ funName ++
-    (argList  $ (map cInputDecl inputs) ++ (map cOutputDecl outputs)) ++
+    "static inline void " ++ funName ++
+    (argList  $ [intType ++ " " ++ oreg (length outputs)] ++ map cInputDecl inputs) ++
     " {\n" ++
     (concat $ map cBinding exprs) ++
-    (concat $ map cOutputAssign outputs) ++
+    (concat $ zipWith cOutputAssign [0..] outputs) ++
     "}\n"
   
 
 instance Show C where
   -- show (C (outputs, bindings)) = (showL outputs) ++ (showL bindings)
-  show (C ct) = compile ct
+  show (C (funName, ct)) = compile funName ct
 
