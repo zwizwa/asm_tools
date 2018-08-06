@@ -43,23 +43,17 @@ import Control.Monad.State
 import Control.Monad.Writer
 
 
--- The emulator can use a custom Writer monoid.  In the tests below we
--- fix this to string output for ad-hoc logging.
-type Log = [Char]
-type Src'   = Src  Log     -- emulator source
-type Comp'  = Comp Log     -- main emulator compiler monad
-type EmuOp' = Emu  Log ()  -- run time emulator operation
+type EmuOp = Emu ()
 
 
 main = do
   test_coroutine
   test_beaglelogic_loop
-  test_int_logger
 
 test_coroutine = do
   putStrLn "--- test_coroutine"
   print $ asm coroutine
-  let (tick, labels) = compile' (coroutine :: Src')
+  let (tick, labels) = compile' (coroutine :: Src)
   print $ labels
   print $ take 30 $ vartrace1 tick (machineInit' 123 [10,11]) PCounter
 
@@ -70,38 +64,23 @@ test_beaglelogic_loop = do
   let tick = compile beaglelogic_loop
   print $ take 200 $ vartrace1 (gpi >> tick) machineInit PCounter
 
-test_int_logger = do
-  putStrLn "--- test_int_logger"
-  let log = do
-        t <- loadm Time
-        tell $ [t]
-      sample' = map (pseudo log >>) (sample :: [Src [Int]])
-      src = do
-        initRegs
-        bl_weave sample'
-        return ()
-      tick = compile src
-      [t1,t2] = take 2 $ logTrace tick (machineInit' 123 [10,11])
-  putStrLn $ "period: " ++ show (t2-t1)
-
-  
 
 printl es = sequence_ $ map print es
   
 -- Run time state variable trace
-vartrace :: EmuOp' -> EmuState -> [EmuVar] -> [[Int]]
+vartrace :: EmuOp -> EmuState -> [EmuVar] -> [[Int]]
 vartrace tick s0 mach_vars = map select trace where
   trace = stateTrace tick s0
   select ms = [ms ! v | v <- mach_vars]
 
 -- Single
-vartrace1 :: EmuOp' -> EmuState -> EmuVar -> [Int]
+vartrace1 :: EmuOp -> EmuState -> EmuVar -> [Int]
 vartrace1 tick s0 mach_var =
   map head $ vartrace tick s0 [mach_var]
 
 
 -- Emulate GPI events by modifying register R31
-gpi :: EmuOp'
+gpi :: EmuOp
 gpi = modify $ \s -> Map.insert (File 31) (s ! Time) s
 
 

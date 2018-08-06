@@ -6,9 +6,9 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module PruEmu(compile,compile'
-             ,Src,Comp,Emu,Emu'
+             ,Src,Comp,Emu
              ,EmuState(..),EmuVar(..)
-             ,runEmu,logTrace,logTrace',stateTrace,tickTrace
+             ,runEmu,stateTrace,tickTrace
              ,pseudo, loadm
              ,machineInit,machineInit0,machineInit'
              ,rle
@@ -36,18 +36,18 @@ import Data.Bits
 -- contains a function that emulates the instruction at that location.
 
 -- PRU assembly code is unit value in the compiler monad.
-type Src w = Comp w ()
+type Src = Comp ()
 
 -- Compilation and interpretation monads are parameterized by a logger w.
 
 -- Compilation monad
-newtype Comp w t =                      
-  Comp {unComp :: (ReaderT Link (WriterT [CompiledOp w] (State CompState)) t) }
+newtype Comp t =                      
+  Comp {unComp :: (ReaderT Link (WriterT [CompiledOp] (State CompState)) t) }
   deriving (Functor, Applicative, Monad,
             MonadState CompState,
-            MonadWriter [CompiledOp w],
+            MonadWriter [CompiledOp],
             MonadReader Link)
-data CompiledOp w = PseudoOp (Emu w ()) | RealOp (Emu w ())
+data CompiledOp = PseudoOp (Emu ()) | RealOp (Emu ())
 type CompState = (LabelNb, Addr, Labels)
 type Link = (LabelNb -> Addr)   -- address resolution
 type LabelNb = Int
@@ -57,12 +57,10 @@ type Labels = Map LabelNb Addr
 -- Run time interpretation monad.
 -- State carries the machine state, a Map of EmuVar to Int
 -- Writer carries a user-specified trace type
-newtype Emu w t = Emu { unEmu :: (WriterT w (State EmuState) t) }
-  deriving (Functor, Applicative, Monad,
-            MonadWriter w, MonadState EmuState)
+newtype Emu t = Emu { unEmu :: State EmuState t }
+              deriving (Functor, Applicative, Monad,
+                        MonadState EmuState)
 
--- With default writer.
-type Emu' = Emu String
 
 type EmuState = Map EmuVar Int
 data EmuVar
@@ -75,10 +73,10 @@ data EmuVar
 
 -- The result of compilation is a machine tick operation, executing
 -- one machine cycle in the Writer,State monad
-compile :: Monoid w => Src w -> Emu w ()
+compile :: Src -> Emu ()
 compile = fst . compile'
 
-compile' :: Monoid w => Src w -> (Emu w (), Labels)
+compile' :: Src -> (Emu (), Labels)
 compile' m = (boot code, labels)  where
   s0 = (0, 0, empty)
   (((), w), s) = runState (runWriterT (runReaderT (unComp m) r)) s0
@@ -99,7 +97,7 @@ boot code = do
 -- it. This behavior is similar to breakpoints. Peudo instructions
 -- support instrumentation to perform state modification and trace
 -- writing.
-mergePseudoOps :: Monoid w => [CompiledOp w] -> [Emu w ()]
+mergePseudoOps :: [CompiledOp] -> [Emu ()]
 mergePseudoOps = f0 where
   f0 = f $ return ()
   f pre [] = [pre] -- insert pseudo instruction at the end
@@ -111,10 +109,10 @@ comp   ins = do tell [RealOp ins] ; modify $ appAddr (+ 1)
 pseudo ins = tell [PseudoOp ins]
 
 -- Compilation state access
-labelNb :: Monoid w => Comp w LabelNb
+labelNb :: Comp LabelNb
 labelNb = get >>= \(n,_,_) -> return n
 
-addr :: Monoid w => Comp w Addr
+addr :: Comp Addr
 addr    = get >>= \(_,a,_) -> return a
 
 appLabelNb f (n,a,l) = (f n, a, l)
@@ -128,11 +126,11 @@ link (Im (L l)) = do a <- ask ; return $ Im (I (a l))
 link o          = return $ o
 
 -- Run time state access
-storem :: Monoid w => EmuVar -> Int -> Emu w ()
+storem :: EmuVar -> Int -> Emu ()
 storem var val = do
   modify $ insert var val
 
-loadm :: Monoid w => EmuVar -> Emu w Int
+loadm :: EmuVar -> Emu Int
 loadm var = do
   maybe <- gets $ (Map.lookup var)
   return $ checkVar var maybe
@@ -141,7 +139,7 @@ checkVar var (Just val) = val
 checkVar var Nothing = error $ "Uninitialized EmuVar: " ++ show var
 
 -- Registers are special: they have word, byte subaccess.
-load :: Monoid w => R -> Emu w Int
+load :: R -> Emu Int
 load (R r)    = loadm (File r)
 load (Rw r w) = word 16 w <$> (loadm $ File r)
 load (Rb r b) = word  8 b <$> (loadm $ File r)
@@ -173,7 +171,7 @@ ref (Im (L l))   = error $ "label " ++ show l ++ " not resolved"
 ref (Reg r)      = load r
 
 -- Adjust state to resume at the next instruction
-next :: Monoid w => Emu w ()
+next :: Emu ()
 next = modify $ adjust (+ 1) PCounter
 
 -- 2-stage dereference of operand to Int.
@@ -212,7 +210,7 @@ move ra = comp_link_ref $ \b -> do
   next
 
 -- Generic 2-operand Integer operations.
-intop2 :: Monoid w => (Int -> Int -> Int) -> R -> R -> O -> Comp w ()
+intop2 :: (Int -> Int -> Int) -> R -> R -> O -> Comp ()
 intop2 f ra rb c = do
   c' <- link c
   comp $ do
@@ -223,7 +221,7 @@ intop2 f ra rb c = do
 
 
 -- Pru source code semantics
-instance Monoid w => Pru (Comp w) where
+instance Pru Comp where
 
   declare = do
     n <- labelNb
@@ -277,8 +275,8 @@ machineInit' init regs = Map.fromList $
 
 
 -- Generic monad run method.  See below for usage examples.
-runEmu :: Monoid w => Emu w t -> EmuState -> ((t, w), EmuState)
-runEmu m s = runState (runWriterT $ unEmu m) s
+runEmu :: Emu t -> EmuState -> (t, EmuState)
+runEmu m s = runState (unEmu m) s
 
 
 
@@ -293,7 +291,7 @@ runEmu m s = runState (runWriterT $ unEmu m) s
 -- desired machine manipulation and trace readout.
 
 tickTrace tick s = seq where
-  ((seq, _), _) = runEmu m s 
+  (seq, _) = runEmu m s 
   m = sequence $ cycle [tick]
   
 -- Example: infinite machine state trace.
@@ -303,24 +301,8 @@ stateTrace tick =
 
 -- 2) Custom writer traces
 --
--- The Writer allows to use 'tell' in pseudo ops to produce
--- user-defined trace types.  Note that to produce a Writer output, we
--- cannot run the machine with an infinite program as above, as the
--- writer result is only available after the computation has finished.
---
--- Therefore, the operation is split into two components: one that
--- runs the machine for a specific amount of cycles,
-logTrace' tick s n = (s',w) where
-  ((_, w), s') = runEmu m s
-  m = sequence_ $ replicate n $ tick
-
--- and one that produces the infinite stream by repeatedly running one
--- tick.  Note that if there is no log output, this diverges.
-logTrace tick = next where
-  next s = w <> next s' where
-    (s', w) = logTrace' tick s 1
-
-
+-- FIXME: writer monad removed.  Do this in the state monad.  Pseudo
+-- ops can manipulate state.
 
 -- FIXME: Something to consider. It might be simpler to extend the
 -- main state with some existential types, remove the writer layer,

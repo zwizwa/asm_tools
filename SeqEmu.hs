@@ -425,19 +425,20 @@ downSample sel = catMaybes . (map sel)
 
 
 
-
 -- There are several variants of this function, but this is the
 -- canonical one.
 trace ::
-  [Int]
-  -> ([R S] -> M [R S])
-  -> [[Int]] -> [[Int]]
+  (Zip i, Typeable i, Traversable o, Typeable o) =>
+  i Int
+  -> (i (R S) -> M (o (R S)))
+  -> [i Int] -> [o Int]
 trace inputBitSizes fm ins =
   iticks (onInts inputBitSizes fm) ins
 
 -- Just one tick.  Useful for stateless functions.
 eval ::
-  [Int]
-  -> ([R S] -> M [R S])
-  -> [Int] -> [Int]
+  (Zip i, Typeable i, Traversable o, Typeable o) =>
+  i Int
+  -> (i (R S) -> M (o (R S)))
+  -> i Int -> o Int
 eval ts f i = head $ trace ts f [i]

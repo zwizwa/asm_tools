@@ -20,11 +20,11 @@ Library
     hs-source-dirs:  .
 
 
--- Test-Suite test-pru
---     build-depends: base, containers, mtl, free, keys
---     type:       exitcode-stdio-1.0
---     main-is:    test-pru.hs
---     build-depends: base
+Test-Suite test-pru
+    build-depends: base, containers, mtl, free, keys
+    type:       exitcode-stdio-1.0
+    main-is:    test-pru.hs
+    build-depends: base
 
 Test-Suite test-seq
     build-depends: base, containers, mtl, free, keys, set-extra, template-haskell, parsec, QuickCheck, array, mios
