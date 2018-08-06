@@ -36,7 +36,6 @@ test [en] = do
 -- Abbrevs
 type O = Op NodeNum
 
-data Part = Delays | Inputs | MemRds | MemWrs | Exprs deriving Eq
 
 -- Convert compiled Term to TH expression
 toExp :: ([O], [(Int, Term O)]) -> Exp
@@ -62,14 +61,7 @@ toExp  (outputs, bindings) = exp where
     memUpdate ++ 
     [NoBindS $ return' $ TupE [memRdOut, stateOut, outputs']]
 
-  partition t = map snd $ filter ((t ==) . fst) tagged
-  tagged = map p' bindings
-  p' x = (p x, x)
-  p (_, Input _)   = Inputs
-  p (_, Delay _ _) = Delays
-  p (_, MemRd _ _) = MemRds
-  p (_, MemWr _)   = MemWrs
-  p _              = Exprs
+  partition = SeqTerm.partition bindings
     
   bindings' =
     [BindS (regP n) (termExp e)

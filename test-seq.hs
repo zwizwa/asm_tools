@@ -49,6 +49,7 @@ import qualified SeqTerm
 import qualified SeqExpr
 import qualified SeqEmu
 import qualified SeqTH
+import qualified SeqC
 import qualified MyHDL
 import qualified CPU
 import qualified VCD
@@ -101,6 +102,7 @@ main = do
   x_seqTH
   x_app_share
   x_st
+  x_SeqC
 
 x_counter = do
   putStrLn "--- x_counter"
@@ -448,4 +450,14 @@ f_st = do
   writeArray a addr val
   v <- readArray a addr
   return v
+
+x_SeqC = do
+  let ct = SeqTerm.compileFun [SInt Nothing 0] f
+      f [i] = do
+        o <- i `mul` i
+        return [o]
+
+  print "-- x_SeqC"
+  print $ SeqC.C ct
+
 

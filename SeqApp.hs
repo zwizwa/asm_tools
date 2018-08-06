@@ -20,6 +20,7 @@
 module SeqApp where
 
 import Seq(Seq,S)
+import SeqLib(lift1,lift2,lift3)
 import qualified Seq
 import qualified SeqLib
 import Prelude hiding (id, (.))
@@ -72,11 +73,6 @@ conc :: Seq m r => SeqApp2 m r
 
 if'  :: Seq m r => SeqApp3 m r
 
--- Tese are different from fmap, liftA2 because the primitive
--- operations are monadic.
-lift1 f ma       = do a <- ma                     ; f a
-lift2 f ma mb    = do a <- ma ; b <- mb           ; f a b
-lift3 f ma mb mc = do a <- ma ; b <- mb ; c <- mc ; f a b c
 
 inv = lift1 Seq.inv
 

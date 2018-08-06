@@ -105,6 +105,14 @@ closeMem typ memAccess = do
 
 
 
+-- Tese are different from fmap, liftA2 because the primitive
+-- operations are monadic.
+lift1 f ma       = do a <- ma                     ; f a
+lift2 f ma mb    = do a <- ma ; b <- mb           ; f a b
+lift3 f ma mb mc = do a <- ma ; b <- mb ; c <- mc ; f a b c
+
+
+
 -- Shortcuts for common type constructions.
 bits :: Int -> SType
 bits' n = SInt (Just n)
@@ -434,9 +442,7 @@ stack t_a en upDown wData = do
   t_d <- stype wData
   closeReg [t_a] $ \[ptr] -> do
     closeMem [t_d] $ \[rData] -> do
-      up        <- inc ptr
-      down      <- dec ptr
-      ptrUpDown <- if' upDown up down
+      ptrUpDown <- lift2 (if' upDown) (inc ptr) (dec ptr)
       ptrNext   <- if' en ptrUpDown ptr
       return ([(en, ptrNext, wData, ptrNext)],
                ([ptrNext], rData))
@@ -457,9 +463,7 @@ stackUpDown t_a up down wData = do
     closeMem [t_d] $ \[rData] -> do
       en        <- up `bor`  down
       move      <- up `bxor` down
-      ptrUp     <- inc ptr
-      ptrDown   <- dec ptr
-      ptrUpDown <- if' up   ptrUp     ptrDown
+      ptrUpDown <- lift2 (if' up) (inc ptr) (dec ptr)
       ptrNext   <- if' move ptrUpDown ptr
       return ([(en, ptrNext, wData, ptrNext)],
                ([ptrNext], rData))
@@ -467,8 +471,13 @@ stackUpDown t_a up down wData = do
 -- FIXME: make it complementary preinc/postdec, whichever is easiest
 
 
-    
-               
+-- Stack as a shift register?  See swapforth
+-- https://github.com/jamesbowman/swapforth/blob/master/j1a/verilog/stack2.v
+
+--app1 f ma    = do {a <- ma;          f a}    
+--app2 f ma mb = do {a <- ma; b <- mb; f a b}
+
+  
 
 -- vmm f a mb mc = do
 --   b <- mb
