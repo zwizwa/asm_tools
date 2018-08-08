@@ -422,6 +422,13 @@ fifo ta (rc,wc,wd) = do
   closeMem [td] $ \[rd] -> do
     return ([(wc, wa, wd, ra)], rd)
 
+-- open interface, memory closed elsewhere
+fifoPtr :: Seq m r => SType -> (r S, r S) -> m (r S)
+fifoPtr t (wc, wd) = do
+  closeReg [t] $ \[a] -> do
+    a1 <- inc a
+    a' <- if' wc a1 a
+    return ([a'], a)
 
 
 -- Stack / LIFO
@@ -474,16 +481,25 @@ stackUpDown t_a up down wData = do
 -- Stack as a shift register?  See swapforth
 -- https://github.com/jamesbowman/swapforth/blob/master/j1a/verilog/stack2.v
 
---app1 f ma    = do {a <- ma;          f a}    
---app2 f ma mb = do {a <- ma; b <- mb; f a b}
 
-  
+-- Select from list of signals.
+index :: Seq m r => (r S) -> [r S] -> m (r S)
+index sel sigs = index' sel zeroExtend where
+  index' sel sigs = do
+    (SInt mbits _) <- stype sel
+    let bits = case mbits of
+          (Just bits) -> bits
+          Nothing -> error $ "index unrolls. needs fixed bit width"
+    case bits of
+      0 -> do
+        return $ head sigs
+      _ -> do
+        sel'  <- slice' sel bits 1
+        c     <- slice' sel 1    0
+        even' <- index' sel' $ even sigs
+        odd'  <- index' sel' $ odd  sigs
+        if' c even' odd'
+  zeroExtend = sigs ++ cycle [constant $ SInt Nothing 0] 
+  even (a:_:as) = (a : even as)
+  odd (a:as) = even as
 
--- vmm f a mb mc = do
---   b <- mb
---   c <- mc
---   f a b c
-
--- vvm f a b mc = do
---   c <- mc
---   f a b c

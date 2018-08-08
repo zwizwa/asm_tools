@@ -322,4 +322,5 @@ rle (a : as) = f (a, 1) as where
   f s@(a', n) l@(a : as) = case a' == a of
     True  -> f (a', n+1) as
     False -> (s : rle l)
-    
+
+

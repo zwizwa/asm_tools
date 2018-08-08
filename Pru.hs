@@ -24,6 +24,7 @@ class Monad m => Pru m where
   -- Meta
   comment  :: String -> m () ; comment _  = return ()
 
+
 -- Operands
 data O = Reg R | Im I                    deriving (Show,Eq,Ord)
 data I = I Int | L Int                   deriving (Show,Eq,Ord)
