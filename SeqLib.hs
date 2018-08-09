@@ -413,18 +413,14 @@ fifo ta (rc,wc,wd) = do
   -- a: address
   -- c: clock enable
   td <- stype wd
-  (wa,ra) <- closeReg [ta, ta] $ \[wa, ra] -> do
-    wa1 <- inc wa
-    ra1 <- inc ra
-    ra' <- if' rc ra1 ra
-    wa' <- if' wc wa1 wa
-    return ([wa',ra'], (wa,ra))
+  wa <- fifoPtr ta wc
+  ra <- fifoPtr ta rc
   closeMem [td] $ \[rd] -> do
     return ([(wc, wa, wd, ra)], rd)
 
 -- open interface, memory closed elsewhere
-fifoPtr :: Seq m r => SType -> (r S, r S) -> m (r S)
-fifoPtr t (wc, wd) = do
+fifoPtr :: Seq m r => SType -> r S -> m (r S)
+fifoPtr t wc = do
   closeReg [t] $ \[a] -> do
     a1 <- inc a
     a' <- if' wc a1 a

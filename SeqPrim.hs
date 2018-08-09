@@ -6,7 +6,7 @@
 -- Note that SeqTH programs just capture lexical variables
 
 module SeqPrim(
-  seqADD, seqSUB, seqAND, seqOR,
+  seqADD, seqSUB, seqAND, seqOR, seqXOR, seqINV,
   seqEQU, seqIF, seqCONC, seqSLICE,
   seqInt, seqMemInit, seqMemUpdate,
   seqRun
@@ -31,10 +31,13 @@ op1 op bits a     = return $ trunc bits $ op a
 op2 op bits a b   = return $ trunc bits $ op a b
 op3 op bits a b c = return $ trunc bits $ op a b c
 
+seqINV = op1 complement
+
 seqADD = op2 (+)
 seqSUB = op2 $ \a b -> a - b
 seqAND = op2 (.&.)
 seqOR  = op2 (.|.)
+seqXOR = op2 xor
 seqIF  = op3 $ \c y n -> if c == 0 then n else y
 seqEQU = op2 $ \a b   -> if a == b then 1 else 0
 
