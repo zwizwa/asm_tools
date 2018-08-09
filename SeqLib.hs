@@ -263,14 +263,14 @@ cond ::
   -> f (r S)
   -> m (f (r S))
 cond [] dflt = return dflt
-cond ((flag, whenTrue):clauses) dflt = do
+cond ((flag, whenTrue) : clauses) dflt = do
   whenFalse <- cond clauses dflt
   ifs flag whenTrue whenFalse
 
 
--- Convenience for case statement.  The different branches are left as
--- monadic, which allows use of local bindings to make code more
--- readable.
+-- Convenience routine for switch statement.  The different branches
+-- are left as monadic, which allows use of local bindings to make
+-- code more readable.
 
 -- Note: This likely needs to be re-grouped from flat SeqTerm form,
 -- for MyHDL to generate a vhdl/verilog case statement.
@@ -360,10 +360,10 @@ clocked_shift dir t_sr@(SInt (Just nb_bits) _) (bitClock, bitVal) = do
 
 
 -- Debug version.  Outputs internal state.
-d_async_receiver_sample ::
+d_async_receive_sample ::
   forall m r. Seq m r =>
   Int -> r S -> m [r S]
-d_async_receiver_sample nb_data_bits@8 rx = sm where
+d_async_receive_sample nb_data_bits@8 rx = sm where
 
   -- FIXME: parameterize
   -- data_count_bits = log2 nb_data_bits
@@ -413,21 +413,44 @@ d_async_receiver_sample nb_data_bits@8 rx = sm where
       
     return (regs', rx:bc:wc:regs')
 
--- async_receiver_sample nb_bits rx = do
---   (_:bc:wc:_) <- d_async_receiver_sample nb_bits rx
+-- async_receive_sample nb_bits rx = do
+--   (_:bc:wc:_) <- d_async_receive_sample nb_bits rx
 --   return (bc,wc)
 
 
 
-d_async_receiver nb_bits i = do
-  regs@(_:bc:wc:_) <- d_async_receiver_sample nb_bits i
+d_async_receive nb_bits i = do
+  regs@(_:bc:wc:_) <- d_async_receive_sample nb_bits i
   sr <- withClockEnable bc $ shiftReg ShiftRight (bits nb_bits) i
   return (sr:regs)
 
-async_receiver nb_bits i = do
-  (sr:_:_:wc:_) <- d_async_receiver nb_bits i
+async_receive nb_bits i = do
+  (sr:_:_:wc:_) <- d_async_receive nb_bits i
   return (wc,sr)
   
+c1 :: Seq m r => Int -> r S
+c1 = constant . bit'
+
+-- FIXME: This is hard to read, and also has long combinatorial path?
+
+d_async_transmit [bc,wc,txData] = do
+  (SInt (Just n) _) <- stype txData
+  closeReg [SInt (Just $ n+1) 0] $ \[shiftReg] -> do
+    -- Possibly replace shift reg with new framed data
+    -- This is what determines output state
+    txData'    <- conc txData (c1 0) 
+    shiftReg'  <- if' wc txData' shiftReg
+    out        <- slice' shiftReg' 1 0
+
+    -- Next state is shifted or not based on bc
+    shifted    <- conc (c1 1) =<< slice' shiftReg' (n+1) 1
+    shiftReg'' <- if' bc shifted shiftReg'
+    return ([shiftReg''], [out, wc, bc, shiftReg''])
+            
+async_transmit bc (wc,treg) = do
+  (out:_) <- d_async_transmit [bc,wc,treg]
+  return out
+
 
 -- FIFO
 -- Note: single cycle read-after-write hazard

@@ -48,23 +48,23 @@ main = do
   -- print $ toBitList 4 8
   -- print $ downSample' $ t_clocked_shift 4 $ [[1,i] | i <- [1,1,1,1,0,0,0,0,0,0,0,1]]
 
-  -- x_async_receiver_sample_emu
-  -- x_async_receiver_sample_th
-  x_th_async_receiver
-  x_async_receiver_emu
-  x_async_receiver_th
+  -- x_async_receive_sample_emu
+  -- x_async_receive_sample_th
+  x_th_async_receive
+  x_async_receive_emu
+  x_async_receive_th
   x_mem
   x_fifo
   
   qc "p_bits" p_bits
   qc "p_sample" p_sample
   qc "p_clocked_shift" p_clocked_shift
-  qc "p_async_receiver" p_async_receiver
+  qc "p_async_receive" p_async_receive
   qc "p_fifo" p_fifo
 
   x_cpu_ins
   x_stack
-
+  x_async_transmit
 
 -- Tests for library code.
 --    t_  Trace wrapper (_emu or _th)
@@ -94,48 +94,48 @@ t_clocked_shift nb_bits = trace [1,1] $ \[bc,bv] -> do
   return [wc, wv]
 
 
--- async_receiver_sample
+-- async_receive_sample
 
-t_async_receiver_sample_emu nb_bits = trace [1] $ \[i] -> do
-  d_async_receiver_sample nb_bits i
+t_async_receive_sample_emu nb_bits = trace [1] $ \[i] -> do
+  d_async_receive_sample nb_bits i
 
-t_async_receiver_sample_th nb_bits@8 =
-  $(SeqTH.compile [1] $ \[i] -> d_async_receiver_sample 8 i) memZero
+t_async_receive_sample_th nb_bits@8 =
+  $(SeqTH.compile [1] $ \[i] -> d_async_receive_sample 8 i) memZero
 
-x_async_receiver_sample_emu = do
-  putStrLn "-- x_async_receiver_sample_emu"
-  x_async_receiver_sample_for t_async_receiver_sample_emu
+x_async_receive_sample_emu = do
+  putStrLn "-- x_async_receive_sample_emu"
+  x_async_receive_sample_for t_async_receive_sample_emu
 
-x_async_receiver_sample_th = do
-  putStrLn "-- x_async_receiver_sample_th"
-  x_async_receiver_sample_for t_async_receiver_sample_th
+x_async_receive_sample_th = do
+  putStrLn "-- x_async_receive_sample_th"
+  x_async_receive_sample_for t_async_receive_sample_th
   
-x_async_receiver_sample_for t = do
+x_async_receive_sample_for t = do
   printC $ chunksOf 8 $ t 8
     [[i] | i <- rle (1,[8,8*9,8])]
 
 
--- async_receiver
+-- async_receive
 
-t_async_receiver_emu nb_bits = trace [1] $ \[i] ->
-  d_async_receiver nb_bits i
+t_async_receive_emu nb_bits = trace [1] $ \[i] ->
+  d_async_receive nb_bits i
 
-t_async_receiver_th nb_bits@8 =
-  $(SeqTH.compile [1] $ \[i] -> d_async_receiver 8 i) memZero
+t_async_receive_th nb_bits@8 =
+  $(SeqTH.compile [1] $ \[i] -> d_async_receive 8 i) memZero
 
-x_th_async_receiver = do
-  putStrLn "-- x_th_async_receiver"
-  putStr $ pprint $ SeqTH.compile' [1] $ \[i] -> d_async_receiver 8 i
+x_th_async_receive = do
+  putStrLn "-- x_th_async_receive"
+  putStr $ pprint $ SeqTH.compile' [1] $ \[i] -> d_async_receive 8 i
 
-x_async_receiver_emu = do
-  putStrLn "-- x_async_receiver_emu"
-  x_async_receiver_for t_async_receiver_emu
+x_async_receive_emu = do
+  putStrLn "-- x_async_receive_emu"
+  x_async_receive_for t_async_receive_emu
 
-x_async_receiver_th = do
-  putStrLn "-- x_async_receiver_th"
-  x_async_receiver_for t_async_receiver_th
+x_async_receive_th = do
+  putStrLn "-- x_async_receive_th"
+  x_async_receive_for t_async_receive_th
 
-x_async_receiver_for t = do
+x_async_receive_for t = do
   let
     -- ins = map ord "ABCDEF"
     ins = [0,7..255]
@@ -146,10 +146,10 @@ x_async_receiver_for t = do
   -- printC $ chunksOf 8 out
   print $ out'
 
-p_async_receiver = forAll (listOf $ word 8) pred where
+p_async_receive = forAll (listOf $ word 8) pred where
   pred words = words == words' where
     ins    = map (:[]) $ uartBits oversample words
-    outs   = t_async_receiver_th nb_bits $ ins  -- th is a lot faster
+    outs   = t_async_receive_th nb_bits $ ins  -- th is a lot faster
     words' = downSample sample outs
     sample [v,i,bc,wc@1,state,count] = Just v
     sample _ = Nothing
@@ -157,6 +157,15 @@ p_async_receiver = forAll (listOf $ word 8) pred where
   oversample = 8
   nb_bits = 8
 
+
+-- async_receive
+t_async_transmit =
+  $(SeqTH.compile [1,1,8] d_async_transmit) memZero
+  
+x_async_transmit = do
+  let ins = take 25 $ [[1,1,0x55]] ++ (cycle $ [[0,0,0],[1,0,0]])
+  putStrLn "-- x_async_transmit"
+  printL $ t_async_transmit ins
 
 -- mem
 

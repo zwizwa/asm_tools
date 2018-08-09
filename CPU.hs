@@ -99,17 +99,21 @@ closeIMem :: Seq m r =>
   -> r S
   -> (Ins r -> m (Control r, o))
   -> m o
-closeIMem (IMemWrite wEn wAddr wData) run f = do
+closeIMem (IMemWrite wEn wAddr wData) run execute = do
   t_wAddr <- stype wAddr
   t_wData <- stype wData
   closeMem [t_wData] $ \[iw] -> do
     (ipNext, o) <- closeReg [t_wAddr] $ \[ip] -> do
-      (Control loop jump ipJump, o) <- f (Ins run iw)
-      ipCont    <- inc ip
-      [ipNext'] <- cond [(loop, [ip]), (jump, [ipJump])] [ipCont]
-      -- run = synchronous reset, active low
-      ipNext  <- if' run ipNext' 0
-      return ([ipNext], (ipNext, o))  -- comb ip' to avoid extra delay
+      -- Execute instruction, which produces control flow information.
+      (Control loop jump ipJump, o) <- execute (Ins run iw)
+      ipCont   <- inc ip
+      rst      <- inv run
+      [ipNext] <- cond
+                  [(rst,  [0]),
+                   (loop, [ip]),
+                   (jump, [ipJump])]
+                  [ipCont]
+      return ([ipNext], (ipNext, o))  -- comb ipNext to avoid extra delay
     return ([(wEn, wAddr, wData, ipNext)], o) 
 
 -- A simple test for closeIMem:
