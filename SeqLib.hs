@@ -11,9 +11,18 @@ module SeqLib where
 import Seq
 import Control.Monad
 import Control.Applicative
-import Data.Key(Zip(..),zipWith)
-import Prelude hiding (zipWith)
+import Data.Key(Zip(..),zipWith, zip)
+import Prelude hiding (zipWith, zip)
 import Data.Bits hiding (bit)
+
+-- Some general guidelines.
+--
+-- . Don't write library routines that take monadic values as
+--   arguments, unless they behave as macros.
+--
+-- . The exception seems to be switch.  The reason?  It allows the use
+--   of local variables, which makes code more readable.
+
 
 
 
@@ -246,24 +255,40 @@ ifs c t f = sequence $ zipWith (if' c) t f
 -- for the synthesizer to recover the structure?  e.g. MyHDL does
 -- perform some magic for "case" statements I believe.
 
--- Fixme: implement case' in terms of the more general cond.
+
+-- Nested ifs
 cond ::
   (Seq m r, Traversable f, Zip f)
-  => [(m (r S), m (f (r S)))]
+  => [(r S, f (r S))]
+  -> f (r S)
+  -> m (f (r S))
+cond [] dflt = return dflt
+cond ((flag, whenTrue):clauses) dflt = do
+  whenFalse <- cond clauses dflt
+  ifs flag whenTrue whenFalse
+
+
+-- Convenience for case statement.  The different branches are left as
+-- monadic, which allows use of local bindings to make code more
+-- readable.
+
+-- Note: This likely needs to be re-grouped from flat SeqTerm form,
+-- for MyHDL to generate a vhdl/verilog case statement.
+switch ::
+  (Seq m r, Traversable f, Zip f)
+  => r S
+  -> [(r S, m (f (r S)))]
   -> m (f (r S))
   -> m (f (r S))
-cond [] dflt = dflt
-cond ((mcond, whenTrue):clauses) dflt = do
-  c <- mcond
-  t <- whenTrue
-  f <- cond clauses dflt
-  ifs c t f
-
-
-switch :: Seq m r => r S -> [(r S, m [r S])] -> m [r S] -> m [r S]
-switch state clauses dflt = cond (map f clauses) dflt where
-  f (state', m) = (state `equ` state', m)
-
+switch state clauses dflt = do
+  clauses' <-
+    sequence $
+    [do flag <- state `equ` key
+        val  <- mval
+        return (flag, val)
+    | (key, mval) <- clauses]
+  dflt' <- dflt
+  cond clauses' dflt'
 
 
 

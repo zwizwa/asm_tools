@@ -58,12 +58,12 @@ d_cpu_ins _i = d_cpu $ \(Ins run iw) -> do
   ins  <- slice' iw 16 8
   arg8 <- slice' iw  8 0
   jmp  <- ins `equ` 0x80
-  return (Jump jmp arg8, [iw, jmp, arg8])
+  return (Control 0 jmp arg8, [iw, jmp, arg8])
 
 
 
 -- Generic skeleton for CPU tests.
-d_cpu :: Seq m r => (Ins r -> m (Jump r, [r S])) -> m [r S]
+d_cpu :: Seq m r => (Ins r -> m (Control r, [r S])) -> m [r S]
 d_cpu decode = do
   -- Do not update the instruction pointer at the first instruction,
   -- as rData will be invalid.  The first cycle is used to perform the

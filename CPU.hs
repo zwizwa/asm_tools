@@ -69,9 +69,10 @@ data Ins r  = Ins {
   insWord :: r S
   }
 
-data Jump r = Jump {
-  jumpEn   :: r S,
-  jumpAddr :: r S
+data Control r = Control {
+  controlLoop :: r S,
+  controlJmp  :: r S,
+  controlArg  :: r S
   }
 
 -- The interface to the outside consists of GPIO and iMem write access.
@@ -96,16 +97,17 @@ noIMemWrite ibits abits = IMemWrite e w d where
 closeIMem :: Seq m r =>
   IMemWrite r
   -> r S
-  -> (Ins r -> m (Jump r, o))
+  -> (Ins r -> m (Control r, o))
   -> m o
 closeIMem (IMemWrite wEn wAddr wData) run f = do
   t_wAddr <- stype wAddr
   t_wData <- stype wData
   closeMem [t_wData] $ \[iw] -> do
     (ipNext, o) <- closeReg [t_wAddr] $ \[ip] -> do
-      (Jump jmp ipJmp, o) <- f (Ins run iw)
-      ipSeq   <- inc ip
-      ipNext' <- if' jmp ipJmp ipSeq
+      (Control loop jump ipJump, o) <- f (Ins run iw)
+      ipCont    <- inc ip
+      [ipNext'] <- cond [(loop, [ip]), (jump, [ipJump])] [ipCont]
+      -- run = synchronous reset, active low
       ipNext  <- if' run ipNext' 0
       return ([ipNext], (ipNext, o))  -- comb ip' to avoid extra delay
     return ([(wEn, wAddr, wData, ipNext)], o) 
@@ -192,3 +194,18 @@ data BUSOut r = BUSOut {
 -- Is that ok?
 
 -- It seems so.
+
+
+-- Perform an operation and wait for it to finish.
+-- Let's keep the operation abstract, so what this does is:
+--
+-- . first time the instruction is executed, the sub-machine is
+--   enabled.  the sequencer will wait until the machine provides a
+--   "done" flag, which will advance the instruction pointer.
+--
+-- . it seems simpler to split this into "start" and "wait"
+--   instructions.
+--
+
+
+

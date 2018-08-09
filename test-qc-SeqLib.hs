@@ -123,8 +123,6 @@ t_async_receiver_emu nb_bits = trace [1] $ \[i] ->
 t_async_receiver_th nb_bits@8 =
   $(SeqTH.compile [1] $ \[i] -> d_async_receiver 8 i) memZero
 
-memZero = cycle [const 0]
-
 x_th_async_receiver = do
   putStrLn "-- x_th_async_receiver"
   putStr $ pprint $ SeqTH.compile' [1] $ \[i] -> d_async_receiver 8 i
