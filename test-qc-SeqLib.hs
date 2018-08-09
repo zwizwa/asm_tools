@@ -29,6 +29,7 @@ import SeqLib
 import SeqEmu
 import SeqPrim
 import TestSeqLib
+import TestTools
 
 import qualified SeqTH 
 
@@ -64,21 +65,6 @@ main = do
   x_cpu_ins
   x_stack
 
-
-qc str f = do
-  putStrLn $ "-- " ++ str
-  quickCheck f
-
-qc' str f = do
-  putStrLn $ "-- " ++ str
-  verboseCheck f
-
-printL l = sequence $ map print l
-printC l = sequence $ zipWith f l [0..] where
-  f l' n  = do
-    putStrLn $ "-- " ++ show n
-    printL l'
-  
 
 -- Tests for library code.
 --    t_  Trace wrapper (_emu or _th)
@@ -243,88 +229,6 @@ x_cpu_ins = do
   putStrLn "-- x_cpu_ins"
   printL $ t_cpu_ins $ replicate 10 []
 
-
--- Tools
-
--- Defaults use "natural bit order", which places MSB on the left,
--- which makes list form, scope display and normal digit display.
-
-toBitList :: Int -> Int -> [Int]
-toBitList nb_bits val = map ((.&. 1) . (shiftR val)) $ reverse [0..nb_bits-1]
-
-toWord :: [Int] -> Int
-toWord bits = foldr f 0 $ reverse bits where
-  f bit accu = (bit .&. 1) .|. (shiftL accu 1)
-
-toBits :: Int -> [Int] -> [Int]
-toBits nb_bits = concat . (map $ toBitList nb_bits)
-
-toWords :: Int -> [Int] -> [Int]
-toWords nb_bits = (map toWord) . (chunksOf nb_bits)
-
-int2bool 0 = False
-int2bool 1 = True
-bool2int False = 0
-bool2int True = 1
-
-rle (val,ns) = f (int2bool val) ns where
-  f _ [] = []
-  f v (n:ns) = (replicate n $ bool2int v) ++ f (not v) ns
-
-mask nb_bits v = v .&. msk where
-  msk = (1 `shiftL` nb_bits) - 1
-
-uartBits :: Int -> [Int] -> [Int] 
-uartBits oversample str = samps where
-  bits = concat $ map toBits str
-  toBits w = [1,0] ++ (reverse $ toBitList 8 w) ++ [1,1]
-  samps = upSample (\_ a -> a) (cycle [oversample]) bits
-
--- Bus sequences.
-
--- To keep things simple, use [] as signal container for input and
--- output busses.
-
--- In that setting, subsampled signals are simplest to represent by
--- pushing/poping the enable bit to/from the bus list.
-
-upSample' :: [Int] -> [[Int]] -> [[Int]]
-upSample' spaces = upSample en spaces where
-  en True  a = (1:a)
-  en False a = (0:a)
-
-downSample' :: [[Int]] -> [[Int]]
-downSample' = downSample sel where
-  sel (1:a) = Just a
-  sel (0:a) = Nothing
-
--- Isolate (enable,value)
-downSampleBus unpack = downSample sel where
-  sel bus = case unpack bus of
-    (1,v) -> Just v
-    (0,_) -> Nothing
-
-
--- th_
-
--- traceTH fm ins =
---   let p@(f,i@(mi,si)) = $(return $ SeqTH.seqLam $ SeqTerm.compile SeqTH.seqLamTest)
-  
-
-
-word :: Int -> Gen Int
-word nb_bits = arbitrary >>= return . (mask nb_bits)
-
-wordList :: Gen (Int,[Int])
-wordList = do
-  nb_bits <- choose (1,16)
-  lst <- listOf $ word nb_bits
-  return (nb_bits, lst)
-
-listOfMaxSize :: Int -> Gen a -> Gen [a]
-listOfMaxSize n gen = do
-  k <- choose (0,n)
-  vectorOf k gen
 
 
 
