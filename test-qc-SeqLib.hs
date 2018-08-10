@@ -125,7 +125,7 @@ t_async_receive_th nb_bits@8 =
 
 x_th_async_receive = do
   putStrLn "-- x_th_async_receive"
-  putStr $ pprint $ SeqTH.compile' [1] $ \[i] -> d_async_receive 8 i
+  putStrLn $ pprint $ SeqTH.compile' [1] $ \[i] -> d_async_receive 8 i
 
 x_async_receive_emu = do
   putStrLn "-- x_async_receive_emu"
@@ -163,9 +163,10 @@ t_async_transmit =
   $(SeqTH.compile [1,1,8] d_async_transmit) memZero
   
 x_async_transmit = do
-  let ins = take 25 $ [[1,1,0x55]] ++ (cycle $ [[0,0,0],[1,0,0]])
+  let ins = take 25 $ [[0,0,0],[0,0,0],[1,1,0x5A]] ++ (cycle $ [[0,0,0],[1,0,0]])
   putStrLn "-- x_async_transmit"
   printL $ t_async_transmit ins
+  putStrLn $ pprint $ SeqTH.compile' [1,1,8] d_async_transmit
 
 -- mem
 

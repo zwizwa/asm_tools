@@ -169,11 +169,13 @@ fromRight' (Right a) = a
 fromRight' (Left e) = error e
 
 bind cons (R (Node t' dst)) (R src) = do
-    let t = opType src
-    -- case t == t' of
-    --   False -> error $ "bind: different node types: " ++ show (t',t)
-    --   True  -> driveNode dst $ cons t src
-    driveNode dst $ cons t src
+  -- let t = opType src
+  -- case t == t' of
+  --   False -> error $ "bind: different node types: " ++ show (t',t)
+  --   True  -> driveNode dst $ cons t src
+
+  -- Note that only dst has the correct initial value.
+  driveNode dst $ cons t' src
 
 
 -- For constants.

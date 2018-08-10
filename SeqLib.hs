@@ -433,19 +433,20 @@ c1 = constant . bit'
 
 -- FIXME: This is hard to read, and also has long combinatorial path?
 
-d_async_transmit [bc,wc,txData] = do
+d_async_transmit [bitClock, wordClock, txData] = do
   (SInt (Just n) _) <- stype txData
-  closeReg [SInt (Just $ n+1) 0] $ \[shiftReg] -> do
+  closeReg [SInt (Just $ n+1) (-1)] $ \[shiftReg] -> do
+    
     -- Possibly replace shift reg with new framed data
     -- This is what determines output state
     txData'    <- conc txData (c1 0) 
-    shiftReg'  <- if' wc txData' shiftReg
+    shiftReg'  <- if' wordClock txData' shiftReg
     out        <- slice' shiftReg' 1 0
 
-    -- Next state is shifted or not based on bc
+    -- Next state is shifted or not based on bitClock
     shifted    <- conc (c1 1) =<< slice' shiftReg' (n+1) 1
-    shiftReg'' <- if' bc shifted shiftReg'
-    return ([shiftReg''], [out, wc, bc, shiftReg''])
+    shiftReg'' <- if' bitClock shifted shiftReg'
+    return ([shiftReg''], [out, wordClock, bitClock, shiftReg''])
             
 async_transmit bc (wc,treg) = do
   (out:_) <- d_async_transmit [bc,wc,treg]
