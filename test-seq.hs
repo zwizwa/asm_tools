@@ -42,6 +42,7 @@ import SeqLib
 import SeqSyntax
 import Names
 import SeqPrim
+import TestTools
 import qualified SeqArr
 import qualified SeqApp
 import qualified SeqStatic
@@ -103,6 +104,7 @@ main = do
   x_app_share
   x_st
   x_SeqC
+  x_case
 
 x_counter = do
   putStrLn "--- x_counter"
@@ -155,7 +157,7 @@ t_edge = trace' $ do
 
 x_sync = do
   putStrLn "--- tx_sync"
-  printl $ take 10 $ t_sync
+  printL $ take 10 $ t_sync
   
 t_sync = trace [1] f is where
   is = cycle [[v] | v <- [1,0,0,0,0,1,0,0]]
@@ -347,7 +349,7 @@ printSeqTerm :: SeqTerm.M [SeqTerm.R S] -> IO ()
 printSeqTerm src = do
   let (output, bindings) = SeqTerm.compileTerm src
   putStrLn "-- bindings: "
-  printl $ bindings
+  printL $ bindings
   putStrLn "-- output: "
   print output
   let inl = SeqExpr.inlined bindings
@@ -362,13 +364,12 @@ printSeqEmu src = do
       s0      = SeqEmu.reset src'
       f       = SeqEmu.tick src'
   putStrLn "init: "
-  printl $ mapToList $ fst s0
+  printL $ mapToList $ fst s0
   putStrLn "post: "
-  printl $ mapToList $ fst $ fst $ f s0
+  printL $ mapToList $ fst $ fst $ f s0
 
 
 
-printl es = sequence_ $ map print es
 mapToList = foldrWithKey f [] where f k v t = (k,v):t
 
 
@@ -391,7 +392,7 @@ print_hdl src = do
   putStrLn "-- ports: "
   print ports
   putStrLn "-- bindings: "
-  printl $ bindings
+  printL $ bindings
   let inl = SeqExpr.inlined $ bindings
   putStr $ SeqExpr.sexp' inl
   putStrLn "-- MyHDL: "
@@ -460,4 +461,19 @@ x_SeqC = do
   print "-- x_SeqC"
   print $ SeqC.C ("fun", ct)
 
+
+
+x_case = m where
+  t = do
+    i <- 1
+    cond [(i,[1,2,3])] [4,5,6]
+  
+         
+  c@(outputs, bindings) = SeqTerm.compileTerm t
+  m = do
+    putStrLn "-- x_case"
+    printL bindings
+    print outputs
+    
+  
 

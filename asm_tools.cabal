@@ -27,7 +27,8 @@ Test-Suite test-pru
     build-depends: base
 
 Test-Suite test-seq
-    build-depends: base, containers, mtl, free, keys, set-extra, template-haskell, parsec, QuickCheck, array, mios
+    build-depends: base, containers, mtl, free, keys, set-extra,
+                   template-haskell, parsec, QuickCheck, array, mios, split
     type:       exitcode-stdio-1.0
     main-is:    test-seq.hs
     build-depends: base
@@ -39,7 +40,8 @@ Test-Suite test-sat
     build-depends: base
 
 Test-Suite test-qc-SeqLib.hs
-    build-depends: base, containers, mtl, free, keys, set-extra, template-haskell, parsec, QuickCheck, split, array
+    build-depends: base, containers, mtl, free, keys, set-extra,
+                   template-haskell, parsec, QuickCheck, split, array
     type:       exitcode-stdio-1.0
     main-is:    test-qc-SeqLib.hs
     build-depends: base

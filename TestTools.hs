@@ -133,8 +133,8 @@ qc' str f = do
   putStrLn $ "-- " ++ str
   verboseCheck f
 
-printL l = sequence $ map print l
-printC l = sequence $ zipWith f l [0..] where
+printL l = sequence_ $ map print l
+printC l = sequence_ $ zipWith f l [0..] where
   f l' n  = do
     putStrLn $ "-- " ++ show n
     printL l'

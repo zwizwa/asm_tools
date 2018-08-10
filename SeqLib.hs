@@ -432,25 +432,34 @@ c1 :: Seq m r => Int -> r S
 c1 = constant . bit'
 
 -- FIXME: This is hard to read, and also has long combinatorial path?
+-- FIXME: it's also wrong: start bit is one short.  The whole thig smells.
 
 d_async_transmit [bitClock, wordClock, txData] = do
   (SInt (Just n) _) <- stype txData
-  closeReg [SInt (Just $ n+1) (-1)] $ \[shiftReg] -> do
+  closeReg [SInt (Just $ n+1) (-1),
+            SInt (Just $ log2 $ n+2) 0] $
+    \[shiftReg, cnt] -> do
     
     -- Possibly replace shift reg with new framed data
     -- This is what determines output state
-    txData'    <- conc txData (c1 0) 
-    shiftReg'  <- if' wordClock txData' shiftReg
-    out        <- slice' shiftReg' 1 0
-
+    txData'            <- conc txData (c1 0) 
+    [shiftReg',cnt']   <- ifs wordClock [txData',10] [shiftReg,cnt]
+    out                <- slice' shiftReg' 1 0
+    
     -- Next state is shifted or not based on bitClock
-    shifted    <- conc (c1 1) =<< slice' shiftReg' (n+1) 1
-    shiftReg'' <- if' bitClock shifted shiftReg'
-    return ([shiftReg''], [out, wordClock, bitClock, shiftReg''])
+    shifted            <- conc (c1 1) =<< slice' shiftReg' (n+1) 1
+    done               <- cnt' `equ` 0
+    cntDec             <- dec cnt'
+    cntDec'            <- if' done 0 cntDec
+    
+    [shiftReg'',cnt''] <- ifs bitClock [shifted,cntDec'] [shiftReg',cnt']
+    return ([shiftReg'',cnt''],
+            [out, done,
+             wordClock, bitClock, shiftReg'', cnt''])
             
 async_transmit bc (wc,treg) = do
-  (out:_) <- d_async_transmit [bc,wc,treg]
-  return out
+  (out:done:_) <- d_async_transmit [bc,wc,treg]
+  return (out, done)
 
 
 -- FIFO
