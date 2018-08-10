@@ -158,15 +158,26 @@ p_async_receive = forAll (listOf $ word 8) pred where
   nb_bits = 8
 
 
--- async_receive
+-- async_transmit
 t_async_transmit =
   $(SeqTH.compile [1,1,8] d_async_transmit) memZero
-  
+
 x_async_transmit = do
-  let ins = take 25 $ [[0,0,0],[0,0,0],[1,1,0x5A]] ++ (cycle $ [[0,0,0],[1,0,0]])
+  let tx_ins = take 100 $ [[0,0,0],[0,0,0],[1,1,0x5A]] ++
+               -- 8x oversampling
+               (cycle $ replicate 7 [0,0,0] ++ [[1,0,0]])
+               
+      tx_out = t_async_transmit tx_ins
+      -- use the receiver to test the transmitter
+      dline  = map head tx_out  -- the line carrying the data
+      rx_out = t_async_receive_th 8 $ map (:[]) dline
+
   putStrLn "-- x_async_transmit"
-  printL $ t_async_transmit ins
-  putStrLn $ pprint $ SeqTH.compile' [1,1,8] d_async_transmit
+  putStrLn "tx:"
+  printL $ tx_out
+  putStrLn "rx:"
+  printL $ rx_out
+
 
 -- mem
 

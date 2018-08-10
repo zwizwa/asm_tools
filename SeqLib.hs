@@ -6,9 +6,11 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE EmptyDataDecls #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module SeqLib where
 import Seq
+import Names                
 import Control.Monad
 import Control.Applicative
 import Data.Key(Zip(..),zipWith, zip)
@@ -447,6 +449,9 @@ d_async_transmit [bitClock, wordClock, txData] = do
   closeReg [SInt (Just $ n+1) (-1),
             SInt (Just $ nb_bits $ n+2) 0] $
     \[shiftReg, cnt] -> do
+
+      -- $(names [| [shiftReg, cnt] |])  -- Reify variable names
+      
 
       -- Outputs are a function of previous state.
       out  <- slice' shiftReg 1 0

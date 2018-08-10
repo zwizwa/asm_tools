@@ -105,7 +105,8 @@ newtype M t = M { unM ::
    MonadWriter (Bindings NodeNum),
    MonadState CompState)
 
-type Binding n = (n, Term (Op n))
+data Binding n = Binding n (Term (Op n)) |
+                 NodeName n String
 type Bindings n = [Binding n]
 type CompState = NodeNum
 
@@ -171,9 +172,7 @@ instance Seq.Seq M R where
   updateMemory (R (MemNode n)) (R wEn, R wAddr, R wData, R rAddr) = do
     driveNode n $ MemWr (wEn, wAddr, wData, rAddr)
 
-  name (R (Node _ n)) name = do
-    
-    return ()
+  name (R (Node _ n)) name = tell $ [NodeName n name]
   name _ _ = return ()
 
 fromRight' (Right a) = a
@@ -250,13 +249,37 @@ input t = fmap R $ driven $ Input t
 -- ... and convert them to output here.  Other nodes cannot be driven
 -- more than once.  Note: using fix, this error is avoided.
 driveNode n c = do
-  tell [(n, c)]
+  tell [Binding n c]
   
 -- Compile to list of I/O ports and network map.
 compileTerm :: M [R Seq.S] -> ([Op NodeNum], [(NodeNum, Term (Op NodeNum))])
-compileTerm m = (map unR ports, cleanPorts nodes) where
-  ((ports, nodes), nbNodes) =
+compileTerm m = (ports, bindings) where
+  (ports, bindings, _) = compileTerm' m
+
+compileTerm' :: M [R Seq.S] -> ([Op NodeNum],
+                                [(NodeNum, Term (Op NodeNum))],
+                                [(NodeNum, String)])
+compileTerm' m = (map unR ports, cleanPorts nodes, renames) where
+  
+  nodes   = catMaybes $ map (fst . node) bindings
+  renames = catMaybes $ map (snd . node) bindings
+  
+  node (Binding n e)  = (Just (n, e), Nothing)
+  node (NodeName n s) = (Nothing, Just (n, s))
+
+  ((ports, bindings), nbNodes) =
     runState (runWriterT (runReaderT (unM m) initEnv)) 0
+
+  -- Remove duplicates, keeping last, preserving order.
+  -- FIXME: generalize to functor output?
+  cleanPorts ports = ports' where
+    ports' = reverse $ f Set.empty $ reverse ports
+    f _ [] = []
+    f s (n@(p,_):ns) =
+      case p `Set.member` s of
+        True -> f s ns
+        False -> (n : f (p `Set.insert` s) ns)
+
 
 -- Compile an i/o function based on types.  Note that Input nodes will
 -- appear in order in the bindings.
@@ -268,15 +291,6 @@ compileFun ::
 compileFun ts fm = compileTerm $ (inputs ts) >>= fm
 
 
--- Remove duplicates, keeping last, preserving order.
--- FIXME: generalize to functor output?
-cleanPorts ports = ports' where
-  ports' = reverse $ f Set.empty $ reverse ports
-  f _ [] = []
-  f s (n@(p,_):ns) =
-    case p `Set.member` s of
-      True -> f s ns
-      False -> (n : f (p `Set.insert` s) ns)
 
 
 data Part = Delays | Inputs | MemRds | MemWrs | Exprs deriving Eq

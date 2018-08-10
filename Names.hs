@@ -6,6 +6,8 @@ import Control.Monad
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax
 
+-- FIXME: find better names!
+
 named m = m >>= named'
 named' :: Exp -> ExpQ
 named' lambda@(LamE [ListP args] var) = expr where
@@ -13,6 +15,14 @@ named' lambda@(LamE [ListP args] var) = expr where
   names = lift $ map name args
   name (VarP n) = nameBase n
 
+names m = m >>= names'
+names' :: Exp -> ExpQ
+names' (ListE args@(arg:_)) = return $ expr arg where
+  expr a@(VarE n) =
+    -- NoBindS $
+    AppE (AppE (VarE $ mkName "named") a)
+    (LitE $ StringL $ nameBase n)
+  expr a = error $ "Names.names: " ++ show a
 
 -- tom@tp:~$ ghci -XTemplateHaskell
 -- GHCi, version 8.0.1: http://www.haskell.org/ghc/  :? for help
