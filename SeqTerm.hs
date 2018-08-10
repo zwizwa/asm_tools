@@ -25,6 +25,7 @@ import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Functor.Compose
+import Data.Functor.Classes
 
 -- Seq does not provide a way to create modules with abstract I/O.
 -- Specific constructs in this module are used to compose basic Seq
@@ -61,6 +62,11 @@ data Op n
   | Const   SType     -- inlined constant
   | MemNode n
   deriving (Show, Functor, Foldable)
+
+-- ???
+-- Workaround: use sexpr formatting.  more readable anyway
+--instance Show1 Term where
+--  liftShowsPrec = ()
 
 
 -- (*) Type-annotated because due to use of writer monad, there is no
@@ -99,7 +105,8 @@ newtype M t = M { unM ::
    MonadWriter (Bindings NodeNum),
    MonadState CompState)
 
-type Bindings n = [(n, Term (Op n))]
+type Binding n = (n, Term (Op n))
+type Bindings n = [Binding n]
 type CompState = NodeNum
 
 -- Primitive state manipulations
@@ -164,6 +171,10 @@ instance Seq.Seq M R where
   updateMemory (R (MemNode n)) (R wEn, R wAddr, R wData, R rAddr) = do
     driveNode n $ MemWr (wEn, wAddr, wData, rAddr)
 
+  name (R (Node _ n)) name = do
+    
+    return ()
+  name _ _ = return ()
 
 fromRight' (Right a) = a
 fromRight' (Left e) = error e
@@ -279,3 +290,56 @@ partition bindings t = map snd $ filter ((t ==) . fst) tagged where
   p (_, MemRd _ _) = MemRds
   p (_, MemWr _)   = MemWrs
   p _              = Exprs
+
+
+
+
+-- S-expression formatting
+mTerm sub (Input _)         = tagged "INPUT"   []
+mTerm sub (Delay _ a)       = tagged "DELAY"   [mOp sub a]
+mTerm sub (Connect _ a)     = tagged "CONNECT" [mOp sub a]
+mTerm sub (Comb1 _ o a)     = tagged (show o)  [mOp sub a]
+mTerm sub (Comb2 _ o a b)   = tagged (show o)  [mOp sub a, mOp sub b]
+mTerm sub (Comb3 _ o a b c) = tagged (show o)  [mOp sub a, mOp sub b, mOp sub c]
+mTerm sub (Slice _ a b c)   = tagged "SLICE"   [mOp sub a, tell $ showSize b, tell $ show c]
+mTerm sub (MemRd _ a)       = tagged "MEMRD"   [mOp sub a]
+mTerm sub (MemWr (a,b,c,d)) = tagged "MEMWR"   [mOp sub a, mOp sub b, mOp sub c, mOp sub d]
+
+mOp _   (Const v)   = tagged "CONST" [ tell $ showType v ]
+mOp sub (Node _ n)  = sub n
+mOp sub (MemNode n) = sub n
+
+showSize (Just s) = show s
+showSize Nothing = "_"
+                                            
+showType (SInt sz v) = showSize sz ++ ":" ++ show v
+
+tagged tag ms = do
+  tell "("
+  tell tag
+  sequence_ $ map ((tell " ") >>) ms
+  tell ")"
+
+
+
+sexp' :: Show n => [(n, Term (Op n))] -> String
+sexp' bindings =
+  concat [concat [show n, " <- ", sexp e, "\n"] | (n, e) <- bindings]
+
+-- Pile some formatting machinery on top of the Free monad.
+newtype PrintTerm t = PrintTerm {
+  runPrintTerm :: WriterT String (Reader IndentLevel) t
+  }
+  deriving (Functor, Applicative, Monad,
+            MonadWriter String,
+            MonadReader IndentLevel)
+type IndentLevel = Int
+
+
+sexp :: Show n => Term (Op n) -> String
+sexp e = str where
+  ((), str) = runReader (runWriterT (runPrintTerm $ mSexp e)) 0
+
+mSexp :: Show n => Term (Op n) -> PrintTerm ()
+mSexp e = mTerm sub e where
+  sub n = tagged "NODE" [tell $ show n]

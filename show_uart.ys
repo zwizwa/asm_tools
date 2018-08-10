@@ -1,0 +1,8 @@
+# http://www.clifford.at/yosys/files/yosys_appnote_011_design_investigation.pdf
+read_verilog x_uart_fpga.v
+synth_ice40
+show -pause
+
+
+
+

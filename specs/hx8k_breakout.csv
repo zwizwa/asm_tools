@@ -6,10 +6,19 @@ firmware,dir,fpga,schematic
 #TEST_IN,in,C16,J2_37
 #TEST_OUT,out,B16,J2_38
 #TX,out,B12,RS232_Tx_TTL
-#RX,in,B10,RS232_Rx_TTL
+
+# ??
+RX,in,B10,RS232_Rx_TTL
 
 RST,in,C16,J2_37
-LED0,out,B5,LED_D2
+LED0,out,B5,LED0
+LED1,out,B4,LED1
+LED2,out,A2,LED2
+LED3,out,A1,LED3
+LED4,out,C5,LED4
+LED5,out,C4,LED5
+LED6,out,B3,LED6
+LED7,out,C3,LED7
 CLK,in,J3,iCE_CLK
 
 

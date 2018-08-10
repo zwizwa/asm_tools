@@ -136,7 +136,7 @@ instance Seq M R where
   memory = memory'
   updateMemory = updateMemory'
   
-
+  name _ _ = return () -- ignore names
 
 -- This can happen due to []'s applicative functor.
 insert' tag = Map.insertWithKey err where

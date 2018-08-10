@@ -123,12 +123,21 @@ lift3 f ma mb mc = do a <- ma ; b <- mb ; c <- mc ; f a b c
 
 
 -- Shortcuts for common type constructions.
-bits :: Int -> SType
-bits' n = SInt (Just n)
-bits n = bits' n 0
 
-bit = bits 1
+-- Bit size and reset value
+bits' :: Int -> Int -> SType
+bits' n = SInt (Just n)
 bit' = bits' 1
+
+-- Bit size only, reset value at 0
+bits :: Int -> SType
+bits n = bits' n 0
+bit = bits 1
+
+-- Fixed size constants.
+cbit :: Seq m r => Int -> r S
+cbit = constant . bit'
+
 
 -- Special closeReg case: single register, with register as output
 reg' :: Seq m r => SType -> (r S -> m (r S)) -> m (r S)
@@ -291,14 +300,15 @@ switch state clauses dflt = do
   cond clauses' dflt'
 
 
+-- Determine bitlength necessary to represent a number.
 
-log2 i = f 0 where
-  f n = case shiftL 1 n >= i of
+nb_bits i = f 0 where
+  f n = case shiftL 1 n > i of
     True -> n
     False -> f $ n + 1
     
-t_log2 (SInt (Just n_bits) _) =  SInt (Just $ log2 n_bits) 0
-t_log2 _ = SInt Nothing 0  
+t_nb_bits (SInt (Just n_bits) _) =  SInt (Just $ nb_bits n_bits) 0
+t_nb_bits _ = SInt Nothing 0  
 
 
 -- Streams
@@ -319,7 +329,7 @@ type Stream r = (,) r S
 -- Building block for converting bit streams to word streams.
 clocked_shift :: Seq m r => ShiftDir -> SType -> (r S, r S) -> m (r S, r S)
 clocked_shift dir t_sr@(SInt (Just nb_bits) _) (bitClock, bitVal) = do
-  let t_sr' = t_log2 t_sr
+  let t_sr' = t_nb_bits t_sr
       n_max = constant $ SInt Nothing $ nb_bits - 1
   (wordClock', wordVal) <-
     closeRegEn bitClock [t_sr, t_sr'] $
@@ -366,7 +376,7 @@ d_async_receive_sample ::
 d_async_receive_sample nb_data_bits@8 rx = sm where
 
   -- FIXME: parameterize
-  -- data_count_bits = log2 nb_data_bits
+  -- data_count_bits = nb_bits nb_data_bits
   -- oversample_count_bits = 3 :: Int --  8x oversampling
   -- oversample = 2 ^ oversample_count_bits
   
@@ -427,36 +437,37 @@ d_async_receive nb_bits i = do
 async_receive nb_bits i = do
   (sr:_:_:wc:_) <- d_async_receive nb_bits i
   return (wc,sr)
-  
-c1 :: Seq m r => Int -> r S
-c1 = constant . bit'
 
--- FIXME: This is hard to read, and also has long combinatorial path?
--- FIXME: it's also wrong: start bit is one short.  The whole thig smells.
+
+-- FIXME: To test this, use a program sequencer, because it requires
+-- response to the done bit.
 
 d_async_transmit [bitClock, wordClock, txData] = do
   (SInt (Just n) _) <- stype txData
   closeReg [SInt (Just $ n+1) (-1),
-            SInt (Just $ log2 $ n+2) 0] $
+            SInt (Just $ nb_bits $ n+2) 0] $
     \[shiftReg, cnt] -> do
-    
-    -- Possibly replace shift reg with new framed data
-    -- This is what determines output state
-    txData'            <- conc txData (c1 0) 
-    [shiftReg',cnt']   <- ifs wordClock [txData',10] [shiftReg,cnt]
-    out                <- slice' shiftReg' 1 0
-    
-    -- Next state is shifted or not based on bitClock
-    shifted            <- conc (c1 1) =<< slice' shiftReg' (n+1) 1
-    done               <- cnt' `equ` 0
-    cntDec             <- dec cnt'
-    cntDec'            <- if' done 0 cntDec
-    
-    [shiftReg'',cnt''] <- ifs bitClock [shifted,cntDec'] [shiftReg',cnt']
-    return ([shiftReg'',cnt''],
-            [out, done,
-             wordClock, bitClock, shiftReg'', cnt''])
-            
+
+      -- Outputs are a function of previous state.
+      out  <- slice' shiftReg 1 0
+      done <- cnt `equ` 0
+
+      newframe <- conc txData (cbit 0)
+      shifted  <- conc (cbit 1) =<< slice' shiftReg (n+1) 1
+      cntDec   <- dec cnt
+
+      -- Not handling wordClock and bitClock at the same time makes it
+      -- easier to express and reduces data path length.
+      [shiftReg', cnt'] <- cond
+        [(wordClock, [newframe, 10]),
+         (bitClock,  [shifted, cntDec])]
+        [shiftReg, cnt]
+
+      return ([shiftReg', cnt'],
+              [out, done,
+               wordClock, bitClock, shiftReg', cnt'])
+
+      
 async_transmit bc (wc,treg) = do
   (out:done:_) <- d_async_transmit [bc,wc,treg]
   return (out, done)

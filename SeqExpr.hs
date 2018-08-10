@@ -11,8 +11,9 @@
 {-# LANGUAGE DeriveFunctor #-}
 
 module SeqExpr where
-import SeqTerm
-import qualified Seq as Seq
+import SeqTerm(Term(..),Op(..))
+import qualified SeqTerm
+import qualified Seq
 --import Control.Monad.State
 import Control.Monad.Writer
 import Control.Monad.Reader
@@ -107,38 +108,15 @@ sexp e = str where
 
 mSexp :: Show n => Expr n -> PrintExpr ()
 
-mSexp (Pure n) = tagged "NODE" [tell $ show n]
-mSexp (Free (Compose e)) = mTerm e
-
-mTerm (Input _)         = tagged "INPUT"   []
-mTerm (Delay _ a)       = tagged "DELAY"   [mOp a]
-mTerm (Connect _ a)     = tagged "CONNECT" [mOp a]
-mTerm (Comb1 _ o a)     = tagged (show o)  [mOp a]
-mTerm (Comb2 _ o a b)   = tagged (show o)  [mOp a, mOp b]
-mTerm (Comb3 _ o a b c) = tagged (show o)  [mOp a, mOp b, mOp c]
-mTerm (Slice _ a b c)   = tagged "SLICE"   [mOp a, tell $ showSize b, tell $ show c]
-mTerm (MemRd _ a)       = tagged "MEMRD"   [mOp a]
-mTerm (MemWr (a,b,c,d)) = tagged "MEMWR"   [mOp a, mOp b, mOp c, mOp d]
+mSexp (Pure n) = SeqTerm.tagged "NODE" [tell $ show n]
+mSexp (Free (Compose e)) = SeqTerm.mTerm mSexp e
 
 
-showSize (Just s) = show s
-showSize Nothing = ""
-                                            
-mOp (Const v)   = tagged "CONST" [ tell $ show v ]
-mOp (Node _ n)  = mSexp n
-mOp (MemNode n) = mSexp n
-
-tagged tag ms = do
-  tell "("
-  tell tag
-  sequence_ $ map ((tell " ") >>) ms
-  tell ")"
-
--- Indentation not used.
-line str = do
-  n <- ask
-  sequence_ $ [tell "\t" | _ <- [1..n]]
-  tell $ str ++ "\n"
+-- -- Indentation not used.
+-- line str = do
+--   n <- ask
+--   sequence_ $ [tell "\t" | _ <- [1..n]]
+--   tell $ str ++ "\n"
 
   
 

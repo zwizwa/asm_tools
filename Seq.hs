@@ -70,7 +70,6 @@ type InitVal = Int
 -- really add much value for a target language that just has sized bit
 -- vectors.
 
-
 -- Signal containers.
 --
 -- The final output is a flat configuration of wires, logic gates and
@@ -78,7 +77,6 @@ type InitVal = Int
 -- containers at the target level as part of the Seq class.  Instead
 -- they are introduced at the meta level, allowing standard Haskell
 -- types to be used.  E.g. 'regs' assumes a Traversable Applicative.
-
 
 -- Constants
 --
@@ -97,14 +95,14 @@ type InitVal = Int
 -- This needs to be fixed at some point, but wait for application pull.
 
 -- Conditionals
-
+--
 -- Only the "dataflow" conditional is supported.  Note that this makes
--- conditionals a little more awkward to use in Seq, but keeps them
--- pure.  This does not impose a limitation on what can be expressed,
--- only how it can be expressed.
+-- conditionals awkward to use when implementing state machines.  This
+-- does not impose a limitation on what can be expressed, only how it
+-- can be expressed.
 
 -- Monads and macros
-
+--
 -- Note that the RTL language itself is less powerful than a Monad,
 -- i.e. the structure of computation is constant.  However, the
 -- metalanguage can take a different path based on values.  I.e. it is
@@ -117,6 +115,8 @@ class (Monad m, Num (r S)) => Seq m r | r -> m, m -> r where
   signal  :: SType -> m (r S)    -- Undriven signal
   update  :: r S -> r S -> m ()  -- Drive a register input
   connect :: r S -> r S -> m ()  -- Combinatorial connect
+
+  name    :: r S -> String -> m ()
 
   -- Note that 'signal' and 'update' are considered to be imperative
   -- low-level primitives.  They should not be used in library code.

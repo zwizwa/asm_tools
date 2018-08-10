@@ -48,6 +48,7 @@ import qualified SeqApp
 import qualified SeqStatic
 import qualified SeqTerm
 import qualified SeqExpr
+import qualified SeqIfElse
 import qualified SeqEmu
 import qualified SeqTH
 import qualified SeqC
@@ -66,8 +67,8 @@ import Control.Category
 import Control.Arrow
 import Control.Monad
 import Prelude hiding (zipWith, (.), id)
-import Data.List hiding (zipWith)
-import Data.Key(Zip(..),zipWith)
+import Data.List hiding (zipWith, zip)
+import Data.Key(Zip(..),zipWith, zip)
 import Data.Typeable
 import Language.Haskell.TH as TH
 
@@ -100,11 +101,13 @@ main = do
   x_syntax
   x_ifs
   x_blink_fpga
+  x_uart_fpga
   x_seqTH
   x_app_share
   x_st
   x_SeqC
   x_case
+  x_SeqIfElse
 
 x_counter = do
   putStrLn "--- x_counter"
@@ -342,6 +345,36 @@ x_blink_fpga = do
   writeFile "x_blink_fpga.py" $ show py
   writeFile "x_blink_fpga.pcf" $ show pcf
 
+
+-- UART
+
+f_uart_fpga :: ([String], [SeqTerm.R S] -> SeqTerm.M ())
+f_uart_fpga =
+  $(named
+   [|
+    \[ _RX,
+       _LED0, _LED1, _LED2, _LED3,
+       _LED4, _LED5, _LED6, _LED7
+     ] -> do
+      (wStrobe, wData) <- async_receive 8 _RX
+      -- b0 <- slice' wData 1 0
+      -- connect _LED0 b0
+      let leds = [_LED0, _LED1, _LED2, _LED3,
+                  _LED4, _LED5, _LED6, _LED7]
+          connData n pin =
+            slice' wData (n+1) n >>= connect pin
+      sequence_ $ zipWith connData [0..] leds
+    |])
+
+x_uart_fpga = do
+  putStrLn "-- x_uart_fpga"
+  board <- CSV.readTagged id "specs/hx8k_breakout.csv"
+  let pin = CSV.ff (\[k,_,v,_] -> (k,v)) board
+      (py,pcf) = MyHDL.fpga' "x_uart_fpga" f_uart_fpga pin
+  writeFile "x_uart_fpga.py" $ show py
+  writeFile "x_uart_fpga.pcf" $ show pcf
+
+
 -- TOOLS
 
 -- printSeqTerm :: Functor f => SeqTerm.M (f (SeqTerm.R S)) -> IO ()
@@ -477,3 +510,9 @@ x_case = m where
     
   
 
+x_SeqIfElse = do
+  putStrLn "-- x_SeqIfElse"
+  SeqIfElse.x $ do
+    i <- SeqTerm.input (SInt (Just 1) 0)
+    SeqLib.d_async_receive 8 i
+  
