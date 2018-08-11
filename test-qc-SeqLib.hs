@@ -254,11 +254,8 @@ t_cpu_ins prog = $(SeqTH.compile [1] d_cpu_test) [memRef prog] where
 
 x_cpu_ins = do
   let -- Most basic operation is a jump.
-      prog1 = [ i_jmp 4 ,
-                i_nop   ,
-                i_nop   ,
-                i_nop   ,
-                i_jmp 0 ]
+      prog1 = [ jmp 4, nop, nop, nop, jmp 0 ]
+      prog2 = [ push 1, push 2, push 3, jmp 0]
       -- My practical need is not for a CPU to do computation, but to
       -- provide control of peripherals over time.  So let's start
       -- with that

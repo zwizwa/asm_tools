@@ -278,18 +278,32 @@ o_push  = 2
 o_drop  = 3
 o_read  = 4
 o_write = 5
+o_swap  = 6
 
 i1 :: Int -> Int -> Int
 i1 opc arg = opc `shiftL` (16 - o_nb_bits) .|. (arg .&. 0xFF)
 
 i0 c = i1 c 0
 
-i_nop   = i0 o_nop
-i_jmp   = i1 o_jmp
-i_push  = i1 o_push
-i_drop  = i0 o_drop
-i_read  = i1 o_read
-i_write = i1 o_write
+-- These will be used directly to construct programs, so use simple names.
+nop   = i0 o_nop
+jmp   = i1 o_jmp
+push  = i1 o_push
+drop  = i0 o_drop
+read  = i1 o_read
+write = i1 o_write
+swap  = i0 o_swap
+
+-- Each instruction can have push/pop/write/nop wrt imm?  It seems
+-- possible that stack can be manipulated in parallel with bus
+-- transfer.
+
+-- But let's not make this too complicated.  Some observations:
+
+-- . This is for very low level, specialized code.  It will never
+--   necessary to manipulate addresses as data, so address for read,
+--   write can always come from the immediate word.  The data itself
+--   might be manipulated.
 
 
 -- It's probably ok to instantiate it fully even if certain
@@ -305,9 +319,10 @@ d_cpu_bus_master (BusIn rReady rData) = d_cpu_imem_simple $ \(Ins run iw) -> do
   -- Register file is organized as a stack
   let nb_stack = 3
       heads    = take (nb_stack - 1)
+      tail2    = tail . tail
       t_stack  = replicate nb_stack $ bits 8
 
-  closeReg t_stack $ \stack@(top:_) -> do
+  closeReg t_stack $ \stack@(top:snd:_) -> do
     arg8  <- slice' iw  8 0
     opc   <- slice' iw 16 (16 - o_nb_bits)
     
@@ -318,10 +333,12 @@ d_cpu_bus_master (BusIn rReady rData) = d_cpu_imem_simple $ \(Ins run iw) -> do
     write <- opc' o_write
     push  <- opc' o_push
     drop  <- opc' o_drop
+    swap  <- opc' o_swap
 
     stack' <- cond
-      [(push, arg8 : (heads stack))]
-      [(drop, tail stack ++ [head stack])]
+      [(push, arg8 : (heads stack)),
+       (drop, tail stack ++ [head stack]),
+       (swap, snd : top : (tail2 stack))]
       stack
 
     -- reads can take multiple cycles.  it is assumed that rReady is
