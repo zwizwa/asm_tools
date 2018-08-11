@@ -45,6 +45,10 @@ cabal-test: default.nix
 	$(NIX_SHELL) --run "cabal test --log=/dev/stdout"
 
 
+cabal-test-qc-SeqLib: default.nix
+	$(NIX_SHELL) --run "cabal test test-qc-SeqLib.hs --log=/dev/stdout"
+
+
 
 
 test: cabal-test

@@ -9,6 +9,7 @@ import Seq
 import SeqLib
 import CPU
 import Control.Monad
+import Data.Bits
 
 
 d_fifo i@[rc,wc,wd] = do
@@ -53,25 +54,7 @@ d_stack i@[push,pop,wd] = do
 --   return (Jump 0 0, [])
 
 
-d_cpu_ins :: Seq m r => i -> m [r S]
-d_cpu_ins _i = d_cpu $ \(Ins run iw) -> do
-  ins  <- slice' iw 16 8
-  arg8 <- slice' iw  8 0
-  jmp  <- ins `equ` 0x80
-  return (Control 0 jmp arg8, [iw, jmp, arg8])
+-- Simple instruction decoder.
+-- Define instructions next to the decoder.
 
-
-
--- Generic skeleton for CPU tests.
-d_cpu :: Seq m r => (Ins r -> m (Control r, [r S])) -> m [r S]
-d_cpu decode = do
-  -- Do not update the instruction pointer at the first instruction,
-  -- as rData will be invalid.  The first cycle is used to perform the
-  -- first instruction read.  After that, instruction pointer is updated.
-  run <- seq01 -- 0,1,1,1....
-  out <- closeIMem (noIMemWrite ibits abits) run decode
-  return (run:out)
-  where
-    ibits = 16
-    abits =  8
 

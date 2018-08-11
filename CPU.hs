@@ -19,10 +19,38 @@ import Seq
 import SeqLib
 import Control.Monad
 import Control.Applicative
+import Data.Bits hiding (bit)
 
--- How to begin?
+-- Some notes on how this got built.
 
--- First: architecture: a stack machine.
+-- . It starts with a desire to build a stack machine, followed by a
+--   realization of lack of insight.  As with many leaps: where to
+--   begin?  For many tasks, a full processor is overkill, so what is
+--   the essence?
+
+-- . A relization that instruction sequencing is the key element that
+--   distinguishes a state machine from a processor.  This required
+--   support for memories, so they got built into Seq in several
+--   iterations.  Experiments indicated that emulation was really
+--   slow, so SeqTH/SeqPrim got built on top of STUArray.
+
+-- . First attempts at modularizing the design.  It is obvious that a
+--   CPU can't be anything else but a monadic function from input to
+--   output, but it was not at all clear what this I/O would be, or
+--   how to practically decompose the submachines.
+
+-- . A design emerged for a cont/wait/jmp machine coupled to an
+--   instruction memory, parameterized by an instruction decoder.
+
+-- . The realization that the input/output of the instruction decoder
+--   is a bus that can be lifted out of the composition.  I.e. a CPU
+--   consists of exposed bus operations, with closed instruction
+--   sequencing and internal processor state.
+
+
+
+
+-- Original notes on stack macchines:
 
 -- Memory seems to be the most important component.  I'm going to
 -- target the iCE40, which has a bunch of individual memories,
@@ -98,7 +126,8 @@ closeIMem :: Seq m r =>
   IMemWrite r
   -> r S
   -> (Ins r -> m (Control r, o))
-  -> m o
+  -> m (o, r S)
+
 closeIMem (IMemWrite wEn wAddr wData) run execute = do
   t_wAddr <- stype wAddr
   t_wData <- stype wData
@@ -114,7 +143,7 @@ closeIMem (IMemWrite wEn wAddr wData) run execute = do
                    (jump, [ipJump])]
                   [ipCont]
       return ([ipNext], (ipNext, o))  -- comb ipNext to avoid extra delay
-    return ([(wEn, wAddr, wData, ipNext)], o) 
+    return ([(wEn, wAddr, wData, ipNext)], (o, ipNext))
 
 -- A simple test for closeIMem:
 -- . program outputs iw as output
@@ -175,29 +204,26 @@ closeIMem (IMemWrite wEn wAddr wData) run execute = do
 
 
 
+-- The important realization is that what a CPU does is to manipulate
+-- a bus.  The idea of a bus provides a decoupling point for
+-- modularity.
 
--- A generic bus.  Same structure as the memory interface.  Note that
--- we do not need to make this explicit in closeIMem.
-data BUSIn r = BUSIn {
+-- I'm adopting a slight modification of the memory bus already used.
+-- The addition is a busReadRdy signal, which allows reads to take
+-- more than one cycle, and allows the cpu to wait for a particular
+-- signal to appear.  Seperate read/write addresses are removed as the
+-- CPU is kept simple: no read/write at the same time.
+
+data BusIn r = BusIn {
+  busReadRdy  :: r S,
   busReadData :: r S
 }
-data BUSOut r = BUSOut {
+data BusOut r = BusOut {
   busWriteEn   :: r S,
-  busWriteAddr :: r S,
-  busWriteData :: r S,
-  busReadAddr  :: r S
+  busAddr      :: r S,
+  busWriteData :: r S
 }
 
-
-
-
--- Memory reads take an extra cycle.  For instructions this is ok as
--- the instruction only needs to be available on the next cycle, but
--- for any other operation, the data will only be ready the next cycle.
-
--- Is that ok?
-
--- It seems so.
 
 
 -- Perform an operation and wait for it to finish.
@@ -212,4 +238,64 @@ data BUSOut r = BUSOut {
 --
 
 
+-- Some testing
 
+
+-- Defaults for startup, memory size, and no memory write (rom).
+d_cpu_imem_simple :: Seq m r => (Ins r -> m (Control r, BusOut r)) -> m (BusOut r)
+d_cpu_imem_simple decode = do
+  let ibits = 16 ; abits = 8
+  -- Do not update the instruction pointer at the first instruction,
+  -- as rData will be invalid.  The first cycle is used to perform the
+  -- first instruction read.  After that, instruction pointer is updated.
+  run <- seq01 -- 0,1,1,1....
+  (busOut, _ip) <- closeIMem (noIMemWrite ibits abits) run decode
+  return busOut
+
+
+data OpCode = IJMP
+
+opcode :: OpCode -> Int
+opcode IJMP = 0x80
+
+i_jmp dst = 0x8000 .|. (dst .&. 0xFF)  :: Int
+i_nop     = 0 :: Int
+
+-- It's probably ok to instantiate it fully even if certain
+-- instructions are not used.  Yosys/abc removes unused logic.
+
+-- Still, this can use some decomposition.  For now, because there are
+-- not many instructions, use one-hot encoding to keep the logic
+-- simple.
+
+d_cpu_bus_master :: Seq m r => BusIn r -> m (BusOut r)
+d_cpu_bus_master (BusIn rReady rData) = d_cpu_imem_simple $ \(Ins run iw) -> do
+  closeReg [bits 8] $ \[wReg] -> do
+    arg8  <- slice' iw  8  0
+    -- use one-hot encoding until we run out of bits
+    let ibit n = slice' iw (n+1) n  
+    jmp   <- ibit 15
+    read  <- ibit 14
+    write <- ibit 13
+    imm   <- ibit 12
+    wReg' <- if' imm arg8 wReg
+
+    -- reads can take multiple cycles.  it is assumed that rReady is
+    -- high for only one cycle.
+    wait  <- (read `band`) =<< inv rReady
+    
+    return ([wReg'],                  -- internal reg feedback
+            (Control wait jmp arg8,   -- instruction sequencer feedback
+             BusOut write arg8 wReg)) -- top level output is a bus
+
+-- Close over the bus read registers
+d_cpu_test :: Seq m r => [r S] -> m [r S]
+d_cpu_test [rx] = do
+  closeReg [bit, bits 8] $ \[rStrobe,rData] -> do
+    (BusOut wStrobe addr wData) <- d_cpu_bus_master (BusIn rStrobe rData)
+    -- Bus address decoder.  All peripherals are accessible here.
+    addr' <- slice' addr 2 0
+    busin <- switch addr'
+      [(0, do (s,d) <- async_receive 8 rx; return [s,d])]
+      (return [0,0])
+    return (busin, [rStrobe,rData,wStrobe,addr,wData])

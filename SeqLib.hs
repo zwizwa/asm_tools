@@ -465,7 +465,7 @@ d_async_transmit [bitClock, wordClock, txData] = do
       -- easier to express and reduces data path length.
       [shiftReg', cnt'] <- cond
         [(wordClock, [newframe, 10]),
-         (bitClock,  [shifted, cntDec])]
+         (bitClock,  [shifted,  cntDec])]
         [shiftReg, cnt]
 
       return ([shiftReg', cnt'],

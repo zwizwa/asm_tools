@@ -474,6 +474,12 @@ type A = ()
 x_st = do
   print "-- x_st"
   print $ runST $ f_st
+  -- print $ take 10 l_st
+
+l_st = seq where 
+  seq = ([0] : seq')
+  seq' = seqRun (\([], (), (), [i]) -> return ((), (), [i])) [] ((), ()) [] seq
+  
 
 f_st :: ST s Int
 f_st = do
@@ -484,6 +490,8 @@ f_st = do
   writeArray a addr val
   v <- readArray a addr
   return v
+
+
 
 x_SeqC = do
   let ct = SeqTerm.compileFun [SInt Nothing 0] f

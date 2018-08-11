@@ -26,6 +26,7 @@
 
 import Seq
 import SeqLib
+import CPU
 import SeqEmu
 import SeqPrim
 import TestSeqLib
@@ -37,6 +38,7 @@ import Data.Char
 import Data.Bits
 import Data.List
 import Data.List.Split
+import Data.Bits
 import Test.QuickCheck hiding ((.&.),(.|.))
 import Test.QuickCheck.Gen hiding (bitSize, getLine)
 import Language.Haskell.TH
@@ -62,9 +64,10 @@ main = do
   qc "p_async_receive" p_async_receive
   qc "p_fifo" p_fifo
 
-  x_cpu_ins
   x_stack
   x_async_transmit
+
+  x_cpu_ins
 
 -- Tests for library code.
 --    t_  Trace wrapper (_emu or _th)
@@ -179,6 +182,15 @@ x_async_transmit = do
   printL $ rx_out
 
 
+-- Using SeqTH it is not possible to generate outputs in response to
+-- inputs at the test bench level.  This is annoying, but for now not
+-- really an issue since it is possible to either go to SeqEmu, or
+-- provide feedback at the Seq level.  It seems simplest to start
+-- using CPU-like sequencers for that.  See below.
+
+
+
+
 -- mem
 
 t_mem = trace [8,1,8,8] $ \i@[ra,we,wa,wd] -> do
@@ -238,15 +250,26 @@ memRef mem n = v where
     True -> 0
     False -> mem !! n
 
-t_cpu_ins = $(SeqTH.compile [] d_cpu_ins) [iMemInit] where
-  iMemInit = memRef iMem
-  iMem = [ 0x8004,    -- jump 4
-           0, 0, 0,   -- nop
-           0x8000 ]   -- jump 0
+t_cpu_ins prog = $(SeqTH.compile [1] d_cpu_test) [memRef prog] where
 
 x_cpu_ins = do
+  let prog1 = [ i_jmp 4 ,
+                i_nop   ,
+                i_nop   ,
+                i_nop   ,
+                i_jmp 0 ]
+      prog2 = []
+
   putStrLn "-- x_cpu_ins"
-  printL $ t_cpu_ins $ replicate 10 []
+  printL $ t_cpu_ins prog1 $ replicate 10 [1]
+  printL $ t_cpu_ins prog2 $ replicate 10 [1]
+
+
+-- A slightly more involved program: read uart data into fifo until
+-- newline character, then spit it out again.  Split it into two
+-- parts: instruction decoder, state machines.
+
+
 
 
 
