@@ -253,16 +253,29 @@ memRef mem n = v where
 t_cpu_ins prog = $(SeqTH.compile [1] d_cpu_test) [memRef prog] where
 
 x_cpu_ins = do
-  let prog1 = [ i_jmp 4 ,
+  let -- Most basic operation is a jump.
+      prog1 = [ i_jmp 4 ,
                 i_nop   ,
                 i_nop   ,
                 i_nop   ,
                 i_jmp 0 ]
-      prog2 = []
+      -- My practical need is not for a CPU to do computation, but to
+      -- provide control of peripherals over time.  So let's start
+      -- with that
+      -- prog2 = [ i_load  0x5A , -- data to send out
+      --           i_write 0x01 , -- uart transmit register
+      --           i_load  0x02 , -- uart ready register
+      --           i_wait  1    ,
+      --           i_jmp   0    ]
 
   putStrLn "-- x_cpu_ins"
   printL $ t_cpu_ins prog1 $ replicate 10 [1]
-  printL $ t_cpu_ins prog2 $ replicate 10 [1]
+  -- printL $ t_cpu_ins prog2 $ replicate 10 [1]
+
+
+
+
+
 
 
 -- A slightly more involved program: read uart data into fifo until

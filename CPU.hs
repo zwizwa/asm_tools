@@ -47,7 +47,13 @@ import Data.Bits hiding (bit)
 --   consists of exposed bus operations, with closed instruction
 --   sequencing and internal processor state.
 
+-- . The realization that the implementation of the bus is something
+--   that happens at the very top.  The processor is truly "embedded",
+--   and the bus devices are truly "periphery", sitting beteen processor
+--   (bus) and external I/O.
 
+-- . The realization (from SwapForth), that a stack is better
+--   implemented as registers, and that it is trivial.
 
 
 -- Original notes on stack macchines:
@@ -258,8 +264,33 @@ data OpCode = IJMP
 opcode :: OpCode -> Int
 opcode IJMP = 0x80
 
-i_jmp dst = 0x8000 .|. (dst .&. 0xFF)  :: Int
-i_nop     = 0 :: Int
+
+
+
+-- This needs to grow, but it seems simplest to keep the encoding
+-- abstract, so it can be optimized later on.  Do not rely on the
+-- numeric values of these.
+o_nb_bits  = 3
+
+o_nop   = 0
+o_jmp   = 1
+o_push  = 2
+o_drop  = 3
+o_read  = 4
+o_write = 5
+
+i1 :: Int -> Int -> Int
+i1 opc arg = opc `shiftL` (16 - o_nb_bits) .|. (arg .&. 0xFF)
+
+i0 c = i1 c 0
+
+i_nop   = i0 o_nop
+i_jmp   = i1 o_jmp
+i_push  = i1 o_push
+i_drop  = i0 o_drop
+i_read  = i1 o_read
+i_write = i1 o_write
+
 
 -- It's probably ok to instantiate it fully even if certain
 -- instructions are not used.  Yosys/abc removes unused logic.
@@ -270,23 +301,36 @@ i_nop     = 0 :: Int
 
 d_cpu_bus_master :: Seq m r => BusIn r -> m (BusOut r)
 d_cpu_bus_master (BusIn rReady rData) = d_cpu_imem_simple $ \(Ins run iw) -> do
-  closeReg [bits 8] $ \[wReg] -> do
-    arg8  <- slice' iw  8  0
-    -- use one-hot encoding until we run out of bits
-    let ibit n = slice' iw (n+1) n  
-    jmp   <- ibit 15
-    read  <- ibit 14
-    write <- ibit 13
-    imm   <- ibit 12
-    wReg' <- if' imm arg8 wReg
+
+  -- Register file is organized as a stack
+  let nb_stack = 3
+      heads    = take (nb_stack - 1)
+      t_stack  = replicate nb_stack $ bits 8
+
+  closeReg t_stack $ \stack@(top:_) -> do
+    arg8  <- slice' iw  8 0
+    opc   <- slice' iw 16 (16 - o_nb_bits)
+    
+    let opc' n = equ opc $ cbits o_nb_bits n
+
+    jmp   <- opc' o_jmp
+    read  <- opc' o_read
+    write <- opc' o_write
+    push  <- opc' o_push
+    drop  <- opc' o_drop
+
+    stack' <- cond
+      [(push, arg8 : (heads stack))]
+      [(drop, tail stack ++ [head stack])]
+      stack
 
     -- reads can take multiple cycles.  it is assumed that rReady is
     -- high for only one cycle.
     wait  <- (read `band`) =<< inv rReady
     
-    return ([wReg'],                  -- internal reg feedback
+    return (stack',                   -- internal reg feedback
             (Control wait jmp arg8,   -- instruction sequencer feedback
-             BusOut write arg8 wReg)) -- top level output is a bus
+             BusOut write arg8 top))  -- top level output is a bus
 
 -- Close over the bus read registers
 d_cpu_test :: Seq m r => [r S] -> m [r S]
@@ -299,3 +343,6 @@ d_cpu_test [rx] = do
       [(0, do (s,d) <- async_receive 8 rx; return [s,d])]
       (return [0,0])
     return (busin, [rStrobe,rData,wStrobe,addr,wData])
+
+
+-- FIXME: a cpu is (BusIn,Ins) -> (BusOut,Ctrl)

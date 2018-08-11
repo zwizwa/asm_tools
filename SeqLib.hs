@@ -140,6 +140,8 @@ bit = bits 1
 cbit :: Seq m r => Int -> r S
 cbit = constant . bit'
 
+cbits :: Seq m r => Int -> Int -> r S
+cbits n = constant . (bits' n)
 
 -- Special closeReg case: single register, with register as output
 reg' :: Seq m r => SType -> (r S -> m (r S)) -> m (r S)
