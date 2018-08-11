@@ -132,7 +132,7 @@ closeIMem :: Seq m r =>
   IMemWrite r
   -> r S
   -> (Ins r -> m (Control r, o))
-  -> m (o, r S)
+  -> m o
 
 closeIMem (IMemWrite wEn wAddr wData) run execute = do
   t_wAddr <- stype wAddr
@@ -149,7 +149,7 @@ closeIMem (IMemWrite wEn wAddr wData) run execute = do
                    (jump, [ipJump])]
                   [ipCont]
       return ([ipNext], (ipNext, o))  -- comb ipNext to avoid extra delay
-    return ([(wEn, wAddr, wData, ipNext)], (o, ipNext))
+    return ([(wEn, wAddr, wData, ipNext)], o)
 
 -- A simple test for closeIMem:
 -- . program outputs iw as output
@@ -248,15 +248,13 @@ data BusOut r = BusOut {
 
 
 -- Defaults for startup, memory size, and no memory write (rom).
-d_cpu_imem_simple :: Seq m r => (Ins r -> m (Control r, BusOut r)) -> m (BusOut r)
-d_cpu_imem_simple decode = do
-  let ibits = 16 ; abits = 8
+cpu_imem :: Seq m r => Int -> Int -> (Ins r -> m (Control r, BusOut r)) -> m (BusOut r)
+cpu_imem abits ibits decode = do
   -- Do not update the instruction pointer at the first instruction,
   -- as rData will be invalid.  The first cycle is used to perform the
   -- first instruction read.  After that, instruction pointer is updated.
   run <- seq01 -- 0,1,1,1....
-  (busOut, _ip) <- closeIMem (noIMemWrite ibits abits) run decode
-  return busOut
+  closeIMem (noIMemWrite ibits abits) run decode
 
 
 data OpCode = IJMP
@@ -313,15 +311,24 @@ swap  = i0 o_swap
 -- not many instructions, use one-hot encoding to keep the logic
 -- simple.
 
-d_cpu_bus_master :: Seq m r => BusIn r -> m (BusOut r)
-d_cpu_bus_master (BusIn rReady rData) = d_cpu_imem_simple $ \(Ins run iw) -> do
+bus_master :: Seq m r => BusIn r -> m (BusOut r)
+bus_master busIn = busOut where
+  execute = stack_machine 3 busIn
+  busOut = cpu_imem 8 16 execute
 
+stack_machine ::
+  Seq m r =>
+  Int ->
+  BusIn r ->
+  Ins r ->
+  m (Control r, BusOut r)
+
+stack_machine  nb_stack (BusIn rReady rData) (Ins run iw) = do
   -- Register file is organized as a stack
-  let nb_stack = 3
-      heads    = take (nb_stack - 1)
+  let heads    = take (nb_stack - 1)
       tail2    = tail . tail
       t_stack  = replicate nb_stack $ bits 8
-
+  
   closeReg t_stack $ \stack@(top:snd:_) -> do
     arg8  <- slice' iw  8 0
     opc   <- slice' iw 16 (16 - o_nb_bits)
@@ -353,7 +360,7 @@ d_cpu_bus_master (BusIn rReady rData) = d_cpu_imem_simple $ \(Ins run iw) -> do
 d_cpu_test :: Seq m r => [r S] -> m [r S]
 d_cpu_test [rx] = do
   closeReg [bit, bits 8] $ \[rStrobe,rData] -> do
-    (BusOut wStrobe addr wData) <- d_cpu_bus_master (BusIn rStrobe rData)
+    (BusOut wStrobe addr wData) <- bus_master (BusIn rStrobe rData)
     -- Bus address decoder.  All peripherals are accessible here.
     addr' <- slice' addr 2 0
     busin <- switch addr'

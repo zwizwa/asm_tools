@@ -116,8 +116,6 @@ class (Monad m, Num (r S)) => Seq m r | r -> m, m -> r where
   update  :: r S -> r S -> m ()  -- Drive a register input
   connect :: r S -> r S -> m ()  -- Combinatorial connect
 
-  name    :: r S -> String -> m ()
-
   -- Note that 'signal' and 'update' are considered to be imperative
   -- low-level primitives.  They should not be used in library code.
   -- Instead, use the declarative 'reg' operator.
@@ -153,7 +151,16 @@ class (Monad m, Num (r S)) => Seq m r | r -> m, m -> r where
   updateMemory :: r Mem -> (r S, r S, r S, r S) -> m ()
 
 
+  -- For testing it is convenient to expose internal signals, while it
+  -- is very inconvenient to have those propagate through the design.
+  -- So support is added inside the language.
+  probe :: String -> r S -> m ()
 
+
+  -- FIXME: add support for probing/tracing.  Production code will not
+  -- generate it, but it would allow debug code to be traced without
+  -- the need to pass along a lot of debug information explicitly.
+  
 -- Primitives
 
 type SeqOp1 m r = r S -> m (r S)
