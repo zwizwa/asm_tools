@@ -148,6 +148,13 @@ reg' :: Seq m r => SType -> (r S -> m (r S)) -> m (r S)
 reg' t f = do closeReg [t] $ \[r] -> do r' <- f r ; return ([r'], r)
 
 
+
+-- Convenient shortcut for test probe
+(.=) :: Seq m r => String -> r S -> m ()
+(.=) = probe
+
+
+
 -- Some simple building blocks
 
 inc :: Seq m r => r S -> m (r S)

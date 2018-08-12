@@ -250,7 +250,11 @@ memRef mem n = v where
     True -> 0
     False -> mem !! n
 
-t_cpu_ins prog ins = snd $ $(compile noProbe [1] d_cpu_test) [memRef prog] ins
+t_cpu_ins prog = $(compile (const True) [1] cpu_test) [memRef prog]
+
+printProbe (names, outs) = do
+  print  names
+  printL outs
 
 x_cpu_ins = do
   let -- Most basic operation is a jump.
@@ -266,7 +270,7 @@ x_cpu_ins = do
       --           i_jmp   0    ]
 
   putStrLn "-- x_cpu_ins"
-  printL $ t_cpu_ins prog1 $ replicate 10 [1]
+  printProbe $ t_cpu_ins prog1 $ replicate 10 [1]
   -- printL $ t_cpu_ins prog2 $ replicate 10 [1]
 
 

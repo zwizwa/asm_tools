@@ -148,6 +148,8 @@ closeIMem (IMemWrite wEn wAddr wData) run execute = do
                    (loop, [ip]),
                    (jump, [ipJump])]
                   [ipCont]
+      "ip" .= ip
+                  
       return ([ipNext], (ipNext, o))  -- comb ipNext to avoid extra delay
     return ([(wEn, wAddr, wData, ipNext)], o)
 
@@ -351,22 +353,28 @@ stack_machine  nb_stack (BusIn rReady rData) (Ins run iw) = do
     -- reads can take multiple cycles.  it is assumed that rReady is
     -- high for only one cycle.
     wait  <- (read `band`) =<< inv rReady
+
+    "iw" .= iw
     
     return (stack',                   -- internal reg feedback
             (Control wait jmp arg8,   -- instruction sequencer feedback
              BusOut write arg8 top))  -- top level output is a bus
 
+
 -- Close over the bus read registers
-d_cpu_test :: Seq m r => [r S] -> m [r S]
-d_cpu_test [rx] = do
+cpu_test :: Seq m r => [r S] -> m [r S]
+cpu_test [rx] = do
   closeReg [bit, bits 8] $ \[rStrobe,rData] -> do
     (BusOut wStrobe addr wData) <- bus_master (BusIn rStrobe rData)
     -- Bus address decoder.  All peripherals are accessible here.
     addr' <- slice' addr 2 0
     busin <- switch addr'
-      [(0, do (s,d) <- async_receive 8 rx; return [s,d])]
+      [(0, do (s,d) <- async_receive 8 rx;
+              "rx_s" .= s
+              "rx_d" .= d
+              return [s,d])]
       (return [0,0])
-    return (busin, [rStrobe,rData,wStrobe,addr,wData])
+    return (busin, [])
 
 
 -- FIXME: a cpu is (BusIn,Ins) -> (BusOut,Ctrl)
