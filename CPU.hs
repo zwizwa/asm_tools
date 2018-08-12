@@ -344,7 +344,7 @@ stack_machine  nb_stack (BusIn rReady rData) (Ins run iw) = do
     drop  <- opc' o_drop
     swap  <- opc' o_swap
 
-    stack' <- cond
+    stack'@(top':snd':_) <- cond
       [(push, arg8 : (heads stack)),
        (drop, tail stack ++ [head stack]),
        (swap, snd : top : (tail2 stack))]
@@ -354,27 +354,55 @@ stack_machine  nb_stack (BusIn rReady rData) (Ins run iw) = do
     -- high for only one cycle.
     wait  <- (read `band`) =<< inv rReady
 
-    "iw" .= iw
+    -- probes
+    "iw"  .= iw
+    "top" .= top'
+    "snd" .= snd'
     
     return (stack',                   -- internal reg feedback
             (Control wait jmp arg8,   -- instruction sequencer feedback
              BusOut write arg8 top))  -- top level output is a bus
 
 
--- Close over the bus read registers
-cpu_test :: Seq m r => [r S] -> m [r S]
-cpu_test [rx] = do
+
+-- Close over bus master (cpu) and bus slaves (peripherals) to create
+-- a system on chip.
+
+soc :: Seq m r => [r S] -> m [r S]
+soc [rx] = do
+  
   closeReg [bit, bits 8] $ \[rStrobe,rData] -> do
     (BusOut wStrobe addr wData) <- bus_master (BusIn rStrobe rData)
-    -- Bus address decoder.  All peripherals are accessible here.
     addr' <- slice' addr 2 0
+    
+    let tx_bc = 1 -- FIXME
+        wGate = band wStrobe
+        wOp n = addr' `equ` n >>= wGate
+
+    -- Bus writes
+    tx_wc <- wOp 2
+    (tx, tx_rdy) <- async_transmit tx_bc (tx_wc, wData)
+
+    -- Bus reads
     busin <- switch addr'
-      [(0, do (s,d) <- async_receive 8 rx;
-              "rx_s" .= s
-              "rx_d" .= d
-              return [s,d])]
+      [(0,
+        do
+          (s,d) <- async_receive 8 rx;
+          "rx_s" .= s
+          "rx_d" .= d
+          return [s,d]),
+       (1,
+        do
+          -- just block on ready
+          return [tx_rdy,0])]
       (return [0,0])
-    return (busin, [])
+      
+    return (busin, [tx])
 
 
--- FIXME: a cpu is (BusIn,Ins) -> (BusOut,Ctrl)
+soc_test :: Seq m r => [r S] -> m [r S]
+soc_test ins = do
+  outs <- soc ins
+  -- Testing only uses named internam probe signals, not the
+  -- production circuit's outputs.
+  return []

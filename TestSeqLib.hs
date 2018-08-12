@@ -11,6 +11,7 @@ import CPU
 import Control.Monad
 import Data.Bits
 import Data.List
+import Data.Maybe
 import Numeric
 
 
@@ -89,4 +90,16 @@ padTable rows = prows where
       n' = n - length str
       lpad = replicate n' ' '
   prows = transpose pcolumns
-  
+
+showSelectSignals :: [String] -> [String] -> [[Int]] -> String
+showSelectSignals columns names signals = str where
+  name2col nm = fromJust' nm $ lookup nm $ zip names [0..]
+  indices = map name2col columns
+  select row = map (row !!) indices
+  signals' = map select signals
+  str = showSignals columns signals'
+  -- Assume that probe names are correct.  This is only supposed to be
+  -- used for testing, so raise an error when a probe is not found.
+  fromJust' _ (Just x) = x
+  fromJust' nm Nothing = error $
+    "showSelectSignals: " ++ show nm ++ " not found in " ++ show names

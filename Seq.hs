@@ -1,15 +1,33 @@
--- An eDSL for sequential logic.
+-- An eDSL for sequential logic / RTL
 
 -- Note that this is not a full HDL.
 -- Following wikipedia's definition, Seq implements an RTL language.
 -- https://en.wikipedia.org/wiki/Register-transfer_level
 
--- It helps to think of HDLs as discrete event simulation languages,
--- with RTL embedded inside in the case synchronization points are
--- only determined by clocks.
+-- It helps to think of HDLs as one-size-fits-all systems that serve
+-- as a substrate for several subset languages.  In their more general
+-- form they are discrete event simulation languages.  A subset of
+-- that is synthesizable to (asynchronous) circuits, and a subset of
+-- that represents RTL, in the case synchronization points are only
+-- determined by clocks.
 
--- Seq has implicit clock signals Only 'update' to relate the current
--- clock cycle to the next.
+-- The reason seems to be that building the infrastructure for a
+-- language is hard.  Once you have a language, embedding subsets is
+-- just a matter of convention.
+
+-- In Haskell, we really do the same.  Though it is a little more
+-- straightforward to implement, and the embedding language is much
+-- more powerful.
+
+
+
+-- Seq consists of:
+-- . pure combinatorial functions
+-- . explicit register feedback
+-- . explicit memory feedback
+
+
+
 
 
 {-# LANGUAGE FlexibleInstances #-}

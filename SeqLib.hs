@@ -471,7 +471,8 @@ async_transmit bitClock (wordClock, txData) = do
 
       newframe <- conc txData (cbit 0)
       shifted  <- conc (cbit 1) =<< slice' shiftReg (n+1) 1
-      cntDec   <- dec cnt
+      cntDec'  <- dec cnt
+      cntDec   <- if' done 0 cntDec'
 
       -- Not handling wordClock and bitClock at the same time makes it
       -- easier to express and reduces data path length.
@@ -480,6 +481,12 @@ async_transmit bitClock (wordClock, txData) = do
          (bitClock,  [shifted,  cntDec])]
         [shiftReg, cnt]
 
+      "tx_bc"   .= bitClock
+      "tx_wc"   .= wordClock
+      "tx_in"   .= txData
+      "tx_done" .= done
+      "tx_out"  .= out
+      
       -- return ([shiftReg', cnt'],
       --         [out, done,
       --          wordClock, bitClock, shiftReg', cnt'])

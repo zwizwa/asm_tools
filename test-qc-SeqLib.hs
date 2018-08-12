@@ -34,11 +34,13 @@ import TestTools
 
 import SeqTH(compile,compile',noProbe,allProbe)
 
+import Prelude hiding (read, drop)
 import Data.Char
 import Data.Bits
-import Data.List
+import Data.List hiding (drop)
 import Data.List.Split
 import Data.Bits
+import Data.Maybe
 import Test.QuickCheck hiding ((.&.),(.|.))
 import Test.QuickCheck.Gen hiding (bitSize, getLine)
 import Language.Haskell.TH
@@ -67,7 +69,7 @@ main = do
   x_stack
   x_async_transmit
 
-  x_cpu_ins
+  x_soc
 
 -- Tests for library code.
 --    t_  Trace wrapper (_emu or _th)
@@ -154,7 +156,7 @@ x_async_receive_for t = do
     sample (wc@1:v:_) = Just v
     sample _ = Nothing
     out' = downSample sample out
-  printC $ chunksOf 8 out
+  -- printC $ chunksOf 8 out
   print $ out'
 
 p_async_receive = forAll (listOf $ word 8) pred where
@@ -262,30 +264,43 @@ memRef mem n = v where
     True -> 0
     False -> mem !! n
 
-t_cpu_ins prog = $(compile (const True) [1] cpu_test) [memRef prog]
+t_soc prog = $(compile allProbe [1] soc_test) [memRef prog]
 
-printProbe (names, outs) = do
-  putStr $ showSignals names outs
+printProbe :: [String] -> ([String],[[Int]]) -> IO ()
+printProbe columns (names, signals) = do
+  putStr $ showSelectSignals columns names signals
 
+-- For testing, it seems simplest to embed the CPU inside a SOC.  What
+-- is important is the integration, not so much the CPU itself, which
+-- is fairly straightforward.
 
-x_cpu_ins = do
-  let -- Most basic operation is a jump.
-      prog1 = [ jmp 4, nop, nop, nop, jmp 0 ]
-      prog2 = [ push 1, push 2, push 3, jmp 0 ]
-      -- My practical need is not for a CPU to do computation, but to
-      -- provide control of peripherals over time.  So let's start
-      -- with that
-      -- prog2 = [ i_load  0x5A , -- data to send out
-      --           i_write 0x01 , -- uart transmit register
-      --           i_load  0x02 , -- uart ready register
-      --           i_wait  1    ,
-      --           i_jmp   0    ]
+x_soc = do
+  let
+    -- Most basic operation is a jump.
+    prog_jmp = [ jmp 4, nop, nop, nop, jmp 0 ]
 
-  putStrLn "-- x_cpu_ins"
-  printProbe $ t_cpu_ins prog1 $ replicate 10 [1]
-  -- printL $ t_cpu_ins prog2 $ replicate 10 [1]
+    -- Stack access
+    prog_push = [ push 101, push 102, push 103, drop, jmp 0 ]
+    
+    -- Uart control: write + wait done, then loop
+    prog_bus = [ push 0xF, write 2, read 1, jmp 0 ]
 
+  putStrLn "-- x_soc"
+  
+  putStrLn "prog_jmp:"
+  printProbe ["iw","ip"] $
+    t_soc prog_jmp $ replicate 10 [1]
 
+  putStrLn "prog_push:"
+  printProbe ["iw","ip","top","snd"] $
+    t_soc prog_push $ replicate 10 [1]
+
+  putStrLn "prog_bus:"
+  printProbe ["iw","ip","tx_bc","tx_wc","tx_in","tx_done","tx_out"] $
+    t_soc prog_bus $ replicate 30 [1]
+  
+
+  
 
 
 
