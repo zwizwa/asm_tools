@@ -50,7 +50,7 @@ main = do
 
   -- print $ toWord [1,0,0,0]
   -- print $ toBitList 4 8
-  -- print $ downSample' $ t_clocked_shift 4 $ [[1,i] | i <- [1,1,1,1,0,0,0,0,0,0,0,1]]
+  -- print $ downSample' $ t_deser 4 $ [[1,i] | i <- [1,1,1,1,0,0,0,0,0,0,0,1]]
 
   -- x_async_receive_sample_emu
   -- x_async_receive_sample
@@ -62,14 +62,16 @@ main = do
   
   qc "p_bits" p_bits
   qc "p_sample" p_sample
-  qc "p_clocked_shift" p_clocked_shift
+  qc "p_deser" p_deser
   qc "p_async_receive" p_async_receive
+  qc "p_spi" p_spi
   qc "p_fifo" p_fifo
 
   x_stack
   x_async_transmit
-
+  x_spi
   x_soc
+  
 
 -- Tests for library code.
 --    t_  Trace wrapper (_emu or _th)
@@ -80,22 +82,22 @@ main = do
 --    _emu SeqEmu code.  Slow, but flexible.
 --    _th  TH code. Fast, but only pure target semantics.
 
--- clocked_shift
+-- deser
 
-p_clocked_shift = forAll vars pred where
+p_deser = forAll vars pred where
   vars = do
     sub <- choose (1,8)
     wl  <- wordList
     return (sub, wl)
   pred (sub, (nb_bits, words)) = words == words' where
     bits   = toBits nb_bits words
-    ins    = upSample' (cycle [sub]) $ map (:[]) bits
-    outs   = t_clocked_shift nb_bits ins
+    ins    = reSample' (cycle [sub]) $ map (:[]) bits
+    outs   = t_deser nb_bits ins
     words' = map head $ downSample' outs
 
-t_clocked_shift :: Int -> [[Int]] -> [[Int]]
-t_clocked_shift nb_bits = trace [1,1] $ \[bc,bv] -> do
-  (wc, wv) <- clocked_shift ShiftLeft (SInt (Just nb_bits) 0) (bc, bv)
+t_deser :: Int -> [[Int]] -> [[Int]]
+t_deser nb_bits = trace [1,1] $ \[bc,bv] -> do
+  (wc, wv) <- deser ShiftLeft (SInt (Just nb_bits) 0) (bc, bv)
   return [wc, wv]
 
 
@@ -203,6 +205,30 @@ x_async_transmit = do
 -- using CPU-like sequencers for that.  See below.
 
 
+-- spi
+t_spi ins =
+  $(compile allProbe [1,1,1] $
+    \[cs, sclk,sdata] -> do
+      sync_receive 8 cs sclk sdata
+      return [])
+  memZero ins
+
+p_spi = forAll (listOf $ word 8) $ fst . e_spi
+
+e_spi bytes  = (bytes == bytes', (bytes', table)) where
+  ins    = [[1,0,0]] ++ [[0,c,d] | (c,d) <- spiBits 2 bits] ++ [[1,0,0]]
+  bits   = concat $ map (toBitList 8) bytes
+  bytes' = map head $ downSample' $ selectSignals ["s_wc","s_w"] probes outs
+  table@(probes, outs) = t_spi ins
+     
+x_spi = do
+  let bytes = [202,123]
+      (_, (bytes', table)) = e_spi bytes
+
+  putStrLn "-- x_spi"
+  print bytes'
+  printProbe ["s_wc","s_w","sclk","sdata","s_bc"] $ table
+
 
 
 -- mem
@@ -268,7 +294,8 @@ t_soc prog = $(compile allProbe [1] soc_test) [memRef prog]
 
 printProbe :: [String] -> ([String],[[Int]]) -> IO ()
 printProbe columns (names, signals) = do
-  putStr $ showSelectSignals columns names signals
+  let signals' = selectSignals columns names signals
+  putStr $ showSignals columns signals'
 
 -- For testing, it seems simplest to embed the CPU inside a SOC.  What
 -- is important is the integration, not so much the CPU itself, which
@@ -325,7 +352,7 @@ p_sample = forAll vars pred where
     seq    <- vectorOf n $ arbitrary
     return (spaces, seq)
   pred (spaces, seq) = seq == seq' where
-    seq' = downSample' $ upSample' spaces seq
+    seq' = downSample' $ reSample' spaces seq
 
 
 

@@ -91,15 +91,15 @@ padTable rows = prows where
       lpad = replicate n' ' '
   prows = transpose pcolumns
 
-showSelectSignals :: [String] -> [String] -> [[Int]] -> String
-showSelectSignals columns names signals = str where
-  name2col nm = fromJust' nm $ lookup nm $ zip names [0..]
-  indices = map name2col columns
-  select row = map (row !!) indices
+
+selectSignals columns names signals = signals' where
   signals' = map select signals
-  str = showSignals columns signals'
+  select row = map (row !!) indices
+  indices = map name2col columns
+  name2col nm = fromJust' nm $ lookup nm $ zip names [0..]
   -- Assume that probe names are correct.  This is only supposed to be
   -- used for testing, so raise an error when a probe is not found.
   fromJust' _ (Just x) = x
   fromJust' nm Nothing = error $
     "showSelectSignals: " ++ show nm ++ " not found in " ++ show names
+  

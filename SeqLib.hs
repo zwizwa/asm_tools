@@ -23,9 +23,9 @@ import Data.Bits hiding (bit)
 --   arguments, unless they behave as macros.
 --
 -- . The exception seems to be switch.  The reason?  It allows the use
---   of local variables, which makes code more readable.
-
-
+--   of local variables in the clauses to make the code more readable.
+--   Even if the signals could be reused, they likely won't be,
+--   because the behavior "belongs" to that clause.
 
 
 
@@ -337,23 +337,6 @@ t_nb_bits _ = SInt Nothing 0
 type Stream r = (,) r S
 
 
--- Building block for converting bit streams to word streams.
-clocked_shift :: Seq m r => ShiftDir -> SType -> (r S, r S) -> m (r S, r S)
-clocked_shift dir t_sr@(SInt (Just nb_bits) _) (bitClock, bitVal) = do
-  let t_sr' = t_nb_bits t_sr
-      n_max = constant $ SInt Nothing $ nb_bits - 1
-  (wordClock', wordVal) <-
-    closeRegEn bitClock [t_sr, t_sr'] $
-    \[sr,n] -> do
-      wc  <- n `equ` n_max
-      n1  <- inc n
-      n'  <- if' wc 0 n1
-      sr' <- shiftUpdate dir sr bitVal
-      return ([sr',n'], (wc, sr'))
-  wordClock <- bitClock `band` wordClock'
-  return (wordClock, wordVal)
-
-
 
 
 -- UART.
@@ -492,6 +475,60 @@ async_transmit bitClock (wordClock, txData) = do
       --          wordClock, bitClock, shiftReg', cnt'])
 
       return ([shiftReg', cnt'], (out, done))
+
+
+
+-- SPI
+
+-- It's assumed that signals are properly double-D synchronized.  Note
+-- that there might be a delay difference between clock and data, so 
+
+-- Sample on rising edge only.  I beleive this is the same as the iCE40.
+
+sync_clock sclk = do
+  e <- edge sclk
+  e `band` sclk
+
+-- Assume wordsize is power of two so we can roll around the counter.
+-- FIXME: It's easier to reuse the counter and transfer directly into
+-- the memory.
+sync_receive nb_bits cs sclk sdata = do
+    sc <- sync_clock sclk
+    bc <- band sc =<< inv cs
+    out@(wc, w) <- deser ShiftLeft (bits nb_bits) (bc, sdata)
+    "sclk"  .= sclk
+    "sdata" .= sdata
+    "s_bc"  .= bc
+    "s_wc"  .= wc
+    "s_w"   .= w
+    return out
+
+-- sync_receive_sample nb_bits@16 cs sclk = do
+--   closeReg [bits nb_bits] $ \[count] -> do
+--     sc     <- sync_clock sclk
+--     bc     <- band sc =<< inv cs
+--     count1 <- inc count
+--     count' <- if' bc count1 count
+--     wc     <- count' `equ` (-1)
+--     return ([count'], (bc, wc))
+  
+
+-- Seserializer for converting bit streams to word streams.
+deser :: Seq m r => ShiftDir -> SType -> (r S, r S) -> m (r S, r S)
+deser dir t_sr@(SInt (Just nb_bits) _) (bitClock, bitVal) = do
+  let t_sr' = t_nb_bits t_sr
+      n_max = constant $ SInt Nothing $ nb_bits - 1
+  (wordClock', wordVal) <-
+    closeRegEn bitClock [t_sr, t_sr'] $
+    \[sr,n] -> do
+      wc  <- n `equ` n_max
+      n1  <- inc n
+      n'  <- if' wc 0 n1
+      sr' <- shiftUpdate dir sr bitVal
+      return ([sr',n'], (wc, sr'))
+  wordClock <- bitClock `band` wordClock'
+  return (wordClock, wordVal)
+
 
 
 

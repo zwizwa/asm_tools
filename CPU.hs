@@ -368,22 +368,28 @@ stack_machine  nb_stack (BusIn rReady rData) (Ins run iw) = do
 -- Close over bus master (cpu) and bus slaves (peripherals) to create
 -- a system on chip.
 
+-- FIXME: make register addresses abstract.
+
+
 soc :: Seq m r => [r S] -> m [r S]
 soc [rx] = do
   
   closeReg [bit, bits 8] $ \[rStrobe,rData] -> do
-    (BusOut wStrobe addr wData) <- bus_master (BusIn rStrobe rData)
-    addr' <- slice' addr 2 0
-    
-    let tx_bc = 1 -- FIXME
-        wGate = band wStrobe
-        wOp n = addr' `equ` n >>= wGate
 
-    -- Bus writes
+    -- The effect of the CPU is a bus request.
+    (BusOut wStrobe addr wData) <-
+      bus_master (BusIn rStrobe rData)
+
+    -- Instantiate peripherals, routing i/o registers.
+    addr' <- slice' addr 2 0
+    let tx_bc = 1 -- FIXME
+        wOp n = addr' `equ` n >>= band wStrobe
+
+    -- Bus write operations
     tx_wc <- wOp 2
     (tx, tx_rdy) <- async_transmit tx_bc (tx_wc, wData)
 
-    -- Bus reads
+    -- Bus read operations
     busin <- switch addr'
       [(0,
         do
@@ -393,7 +399,8 @@ soc [rx] = do
           return [s,d]),
        (1,
         do
-          -- just block on ready
+          -- Blocking read is convenient.
+          -- Alternatively, implement this as a global flag.
           return [tx_rdy,0])]
       (return [0,0])
       

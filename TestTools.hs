@@ -41,11 +41,21 @@ mask nb_bits v = v .&. msk where
   msk = (1 `shiftL` nb_bits) - 1
 
 uartBits :: Int -> [Int] -> [Int] 
-uartBits oversample str = samps where
+uartBits factor str = samps where
   bits = concat $ map toBits str
   toBits w = [1,0] ++ (reverse $ toBitList 8 w) ++ [1,1]
-  samps = upSample (\_ a -> a) (cycle [oversample]) bits
+  samps = upSample factor bits
 
+-- Note that oversample is relative to the 2x oversampling already
+-- needed to represent the clock.
+
+spiBits :: Int -> [Int] -> [(Int,Int)]
+spiBits factorDiv2 bits = out where
+  sclk  = cycle [0,1]
+  sdata = upSample 2 bits
+  out   = upSample factorDiv2 $ zip sclk sdata
+
+  
 -- Bus sequences.
 
 -- To keep things simple, use [] as signal container for input and
@@ -54,8 +64,11 @@ uartBits oversample str = samps where
 -- In that setting, subsampled signals are simplest to represent by
 -- pushing/poping the enable bit to/from the bus list.
 
-upSample' :: [Int] -> [[Int]] -> [[Int]]
-upSample' spaces = upSample en spaces where
+upSample factor seq =  
+  reSample (\_ a -> a) (cycle [factor]) seq
+
+reSample' :: [Int] -> [[Int]] -> [[Int]]
+reSample' spaces = reSample en spaces where
   en True  a = (1:a)
   en False a = (0:a)
 
@@ -84,8 +97,8 @@ fracSample inc bits = f 0 bits where
 -- Insert extra spaces in between samples allowing custom tagging
 -- (e.g. insert an enable signal in some form).
 
-upSample :: (Bool -> a -> b) -> [Int] -> [a] -> [b]
-upSample en spaces as = concat $ zipWith dup spaces as where
+reSample :: (Bool -> a -> b) -> [Int] -> [a] -> [b]
+reSample en spaces as = concat $ zipWith dup spaces as where
   dup 0 _ = []
   dup n a = (en True a) : (map (en False) $ replicate (n-1) a)
 
