@@ -106,7 +106,7 @@ newtype M t = M { unM ::
    MonadState CompState)
 
 data Binding n = Binding n (Term (Op n)) |
-                 Probe n String
+                 Probe (Op n) String
 type Bindings n = [Binding n]
 type CompState = NodeNum
 
@@ -172,8 +172,7 @@ instance Seq.Seq M R where
   updateMemory (R (MemNode n)) (R wEn, R wAddr, R wData, R rAddr) = do
     driveNode n $ MemWr (wEn, wAddr, wData, rAddr)
 
-  probe name (R (Node _ n)) = tell $ [Probe n name]
-  probe _ _ = return ()  -- ignore constants for now  (FIXME: this is a bug)
+  probe name (R n) = tell $ [Probe n name]
 
 fromRight' (Right a) = a
 fromRight' (Left e) = error e
@@ -258,7 +257,7 @@ compileTerm m = (ports, bindings) where
 
 compileTerm' :: M [R Seq.S] -> ([Op NodeNum],
                                 [(NodeNum, Term (Op NodeNum))],
-                                [(NodeNum, String)])
+                                [(Op NodeNum, String)])
 compileTerm' m = (map unR ports, cleanPorts nodes, probes) where
   
   nodes  = catMaybes $ map (fst . node) bindings

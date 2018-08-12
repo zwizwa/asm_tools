@@ -33,13 +33,10 @@ test [en] = do
     c <- SeqLib.counter $ SeqLib.bits 6
     return ([(en,a,b,c)], [o])
 
--- Abbrevs
-type O = Op NodeNum
-
 
 -- Convert compiled Term to TH expression
-toExp :: ([O], [(Int, Term O)]) -> Exp
-toExp  (outputs, bindings) = exp where
+toExp :: ([Op NodeNum], [(Int, Term (Op NodeNum))], [(Op NodeNum, String)]) -> Exp
+toExp  (outputs, bindings, probes) = exp where
 
   -- Generate update function and initial values.
 
@@ -48,12 +45,13 @@ toExp  (outputs, bindings) = exp where
   -- polymorphism" errors, and 2) placing the arrays in a list and
   -- giving them all the same type, instead of a tuple.
   
-  exp = app3
+  exp = app4
     (seqVar "Run")
     update
-    memSpec $
-    TupE [memRdInit, stateInit]
-  
+    memSpec 
+    (TupE [memRdInit, stateInit])
+    (ListE $ map (LitE . StringL . snd) probes)
+
   update =
     LamE [TupP [memRef, memRdIn, stateIn, inputs]] $
     DoE $
@@ -68,10 +66,11 @@ toExp  (outputs, bindings) = exp where
     | (n, e) <- partition Exprs]
 
   -- I/O is more conveniently exposed as lists, which would be the
-  -- same interface as the source code.
+  -- same interface as the source code.  Probe outputs are just
+  -- appended.
 
   inputs   = ListP $ map (regP . fst)  $ partition Inputs
-  outputs' = ListE $ map opE outputs
+  outputs' = ListE $ (map opE outputs ++ map (opE . fst) probes)
 
   -- State can use tuples: it will be treated as opaque.
   
@@ -126,7 +125,7 @@ opVar opc = seqVar $ show opc
 seqVar str = VarE $ mkName $ "seq" ++ str
 
 
-termExp :: Term O -> Exp
+termExp :: Term (Op NodeNum) -> Exp
 
 -- Special cases
 termExp (Comb2 t CONC a b) = exp where
@@ -165,7 +164,7 @@ op2reg (Node _ n) = n
 op2reg (MemNode n) = n
 op2reg c@(Const _) = error $ "op2reg: expecting Node reference: " ++ show c
 
-opE :: O -> Exp          
+opE :: Op NodeNum -> Exp          
 opE (Node _ n) = regE n
 opE (Const (SInt _ v)) = int v
 
@@ -187,8 +186,8 @@ regStr' n = "r" ++ show n ++ "'"
     
 return' = AppE (VarE $ mkName "return")
 
-compile' :: [Int] -> ([R S] -> M [R S]) -> Exp
-compile' inSizes mf = exp where
+compile' :: [String] -> [Int] -> ([R S] -> M [R S]) -> Exp
+compile' selectProbes inSizes mf = exp where
   -- SeqPrim expects internal values to be truncated.
   -- Perform a slice operation to assure this.
   mf' = truncIns >>= mf
@@ -196,8 +195,12 @@ compile' inSizes mf = exp where
   truncIn sz = do
     i <- input $ SInt (Just sz) 0
     slice i (Just sz) 0
-  exp = toExp $ SeqTerm.compileTerm $ mf'
+
+  (ports, bindings, probes) = SeqTerm.compileTerm' $ mf'
+  probes' = filter ((`elem` selectProbes) . snd) probes
+  exp = toExp (ports, bindings, probes')
 
 
-compile inSizes mf = return $ compile' inSizes mf
+compile :: [String] -> [Int] -> ([R S] -> M [R S]) -> Q Exp
+compile probes inSizes mf = return $ compile' probes inSizes mf
 

@@ -75,14 +75,16 @@ seqRun ::
   (forall s. ([Mem s], rd, r, [Int]) -> ST s (rd, r, [Int]))
   -> [Int]
   -> (rd, r)
+  -> [String]
   -> [Int -> Int]
-  -> [[Int]] -> [[Int]]
-seqRun f memBits (rd0, r0) memInits i = 
-  runST $ do
-    a <- sequence $ zipWith seqMemInit memBits memInits
+  -> [[Int]] -> ([String], [[Int]])
+seqRun update memSpec (rd0, r0) probeNames memInits i = (probeNames, out) where
+  out = runST $ do
+    a <- sequence $ zipWith seqMemInit memSpec memInits
     let u _ _ [] = return []
         u rd r (i:is) = do
-          (rd',r',o) <- f (a, rd, r, i)
+          (rd',r',o) <- update (a, rd, r, i)
           os <- u rd' r' is
           return (o:os)
     u rd0 r0 i
+

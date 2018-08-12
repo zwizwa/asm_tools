@@ -273,7 +273,7 @@ x_seqTH = m1 >> m2 where
   m1 = do
     -- Print syntax
     putStrLn "-- x_seqTH (syntax)"
-    let c@(outputs, bindings) = SeqTerm.compileTerm $ do
+    let c@(outputs, bindings, probes) = SeqTerm.compileTerm' $ do
           en <- SeqTerm.input SeqLib.bit
           SeqTH.test [en]
     print outputs
@@ -282,17 +282,17 @@ x_seqTH = m1 >> m2 where
 
   m2 = do
     -- Some ad-hoc tests for SeqTH,SeqPrim combo.
-    let test f = print $ f mz $ map (:[]) [0..9]
+    let test f = print $ snd $ f mz $ map (:[]) [0..9]
         mz = cycle [const 0]
         -- FIXME: test is rank-2
-    test $(SeqTH.compile [1] $ \[i] -> do c <- counter $ bits 3 ; return [c])
-    test $(SeqTH.compile [4] $ \[i] -> do c <- integral i ; return [c])
-    test $(SeqTH.compile [4] $ \[i] -> do c <- conc i (constant $ bits 1) ; return [c])
-    test $(SeqTH.compile [4] $ \[i] -> do c <- slice i (Just 4) 1 ; return [c])
-    test $(SeqTH.compile [1] $ \[i] -> do c <- if' i (constant $ bits' 2 3) (constant $ bits' 2 2) ; return [c])
-    test $(SeqTH.compile [4] $ \[i] -> do c <- i `equ` 3; return [i,c])
-    test $(SeqTH.compile [4] $ \[i] -> do c <- i `band` 5; return [i,c])
-    test $(SeqTH.compile [4] $ \[i] -> do c <- i `sub` 2; return [i,c])
+    test $(SeqTH.compile [] [1] $ \[i] -> do c <- counter $ bits 3 ; return [c])
+    test $(SeqTH.compile [] [4] $ \[i] -> do c <- integral i ; return [c])
+    test $(SeqTH.compile [] [4] $ \[i] -> do c <- conc i (constant $ bits 1) ; return [c])
+    test $(SeqTH.compile [] [4] $ \[i] -> do c <- slice i (Just 4) 1 ; return [c])
+    test $(SeqTH.compile [] [1] $ \[i] -> do c <- if' i (constant $ bits' 2 3) (constant $ bits' 2 2) ; return [c])
+    test $(SeqTH.compile [] [4] $ \[i] -> do c <- i `equ` 3; return [i,c])
+    test $(SeqTH.compile [] [4] $ \[i] -> do c <- i `band` 5; return [i,c])
+    test $(SeqTH.compile [] [4] $ \[i] -> do c <- i `sub` 2; return [i,c])
 
 x_vcd = do
   putStrLn "--- x_vcd"
@@ -474,11 +474,7 @@ type A = ()
 x_st = do
   print "-- x_st"
   print $ runST $ f_st
-  -- print $ take 10 l_st
 
-l_st = seq where 
-  seq = ([0] : seq')
-  seq' = seqRun (\([], (), (), [i]) -> return ((), (), [i])) [] ((), ()) [] seq
   
 
 f_st :: ST s Int
