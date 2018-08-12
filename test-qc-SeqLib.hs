@@ -32,7 +32,7 @@ import SeqPrim
 import TestSeqLib
 import TestTools
 
-import qualified SeqTH 
+import SeqTH(compile,compile',noProbe)
 
 import Data.Char
 import Data.Bits
@@ -103,7 +103,7 @@ t_async_receive_sample_emu nb_bits = trace [1] $ \[i] -> do
   d_async_receive_sample nb_bits i
 
 t_async_receive_sample_th nb_bits@8 ins =
-  snd $ $(SeqTH.compile [] [1] $ \[i] -> d_async_receive_sample 8 i) memZero ins
+  snd $ $(compile noProbe [1] $ \[i] -> d_async_receive_sample 8 i) memZero ins
 
 x_async_receive_sample_emu = do
   putStrLn "-- x_async_receive_sample_emu"
@@ -124,11 +124,11 @@ t_async_receive_emu nb_bits = trace [1] $ \[i] ->
   d_async_receive nb_bits i
 
 t_async_receive_th nb_bits@8 ins =
-  snd $ $(SeqTH.compile [] [1] $ \[i] -> d_async_receive 8 i) memZero ins
+  snd $ $(compile noProbe [1] $ \[i] -> d_async_receive 8 i) memZero ins
 
 x_th_async_receive = do
   putStrLn "-- x_th_async_receive"
-  putStrLn $ pprint $ SeqTH.compile' [] [1] $ \[i] -> d_async_receive 8 i
+  putStrLn $ pprint $ compile' noProbe [1] $ \[i] -> d_async_receive 8 i
 
 x_async_receive_emu = do
   putStrLn "-- x_async_receive_emu"
@@ -163,7 +163,7 @@ p_async_receive = forAll (listOf $ word 8) pred where
 
 -- async_transmit
 t_async_transmit ins =
-  snd $ $(SeqTH.compile [] [1,1,8] d_async_transmit) memZero ins
+  snd $ $(compile noProbe [1,1,8] d_async_transmit) memZero ins
 
 x_async_transmit = do
   let tx_ins = take 100 $ [[0,0,0],[0,0,0],[1,1,0x5A]] ++
@@ -209,7 +209,7 @@ x_mem = do
 -- fifo  (d_fifo is in TestSeqLib.hs to allow staging)
 
 -- t_fifo_emu = trace [1,1,8] d_fifo
-t_fifo ins = snd $ $(SeqTH.compile [] [1,1,8] d_fifo) memZero ins
+t_fifo ins = snd $ $(compile noProbe [1,1,8] d_fifo) memZero ins
 
 e_fifo lst = (lst == lst', (lst',outs)) where
   lst'   = map head $ downSample' outs
@@ -232,7 +232,7 @@ p_fifo = forAll (listOfMaxSize 16 $ word 8) (fst . e_fifo)
 
 -- Stack
 
-t_stack ins = snd $ $(SeqTH.compile [] [1,1,8] d_stack) memZero ins
+t_stack ins = snd $ $(compile noProbe [1,1,8] d_stack) memZero ins
 
 x_stack = do
   let pushes = [[1,0,n] | n <- [1..10]]
@@ -250,7 +250,7 @@ memRef mem n = v where
     True -> 0
     False -> mem !! n
 
-t_cpu_ins prog ins = snd $ $(SeqTH.compile [] [1] d_cpu_test) [memRef prog] ins
+t_cpu_ins prog ins = snd $ $(compile noProbe [1] d_cpu_test) [memRef prog] ins
 
 x_cpu_ins = do
   let -- Most basic operation is a jump.

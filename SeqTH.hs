@@ -12,7 +12,7 @@
 
 {-# LANGUAGE TemplateHaskell #-}
 
-module SeqTH(toExp, compile', compile, test) where
+module SeqTH(toExp, compile', compile, test, noProbe) where
 
 import Seq
 import SeqLib hiding (bits)
@@ -186,8 +186,8 @@ regStr' n = "r" ++ show n ++ "'"
     
 return' = AppE (VarE $ mkName "return")
 
-compile' :: [String] -> [Int] -> ([R S] -> M [R S]) -> Exp
-compile' selectProbes inSizes mf = exp where
+compile' :: (String -> Bool) -> [Int] -> ([R S] -> M [R S]) -> Exp
+compile' selectProbe inSizes mf = exp where
   -- SeqPrim expects internal values to be truncated.
   -- Perform a slice operation to assure this.
   mf' = truncIns >>= mf
@@ -197,10 +197,12 @@ compile' selectProbes inSizes mf = exp where
     slice i (Just sz) 0
 
   (ports, bindings, probes) = SeqTerm.compileTerm' $ mf'
-  probes' = filter ((`elem` selectProbes) . snd) probes
+  probes' = filter (selectProbe . snd) probes
   exp = toExp (ports, bindings, probes')
 
 
-compile :: [String] -> [Int] -> ([R S] -> M [R S]) -> Q Exp
+compile :: (String -> Bool) -> [Int] -> ([R S] -> M [R S]) -> Q Exp
 compile probes inSizes mf = return $ compile' probes inSizes mf
 
+noProbe :: String -> Bool
+noProbe = const False
