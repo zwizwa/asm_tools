@@ -265,8 +265,8 @@ memRef mem n = v where
 t_cpu_ins prog = $(compile (const True) [1] cpu_test) [memRef prog]
 
 printProbe (names, outs) = do
-  print  names
-  printL outs
+  putStr $ showSignals names outs
+
 
 x_cpu_ins = do
   let -- Most basic operation is a jump.

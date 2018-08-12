@@ -10,6 +10,8 @@ import SeqLib
 import CPU
 import Control.Monad
 import Data.Bits
+import Data.List
+import Numeric
 
 
 d_fifo i@[rc,wc,wd] = do
@@ -68,3 +70,23 @@ list2 (a,b) = do
 -- Define instructions next to the decoder.
 
 
+-- Format a signal table.
+
+showSignals :: [String] -> [[Int]] -> String
+showSignals header signals = str where
+  table = padTable (header : (map (map show) signals))
+  (header':signals') = map (concat . (intersperse " ")) table
+  sep = replicate (length header') '-'
+  str = concat $ map ((++ "\n")) (header':sep:signals')
+
+padTable :: [[String]] -> [[String]]
+padTable rows = prows where
+  columns  = transpose rows
+  widths   = map (maximum . (map length)) columns
+  pcolumns = zipWith pad widths columns
+  pad n column = map padCell column where
+    padCell str = lpad ++ str where
+      n' = n - length str
+      lpad = replicate n' ' '
+  prows = transpose pcolumns
+  
