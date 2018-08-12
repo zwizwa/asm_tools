@@ -518,5 +518,6 @@ x_SeqIfElse = do
   putStrLn "-- x_SeqIfElse"
   SeqIfElse.x $ do
     i <- SeqTerm.input (SInt (Just 1) 0)
-    SeqLib.d_async_receive 8 i
+    (wc,w) <- SeqLib.async_receive 8 i
+    return [wc,w]
   

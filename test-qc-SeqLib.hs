@@ -32,7 +32,7 @@ import SeqPrim
 import TestSeqLib
 import TestTools
 
-import SeqTH(compile,compile',noProbe)
+import SeqTH(compile,compile',noProbe,allProbe)
 
 import Data.Char
 import Data.Bits
@@ -51,10 +51,10 @@ main = do
   -- print $ downSample' $ t_clocked_shift 4 $ [[1,i] | i <- [1,1,1,1,0,0,0,0,0,0,0,1]]
 
   -- x_async_receive_sample_emu
-  -- x_async_receive_sample_th
+  -- x_async_receive_sample
+  -- x_async_receive_emu
   x_th_async_receive
-  x_async_receive_emu
-  x_async_receive_th
+  x_async_receive
   x_mem
   x_fifo
   
@@ -99,19 +99,22 @@ t_clocked_shift nb_bits = trace [1,1] $ \[bc,bv] -> do
 
 -- async_receive_sample
 
-t_async_receive_sample_emu nb_bits = trace [1] $ \[i] -> do
-  d_async_receive_sample nb_bits i
+-- t_async_receive_sample_emu nb_bits = trace [1] $ \[i] -> do
+--   async_receive_sample nb_bits i >>= list2
 
-t_async_receive_sample_th nb_bits@8 ins =
-  snd $ $(compile noProbe [1] $ \[i] -> d_async_receive_sample 8 i) memZero ins
+t_async_receive_sample nb_bits@8 ins =
+  snd $
+  $(compile noProbe [1] $
+    \[i] -> async_receive_sample 8 i >>= list2)
+  memZero ins
 
-x_async_receive_sample_emu = do
-  putStrLn "-- x_async_receive_sample_emu"
-  x_async_receive_sample_for t_async_receive_sample_emu
+-- x_async_receive_sample_emu = do
+--   putStrLn "-- x_async_receive_sample_emu"
+--   x_async_receive_sample_for t_async_receive_sample_emu
 
-x_async_receive_sample_th = do
-  putStrLn "-- x_async_receive_sample_th"
-  x_async_receive_sample_for t_async_receive_sample_th
+x_async_receive_sample = do
+  putStrLn "-- x_async_receive_sample"
+  x_async_receive_sample_for t_async_receive_sample
   
 x_async_receive_sample_for t = do
   printC $ chunksOf 8 $ t 8
@@ -120,41 +123,47 @@ x_async_receive_sample_for t = do
 
 -- async_receive
 
-t_async_receive_emu nb_bits = trace [1] $ \[i] ->
-  d_async_receive nb_bits i
+-- t_async_receive_emu nb_bits = trace [1] $ \[i] ->
+--   async_receive nb_bits i >>= list2
 
-t_async_receive_th nb_bits@8 ins =
-  snd $ $(compile noProbe [1] $ \[i] -> d_async_receive 8 i) memZero ins
+t_async_receive nb_bits@8 ins =
+  snd $
+  $(compile allProbe [1] $
+    \[i] -> async_receive 8 i >>= list2)
+  memZero ins
 
 x_th_async_receive = do
   putStrLn "-- x_th_async_receive"
-  putStrLn $ pprint $ compile' noProbe [1] $ \[i] -> d_async_receive 8 i
+  putStrLn $ pprint $ compile' noProbe [1] $
+    \[i] -> async_receive 8 i >>= list2
 
-x_async_receive_emu = do
-  putStrLn "-- x_async_receive_emu"
-  x_async_receive_for t_async_receive_emu
+-- x_async_receive_emu = do
+--   putStrLn "-- x_async_receive_emu"
+--   x_async_receive_for t_async_receive_emu
 
-x_async_receive_th = do
-  putStrLn "-- x_async_receive_th"
-  x_async_receive_for t_async_receive_th
+x_async_receive = do
+  putStrLn "-- x_async_receive"
+  x_async_receive_for t_async_receive
 
 x_async_receive_for t = do
   let
     -- ins = map ord "ABCDEF"
     ins = [0,7..255]
     out = t 8 $ map (:[]) $ uartBits 8 ins
-    sample [v,i,bc,wc@1,state,count] = Just v
+    -- sample [v,i,bc,wc@1,state,count] = Just v
+    sample (wc@1:v:_) = Just v
     sample _ = Nothing
     out' = downSample sample out
-  -- printC $ chunksOf 8 out
+  printC $ chunksOf 8 out
   print $ out'
 
 p_async_receive = forAll (listOf $ word 8) pred where
   pred words = words == words' where
     ins    = map (:[]) $ uartBits oversample words
-    outs   = t_async_receive_th nb_bits $ ins  -- th is a lot faster
+    outs   = t_async_receive nb_bits $ ins  -- th is a lot faster
     words' = downSample sample outs
-    sample [v,i,bc,wc@1,state,count] = Just v
+    -- sample [v,i,bc,wc@1,state,count] = Just v
+    sample (wc@1:v:_) = Just v
     sample _ = Nothing
   
   oversample = 8
@@ -163,7 +172,10 @@ p_async_receive = forAll (listOf $ word 8) pred where
 
 -- async_transmit
 t_async_transmit ins =
-  snd $ $(compile noProbe [1,1,8] d_async_transmit) memZero ins
+  snd $
+  $(compile noProbe [1,1,8] $
+     \[bc,wc,tx] -> async_transmit bc (wc, tx) >>= list2)
+  memZero ins
 
 x_async_transmit = do
   let tx_ins = take 100 $ [[0,0,0],[0,0,0],[1,1,0x5A]] ++
@@ -173,7 +185,7 @@ x_async_transmit = do
       tx_out = t_async_transmit tx_ins
       -- use the receiver to test the transmitter
       dline  = map head tx_out  -- the line carrying the data
-      rx_out = t_async_receive_th 8 $ map (:[]) dline
+      rx_out = t_async_receive 8 $ map (:[]) dline
 
   putStrLn "-- x_async_transmit"
   putStrLn "tx:"
@@ -259,7 +271,7 @@ printProbe (names, outs) = do
 x_cpu_ins = do
   let -- Most basic operation is a jump.
       prog1 = [ jmp 4, nop, nop, nop, jmp 0 ]
-      prog2 = [ push 1, push 2, push 3, jmp 0]
+      prog2 = [ push 1, push 2, push 3, jmp 0 ]
       -- My practical need is not for a CPU to do computation, but to
       -- provide control of peripherals over time.  So let's start
       -- with that

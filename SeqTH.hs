@@ -12,7 +12,7 @@
 
 {-# LANGUAGE TemplateHaskell #-}
 
-module SeqTH(toExp, compile', compile, test, noProbe) where
+module SeqTH(toExp, compile', compile, test, noProbe, allProbe) where
 
 import Seq
 import SeqLib hiding (bits)
@@ -206,3 +206,6 @@ compile probes inSizes mf = return $ compile' probes inSizes mf
 
 noProbe :: String -> Bool
 noProbe = const False
+
+allProbe :: String -> Bool
+allProbe = const True

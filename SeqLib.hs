@@ -381,10 +381,10 @@ clocked_shift dir t_sr@(SInt (Just nb_bits) _) (bitClock, bitVal) = do
 
 
 -- Debug version.  Outputs internal state.
-d_async_receive_sample ::
+async_receive_sample ::
   forall m r. Seq m r =>
-  Int -> r S -> m [r S]
-d_async_receive_sample nb_data_bits@8 rx = sm where
+  Int -> r S -> m (r S, r S)
+async_receive_sample nb_data_bits@8 rx = sm where
 
   -- FIXME: parameterize
   -- data_count_bits = nb_bits nb_data_bits
@@ -400,10 +400,10 @@ d_async_receive_sample nb_data_bits@8 rx = sm where
   t_state = SInt (Just 2) 0  -- state
   t_count = SInt (Just 6) 0  -- sub-bit counter
 
-  sm :: m [r S]
+  sm :: m (r S, r S)
   sm = closeReg [t_state,t_count] update
 
-  update :: [r S] -> m ([r S], [r S])
+  update :: [r S] -> m ([r S], (r S, r S))
   update [state, count] = do
     -- Subcircuits hoisted out of conditional.
     count1   <- dec count
@@ -431,8 +431,14 @@ d_async_receive_sample nb_data_bits@8 rx = sm where
           return [0, wordClock, state', count'])]
       -- FIXME: not reached.  How to express mutex states?
       (return [0, 0, 0, 0])
+
+    -- test probes
+    "rx_in" .= rx
+    "rx_bc" .= bc
+    "rx_wc" .= wc
       
-    return (regs', rx:bc:wc:regs')
+    return (regs', (bc,wc))
+--    return (regs', rx:bc:wc:regs')
 
 -- async_receive_sample nb_bits rx = do
 --   (_:bc:wc:_) <- d_async_receive_sample nb_bits rx
@@ -440,20 +446,17 @@ d_async_receive_sample nb_data_bits@8 rx = sm where
 
 
 
-d_async_receive nb_bits i = do
-  regs@(_:bc:wc:_) <- d_async_receive_sample nb_bits i
-  sr <- withClockEnable bc $ shiftReg ShiftRight (bits nb_bits) i
-  return (sr:regs)
-
 async_receive nb_bits i = do
-  (sr:_:_:wc:_) <- d_async_receive nb_bits i
+  (bc,wc) <- async_receive_sample nb_bits i
+  sr <- withClockEnable bc $ shiftReg ShiftRight (bits nb_bits) i
+  -- return (sr:regs)
   return (wc,sr)
 
 
 -- FIXME: To test this, use a program sequencer, because it requires
 -- response to the done bit.
 
-d_async_transmit [bitClock, wordClock, txData] = do
+async_transmit bitClock (wordClock, txData) = do
   (SInt (Just n) _) <- stype txData
   closeReg [SInt (Just $ n+1) (-1),
             SInt (Just $ nb_bits $ n+2) 0] $
@@ -477,14 +480,12 @@ d_async_transmit [bitClock, wordClock, txData] = do
          (bitClock,  [shifted,  cntDec])]
         [shiftReg, cnt]
 
-      return ([shiftReg', cnt'],
-              [out, done,
-               wordClock, bitClock, shiftReg', cnt'])
+      -- return ([shiftReg', cnt'],
+      --         [out, done,
+      --          wordClock, bitClock, shiftReg', cnt'])
 
-      
-async_transmit bc (wc,treg) = do
-  (out:done:_) <- d_async_transmit [bc,wc,treg]
-  return (out, done)
+      return ([shiftReg', cnt'], (out, done))
+
 
 
 -- FIFO

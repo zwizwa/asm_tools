@@ -27,6 +27,16 @@ d_stack i@[push,pop,wd] = do
   return (rd:i)
 
 
+list2 (a,b) = do
+  return [a,b]
+
+-- class ToList a b where
+--   toList :: a -> [b]
+
+-- instance Seq m r => ToList (r t, r t) [r t] where
+--   toList (a,b) = return [a,b]
+  
+  
 
 -- CPU tests.
 
