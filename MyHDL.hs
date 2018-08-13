@@ -31,7 +31,8 @@ import Data.List
 import qualified Data.Set as Set
 import qualified Data.Map.Strict as Map
 import Data.Functor.Compose
-
+import Numeric (showHex, showIntAtBase)
+import Data.Char (intToDigit)
 
 newtype PrintMyHDL t = PrintExpr {
   runPrintMyHDL :: StateT BlockState (WriterT String (Reader IndentLevel)) t
@@ -75,7 +76,7 @@ mGen name ports bindings = do
 
   tell $ "from myhdl import *\n"
   tell $ "def " ++ name ++ "("
-  tell $ commas $ ["CLK","RST"] ++ map sig portNodes
+  tell $ commas $ ["env","CLK","RST"] ++ map sig portNodes
   tell "):\n"
 
   indent (+ 1) $ do
@@ -104,7 +105,7 @@ defSignal (n, (Free (Compose (MemWr _)))) = do
         | sig <- ["rd","we","wa","wd","ra"]]
       mem_signals' = "[" ++ commas mem_signals ++ "]"
   tab ; tell $ "# " ++ mem_prefix ++ " is a memory\n"
-  tab ; tell $ mem_signals' ++ " = " ++ mem_prefix ++ "\n"
+  tab ; tell $ mem_signals' ++ " = env.memory(\"" ++ mem_prefix ++ "\")\n"
 
 -- Other signals are defined.
 defSignal (n, e) = do
@@ -204,7 +205,14 @@ showSize (Just s) = show s
 showSize Nothing = ""
 
 mOp :: Node n => Op (Free Term' n) -> PrintMyHDL ()
-mOp (Const (SInt _ v))  = tell $ show v
+
+mOp (Const (SInt Nothing v))  = tell $ show v
+mOp (Const (SInt (Just sz) v)) = tell $ show $ str where
+  str' = showIntAtBase 2 intToDigit sz "" 
+  str  = replicate (sz - length str') '0' ++ str'
+
+  
+
 mOp (Node _ n) = mExp n
 mOp (MemNode n) = mExp n
 

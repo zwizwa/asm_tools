@@ -17,7 +17,7 @@ def load_module(hdl_fun_name, filename):
     spec.loader.exec_module(modul)
     # Python function to instantiate HDL module
     hdl_fun = getattr(modul, hdl_fun_name)
-    ports = inspect.getargspec(hdl_fun).args
+    ports = inspect.getargspec(hdl_fun).args[1:] # skip env
     #print(ports)
     ins = False
     outs = False
@@ -29,7 +29,7 @@ def load_module(hdl_fun_name, filename):
     return hdl_fun, ports, ins, outs
 
 
-def inst_testbench(hdl_fun, ports, tb_input, tb_output):
+def inst_testbench(hdl_fun, env, ports, tb_input, tb_output):
 
     nb_in = len(tb_input[0])
     #print("nb_in", nb_in)
@@ -46,7 +46,7 @@ def inst_testbench(hdl_fun, ports, tb_input, tb_output):
     io_signals = in_signals + out_signals
     signals = [CLK, RST] + io_signals
 
-    tb_inst = traceSignals(hdl_fun, *signals)
+    tb_inst = traceSignals(hdl_fun, env, *signals)
     
     # Generate main clock
     def clock():
@@ -78,14 +78,30 @@ def inst_testbench(hdl_fun, ports, tb_input, tb_output):
 
     return [tb_inst, clock(), io]
 
+class environment:
+    def __init__(self):
+        pass
+    def memory(self, *args):
+        print("instantiating memory",args)
+        addr_sz = 8
+        word_sz = 16
+        we = Signal(modbv(0)[1:0])
+        wa = Signal(modbv(0)[addr_sz:0])
+        ra = Signal(modbv(0)[addr_sz:0])
+        wd = Signal(modbv(0)[word_sz:0])
+        rd = Signal(modbv(0)[word_sz:0])
+        return [rd, we, wa, wd, ra]
+
 
 def load_and_run(hdl_fun_name, filename):
 
     hdl_fun, ports, tb_input, tb_output = load_module(hdl_fun_name, filename)
 
+    env = environment()
+
     # Run it if it is a test bench
     if tb_input and tb_output:
-        insts = inst_testbench(hdl_fun, ports, tb_input, tb_output)
+        insts = inst_testbench(hdl_fun, env, ports, tb_input, tb_output)
         Simulation(insts).run()
     else:
         print("not a testbench")
@@ -101,8 +117,8 @@ def load_and_run(hdl_fun_name, filename):
     signals = [CLK, RST] + out_signals
 
     # Generate code
-    toVerilog(hdl_fun, *signals)
-    toVHDL(hdl_fun, *signals)
+    toVerilog(hdl_fun, env, *signals)
+    toVHDL(hdl_fun, env, *signals)
 
 
 if __name__ == '__main__':
