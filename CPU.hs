@@ -122,9 +122,9 @@ data IMemWrite r = IMemWrite {
 -- (e.g. if IMem is a ROM), then this can be used to specify size.
 noIMemWrite :: Seq m r => Int -> Int -> IMemWrite r
 noIMemWrite ibits abits = IMemWrite e w d where
-  e = constant $ bit
-  w = constant $ bits abits
-  d = constant $ bits ibits
+  e = cbit 0
+  w = cbits abits 0
+  d = cbits ibits 0
 
 
 closeIMem :: Seq m r =>

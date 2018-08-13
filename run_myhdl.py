@@ -9,6 +9,7 @@ import sys
 import inspect
 import importlib.util
 from myhdl import *
+import ram
 
 def load_module(hdl_fun_name, filename):
     # Load the test bench module
@@ -36,6 +37,8 @@ def inst_testbench(hdl_fun, env, ports, tb_input, tb_output):
 
     CLK = Signal(bool(False))
     RST = ResetSignal(1,0,True)
+    env.CLK = CLK
+
     #RST = ResetSignal(0,1,True)
 
     # Inputs are assumed to be 1-bit signals.  We model them as
@@ -90,7 +93,14 @@ class environment:
         ra = Signal(modbv(0)[addr_sz:0])
         wd = Signal(modbv(0)[word_sz:0])
         rd = Signal(modbv(0)[word_sz:0])
+
+        r = ram(self.CLK, wa, wd, we,
+                self.CLK, ra, rd)
+
         return [rd, we, wa, wd, ra]
+    def sig(self, nb_bits, reset_val):
+        # For now only use modbv
+        return Signal(modbv(reset_val)[nb_bits:])
 
 
 def load_and_run(hdl_fun_name, filename):
@@ -110,6 +120,9 @@ def load_and_run(hdl_fun_name, filename):
     out_ports = ports[2:]
     # Which are special cases.
     CLK = Signal(bool(False))
+    env.CLK = CLK
+
+    # FIXME: workaround for HX8K board
     #RST = ResetSignal(1,0,True)
     RST = ResetSignal(0,1,True)
     # For FPGA output, we assume 1-bit signals.

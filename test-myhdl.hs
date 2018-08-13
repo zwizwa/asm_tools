@@ -4,6 +4,7 @@
 {-# LANGUAGE Arrows #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 
 import Seq
@@ -17,7 +18,6 @@ import qualified SeqTerm
 import qualified SeqExpr
 import qualified CSV
 
-
   
 main = do
 
@@ -30,7 +30,7 @@ main = do
   x_uart_fpga
   x_soc_fpga
 
-
+  x_run_myhdl
     
 -- sequenced if' : does it need to be bundled?
 x_ifs = do
@@ -164,4 +164,7 @@ print_hdl src = do
   return ()
   
 
-
+-- http://hackage.haskell.org/package/shelly
+x_run_myhdl = do
+  putStrLn "-- x_run_myhdl"
+  MyHDL.run "x_soc_fpga"

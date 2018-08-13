@@ -1,6 +1,13 @@
 -- Simple print to MyHDL
 -- See also the S-expression printer in SeqExpr.hs
 
+-- MyHDL will reify the Python syntax to generating Verilog/VHDL.
+
+-- The task here is to generate that syntax, and defer as much as
+-- possible to function calls.  E.g. signal instantiation.
+
+
+
 -- {-# LANGUAGE MultiParamTypeClasses #-}
 -- {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -14,7 +21,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
-module MyHDL(myhdl,MyHDL,testbench,fpga,fpga',PCF(..),pcf) where
+module MyHDL(myhdl,MyHDL,testbench,fpga,fpga',PCF(..),pcf,run) where
 import Seq
 import SeqLib
 import CSV
@@ -33,6 +40,9 @@ import qualified Data.Map.Strict as Map
 import Data.Functor.Compose
 import Numeric (showHex, showIntAtBase)
 import Data.Char (intToDigit)
+
+import System.Process
+import System.IO
 
 newtype PrintMyHDL t = PrintExpr {
   runPrintMyHDL :: StateT BlockState (WriterT String (Reader IndentLevel)) t
@@ -112,7 +122,7 @@ defSignal (n, e) = do
   tab ; tell $ sig n ++ " = " ++ (sigSpec $ eType e) ++ "\n"
 
 sigSpec (SInt Nothing _) = error "Signals need to be fully specified"
-sigSpec (SInt (Just n) v0) = "Signal(modbv(" ++ show v0 ++ ")[" ++ show n ++ ":])"
+sigSpec (SInt (Just n) v0) = "env.sig(" ++ commas [show n, show v0] ++ ")"
 eType :: Expr n -> SType
 eType (Free (Compose t)) = SeqTerm.termType t
 eType (Pure n) = error "eType doesn't work on node references"
@@ -208,7 +218,7 @@ mOp :: Node n => Op (Free Term' n) -> PrintMyHDL ()
 
 mOp (Const (SInt Nothing v))  = tell $ show v
 mOp (Const (SInt (Just sz) v)) = tell $ show $ str where
-  str' = showIntAtBase 2 intToDigit sz "" 
+  str' = showIntAtBase 2 intToDigit v "" 
   str  = replicate (sz - length str') '0' ++ str'
 
   
@@ -275,6 +285,8 @@ toPy name inTyp mod = module_py where
   -- Replace nodes with named nodes.
   rename :: NodeNum -> String
   rename n = Map.findWithDefault ("s" ++ show n) n namedPorts
+
+  namedPorts :: Map.Map NodeNum String
   namedPorts = Map.fromList $
     [(n, "p" ++ show i) | (Node _ n, i) <- zip ports [0..]]
   
@@ -363,3 +375,29 @@ pcf names pin = pcf' where
 data PCF = PCF [String] (String->String)
 instance Show PCF where
   show (PCF names pin) = pcf names pin
+
+
+
+-- Running MyHDL
+run :: String -> IO ()
+run funName = do
+  let cmd = "PYTHONPATH=myhdl python3 run_myhdl.py " ++ funName ++ " " ++ funName ++ ".py"
+  putStrLn "cmd:"
+  putStrLn cmd
+  (_, Just stdout, Just stderr, _) <-
+    createProcess (shell cmd) { std_out = CreatePipe, std_err = CreatePipe }
+  out <- hGetContents' stdout
+  err <- hGetContents' stderr
+
+  putStrLn "stdout:"
+  putStr out
+  putStrLn "stderr:"
+  putStr err
+  
+  -- hClose stdout   -- FIXME: how to use lazy IO
+  return ()
+
+-- Workaround for lazy IO
+hGetContents' h = do
+  str <- hGetContents h
+  seq str (return str)
