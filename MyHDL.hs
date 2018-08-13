@@ -19,9 +19,10 @@
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
-module MyHDL(myhdl,MyHDL,testbench,fpga,fpga',PCF(..),pcf,run) where
+module MyHDL(myhdl,MyHDL,testbench,fpga,fpga',PCF(..),pcf,run,test_py) where
 import Seq
 import SeqLib
 import CSV
@@ -43,6 +44,16 @@ import Data.Char (intToDigit)
 
 import System.Process
 import System.IO
+
+import qualified CPython as Py
+import qualified CPython.Protocols.Object as Py
+import qualified CPython.Reflection as Py
+import qualified CPython.Types as Py
+import qualified CPython.Types.Module as Py
+import qualified CPython.Types.Exception as Py
+import qualified CPython.Types.Module as Py
+import System.IO (stdout)
+import qualified Control.Exception as E
 
 newtype PrintMyHDL t = PrintExpr {
   runPrintMyHDL :: StateT BlockState (WriterT String (Reader IndentLevel)) t
@@ -410,7 +421,8 @@ instance Show PCF where
 -- Running MyHDL
 run :: String -> IO ()
 run funName = do
-  let cmd = "PYTHONPATH=myhdl python3 run_myhdl.py " ++ funName ++ " " ++ funName ++ ".py"
+  let cmd = "PYTHONPATH=myhdl python3 run_myhdl.py " ++
+        funName ++ " " ++ funName ++ ".py"
   putStrLn "cmd:"
   putStrLn cmd
   (_, Just stdout, Just stderr, _) <-
@@ -423,10 +435,58 @@ run funName = do
   putStrLn "stderr:"
   putStr err
   
-  -- hClose stdout   -- FIXME: how to use lazy IO
+  hClose stdout   -- FIXME: how to use lazy IO
   return ()
 
 -- Workaround for lazy IO
 hGetContents' h = do
   str <- hGetContents h
   seq str (return str)
+
+
+-- What this needs to be:
+
+-- For now support only list in -> list out "dumb" test benches.
+-- When it gets too messy, use a binary interface:
+-- https://john-millikin.com/software/haskell-cpython
+
+-- Binary interface isn't too bad.
+
+-- s = "class foo:\n\tdef __init__(self):\n\t\tpass"
+-- import sys,imp
+-- m = imp.new_module('m')
+-- exec(s, m.__dict__)
+
+-- FIXME: write the trampoline in python.  this is a little awkward.
+
+test_py = do
+  Py.initialize
+  let onException :: Py.Exception -> IO ()
+      onException exc = Py.print (Py.exceptionValue exc) stdout
+      s str = fmap Py.toObject $ Py.toUnicode str
+      call fun margs = do
+        args <- sequence margs
+        Py.callArgs fun args
+
+      attr o a = Py.getAttribute o =<< Py.toUnicode a
+  
+  E.handle onException $ do
+    sys <- Py.importModule "sys"
+    sys_path <- attr sys "path"
+    sys_path_append <- attr sys_path "append"
+    -- sys_path <- Py.getAttribute sys =<< Py.toUnicode "path"
+    -- sys_path_append <- Py.getAttribute sys_path =<< Py.toUnicode "path"
+    -- here <- fmap Py.toObject $ Py.toUnicode "."
+    -- Py.callArgs sys_path_append [here]
+    call sys_path_append [s "."]
+
+    lib <- Py.importModule "lib_myhdl"
+      
+    -- call (sys, ["path","append"]) [s "."]
+    -- lib <- Py.importModule "lib_myhdl"
+    -- rv <- call (lib, ["run"])
+    --   [s "hdl_mod",
+    --    s "class foo:\n\tdef __init__(self):\n\t\tpass"]
+          
+    -- Py.print rv stdout
+    return ()

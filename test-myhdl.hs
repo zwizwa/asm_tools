@@ -168,3 +168,4 @@ print_hdl src = do
 x_run_myhdl = do
   putStrLn "-- x_run_myhdl"
   MyHDL.run "x_soc_fpga"
+  MyHDL.test_py
