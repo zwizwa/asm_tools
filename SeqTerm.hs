@@ -83,7 +83,9 @@ termType (Delay t _) = t
 termType (Connect t _) = t
 termType (Input t) = t
 termType (MemRd t _) = t
-termType (MemWr _) = error $ "termType: MemWr"
+termType (MemWr _) =
+  -- (SInt (Just 123) 123)
+  error $ "termType: MemWr"
 
 opType (Const t) = t
 opType (Node t _) = t

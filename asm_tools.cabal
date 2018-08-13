@@ -48,7 +48,7 @@ Test-Suite test-sat
     main-is:    test-sat.hs
     build-depends: base
 
-Test-Suite test-qc-SeqLib.hs
+Test-Suite test-qc-SeqLib
     build-depends: base, containers, mtl, free, keys, set-extra,
                    template-haskell, parsec, QuickCheck, split, array
     type:       exitcode-stdio-1.0

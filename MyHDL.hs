@@ -75,7 +75,7 @@ mGen name ports bindings = do
 
   tell $ "from myhdl import *\n"
   tell $ "def " ++ name ++ "("
-  tell $ intercalate ", " $ ["CLK","RST"] ++ map sig portNodes
+  tell $ commas $ ["CLK","RST"] ++ map sig portNodes
   tell "):\n"
 
   indent (+ 1) $ do
@@ -84,14 +84,29 @@ mGen name ports bindings = do
     (n,_) <- get
     tab
     tell "return ["
-    tell $ intercalate ", " $ map blk [1..n]
+    tell $ commas $ map blk [1..n]
     tell "]\n"
     -- tell $ "# " ++ show (nodeRefcounts nodes) ++ "\n"
 
 blk n = "blk" ++ show n
 sig n = nodeName n
 
+commas = intercalate ", "
+
 defSignal :: Node n => (n, Expr n) -> PrintMyHDL ()
+
+-- Memories are special.  Instantiation will be done in the framework.
+-- Here we just unpacl the ports.
+defSignal (n, (Free (Compose (MemWr _)))) = do
+  let mem_prefix = nodeName n
+      mem_signals =
+        [ mem_prefix ++ "_" ++ sig
+        | sig <- ["rd","we","wa","wd","ra"]]
+      mem_signals' = "[" ++ commas mem_signals ++ "]"
+  tab ; tell $ "# " ++ mem_prefix ++ " is a memory\n"
+  tab ; tell $ mem_signals' ++ " = " ++ mem_prefix ++ "\n"
+
+-- Other signals are defined.
 defSignal (n, e) = do
   tab ; tell $ sig n ++ " = " ++ (sigSpec $ eType e) ++ "\n"
 
@@ -102,19 +117,27 @@ eType (Free (Compose t)) = SeqTerm.termType t
 eType (Pure n) = error "eType doesn't work on node references"
   
 
-assignment :: Node n => n -> (Expr n) -> PrintMyHDL ()
+assignment :: forall n. Node n => n -> (Expr n) -> PrintMyHDL ()
 assignment n e@(Free (Compose (Delay _ _))) = do
   need Seq
-  assignment' n e
-
+  assign_next (sig n) (mExp e)
+assignment n e@(Free (Compose (MemWr (we, wa, wd, ra)))) = do
+  let src_sigs      = [mOp n | n  <- [we, wa, wd, ra]]
+      mem_signames  = [sig n ++ "_" ++ s | s <- ["we","wa","wd","ra"] ]
+  need Comb
+  sequence_ $ zipWith assign_next mem_signames src_sigs
 assignment n e@(Free (Compose (Input _))) = do
   indent (+ (- 1)) $ do
     tab
     tell $ "# " ++ sig n ++ " is an input\n"
-  
 assignment n e = do
   need Comb
-  assignment' n e
+  assign_next (sig n) (mExp e)
+
+assign_next :: String -> PrintMyHDL () -> PrintMyHDL ()
+assign_next varName mExp' = do
+  tab ; tell $ varName ++ ".next = " ; mExp' ; tell "\n"
+
 
 -- Mode printing.  Combinatorial expressions each get their own block
 -- to provide proper sensitivity/signal semantics.  Sequential blocks
@@ -141,13 +164,7 @@ render (n, Comb) = do
   tab ; tell $ "def blk" ++ show n ++ "():\n" 
 render (_, None) =
   error $ "render: None"
-  
 
-assignment' n e = do
-  tab
-  tell $ sig n ++ ".next = "
-  mExp e
-  tell "\n"
 
 parens m = do -- (*)
   tell "(" ; m ; tell ")"
@@ -173,15 +190,20 @@ mTerm (Slice _ a b c)    = do
   mOp a
   tell $ "[" ++ showSize b ++ ":"
   tell $ show c ++ "]"
+mTerm (MemRd _ n@(MemNode _)) = do
+  mOp n
+  tell "_rd"
+
 mTerm (MemRd _ _) =
-  tell $ "MemRd"
+  error $ "mTerm: MemRd: not a MemNode"
 mTerm (MemWr _) =
-  tell $ "MemWr"
+  error $ "mTerm: MemWr: not reached"
   
 
 showSize (Just s) = show s
 showSize Nothing = ""
 
+mOp :: Node n => Op (Free Term' n) -> PrintMyHDL ()
 mOp (Const (SInt _ v))  = tell $ show v
 mOp (Node _ n) = mExp n
 mOp (MemNode n) = mExp n
