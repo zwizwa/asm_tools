@@ -85,8 +85,9 @@ mGen name ports bindings = do
       isInternal (n,_) = not $ elem n portNodes
 
   tell $ "from myhdl import *\n"
+  tell $ "from ram import *\n"
   tell $ "def " ++ name ++ "("
-  tell $ commas $ ["env","CLK","RST"] ++ map sig portNodes
+  tell $ commas $ ["CLK","RST"] ++ map sig portNodes
   tell "):\n"
 
   indent (+ 1) $ do
@@ -106,28 +107,45 @@ commas = intercalate ", "
 
 defSignal :: Node n => (n, Expr n) -> PrintMyHDL ()
 
--- Memories are special.  Instantiation will be done in the framework.
--- Here we just unpacl the ports.
-defSignal (n, (Free (Compose (MemWr _)))) = do
+-- There are a couple of things I don't understand about how the
+-- reflection works in MyHDL, but here's what works for now:
+
+-- . Signals need to be instantiated above or inside a function
+--   describing a module, but not below.  You can't "return" a signal
+--   from a deeper instance.
+
+-- . Placing instance constructors in objects gave problems.  It
+--   appears as if that breaks the link from the run-time object to
+--   the module code necessary for reflection.  It works when imported
+--   and called directly.
+
+defSignal (n, (Free (Compose (MemWr (_, o_wa, o_wd, _))))) = do
   i <- memory_inst
-  let mem_prefix = nodeName n
-      mem_signals =
-        [ inst i ] ++ 
-        [ mem_prefix ++ postfix
-        | postfix <- ["_rd","_we","_wa","_wd","_ra"]]
-      mem_signals' = "[" ++ commas mem_signals ++ "]"
-  tab ; tell $ mem_signals' ++ " = env.memory(16, 8)\n"
+
+  -- Assumes read and write are same size.
+  let ta = SeqTerm.opType o_wa
+      td = SeqTerm.opType o_wd
+      prefix nm = sig n ++ "_" ++ nm
+      assgn nm t = do
+        tab ; tell $ nm ++ " = " ++ (sigSpec t) ++ "\n"
+      mem_signals@[rd,we,wa,wd,ra] = map prefix ["rd","we","wa","wd","ra"]
+      ram_signals = ["CLK",wa,wd,we,"CLK",ra,rd]
+        
+  sequence_ $ zipWith assgn mem_signals  [td, bit, ta, td, ta]
+  tab ; tell $ (inst i) ++ " = ram(" ++ commas ram_signals ++ ")\n"
+
+  
 
 -- Other signals are defined.
 defSignal (n, e) = do
   tab ; tell $ sig n ++ " = " ++ (sigSpec $ eType e) ++ "\n"
 
 sigSpec (SInt Nothing _) = error "Signals need to be fully specified"
-sigSpec (SInt (Just n) v0) = "env.sig(" ++ commas [show n, show v0] ++ ")"
+sigSpec (SInt (Just n) v0) = "Signal(modbv(" ++ show v0 ++ ")[" ++ show n ++ ":])"
 eType :: Expr n -> SType
 eType (Free (Compose t)) = SeqTerm.termType t
 eType (Pure n) = error "eType doesn't work on node references"
-  
+
 
 assignment :: forall n. Node n => n -> (Expr n) -> PrintMyHDL ()
 assignment n e@(Free (Compose (Delay _ _))) = do
