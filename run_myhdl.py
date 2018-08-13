@@ -83,7 +83,8 @@ def inst_testbench(hdl_fun, env, ports, tb_input, tb_output):
 
 class environment:
     def __init__(self):
-        pass
+        self.ram = ram.ram
+
     def memory(self, *args):
         print("instantiating memory",args)
         addr_sz = 8
@@ -94,10 +95,11 @@ class environment:
         wd = Signal(modbv(0)[word_sz:0])
         rd = Signal(modbv(0)[word_sz:0])
 
-        r = ram(self.CLK, wa, wd, we,
-                self.CLK, ra, rd)
+        inst = ram.ram(self.CLK, wa, wd, we,
+                       self.CLK, ra, rd)
 
-        return [rd, we, wa, wd, ra]
+        return [inst, rd, we, wa, wd, ra]
+
     def sig(self, nb_bits, reset_val):
         # For now only use modbv
         return Signal(modbv(reset_val)[nb_bits:])

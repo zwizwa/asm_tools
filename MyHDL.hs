@@ -95,11 +95,11 @@ mGen name ports bindings = do
     (n,_) <- get
     tab
     tell "return ["
-    tell $ commas $ map blk [1..n]
+    tell $ commas $ map inst [1..n]
     tell "]\n"
     -- tell $ "# " ++ show (nodeRefcounts nodes) ++ "\n"
 
-blk n = "blk" ++ show n
+inst n = "inst" ++ show n
 sig n = nodeName n
 
 commas = intercalate ", "
@@ -109,13 +109,14 @@ defSignal :: Node n => (n, Expr n) -> PrintMyHDL ()
 -- Memories are special.  Instantiation will be done in the framework.
 -- Here we just unpacl the ports.
 defSignal (n, (Free (Compose (MemWr _)))) = do
+  i <- memory_inst
   let mem_prefix = nodeName n
       mem_signals =
-        [ mem_prefix ++ "_" ++ sig
-        | sig <- ["rd","we","wa","wd","ra"]]
+        [ inst i ] ++ 
+        [ mem_prefix ++ postfix
+        | postfix <- ["_rd","_we","_wa","_wd","_ra"]]
       mem_signals' = "[" ++ commas mem_signals ++ "]"
-  tab ; tell $ "# " ++ mem_prefix ++ " is a memory\n"
-  tab ; tell $ mem_signals' ++ " = env.memory(\"" ++ mem_prefix ++ "\")\n"
+  tab ; tell $ mem_signals' ++ " = env.memory(16, 8)\n"
 
 -- Other signals are defined.
 defSignal (n, e) = do
@@ -166,13 +167,23 @@ need context = do
       let state = (n+1, context)
       put state
       indent (+ (-1)) $ render state
-      
+
+-- FIXME: repurpose state to also track the memory instances.
+memory_inst :: PrintMyHDL Int
+memory_inst = do
+  (n, context) <- get
+  let state = (n+1, context)
+  put state
+  return $ n+1
+
+
+
 render (n, Seq) = do
   tab ; tell $ "@always_seq(CLK.posedge, reset=RST)\n"
-  tab ; tell $ "def blk" ++ show n ++ "():\n"
+  tab ; tell $ "def inst" ++ show n ++ "():\n"
 render (n, Comb) = do
   tab ; tell $ "@always_comb\n"
-  tab ; tell $ "def blk" ++ show n ++ "():\n" 
+  tab ; tell $ "def inst" ++ show n ++ "():\n" 
 render (_, None) =
   error $ "render: None"
 
