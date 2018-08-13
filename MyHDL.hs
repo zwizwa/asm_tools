@@ -12,6 +12,7 @@
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module MyHDL(myhdl,MyHDL,testbench,fpga,fpga',PCF(..),pcf) where
 import Seq
@@ -67,6 +68,7 @@ mGen :: Node n => String -> [Op n] -> [(n, Expr n)] -> PrintMyHDL ()
 mGen name ports bindings = do
   let portNodes = map unNode ports
       unNode (Node _ n) = n
+      unNode (MemNode n) = n
       unNode (Const n) = error $ "mGen: Const in ports: " ++ show ports
       internalBindings = filter isInternal $ bindings
       isInternal (n,_) = not $ elem n portNodes
@@ -89,6 +91,7 @@ mGen name ports bindings = do
 blk n = "blk" ++ show n
 sig n = nodeName n
 
+defSignal :: Node n => (n, Expr n) -> PrintMyHDL ()
 defSignal (n, e) = do
   tab ; tell $ sig n ++ " = " ++ (sigSpec $ eType e) ++ "\n"
 
@@ -136,6 +139,9 @@ render (n, Seq) = do
 render (n, Comb) = do
   tab ; tell $ "@always_comb\n"
   tab ; tell $ "def blk" ++ show n ++ "():\n" 
+render (_, None) =
+  error $ "render: None"
+  
 
 assignment' n e = do
   tab
@@ -167,12 +173,18 @@ mTerm (Slice _ a b c)    = do
   mOp a
   tell $ "[" ++ showSize b ++ ":"
   tell $ show c ++ "]"
+mTerm (MemRd _ _) =
+  tell $ "MemRd"
+mTerm (MemWr _) =
+  tell $ "MemWr"
+  
 
 showSize (Just s) = show s
 showSize Nothing = ""
 
 mOp (Const (SInt _ v))  = tell $ show v
 mOp (Node _ n) = mExp n
+mOp (MemNode n) = mExp n
 
 call tag ms = do
   tell tag
@@ -186,6 +198,8 @@ tab = do
   sequence_ $ [tell "\t" | _ <- [1..n]]
 indent = local
 
+prfx _ [] =
+  error $ "prfx: nullary not supported"
 prfx op (o:os) = do
   tell $ op ++ "(" ; o
   sequence_ [tell ", " >> o | o <- os]
@@ -196,13 +210,15 @@ infx o a b = do
 
 
 f2 ADD = "+"
+f2 MUL = "*"
 f2 SUB = "-"
 f2 SLL = "<<"
 f2 SLR = ">>"
+f2 OR  = "|"
 f2 XOR = "^"
 f2 AND = "&"
 f2 EQU = "=="
-
+f2 CONC = error $ "f2 CONC: handled elsewhere"
 
 
 

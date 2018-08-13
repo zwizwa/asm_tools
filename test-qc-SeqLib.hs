@@ -307,10 +307,15 @@ x_soc = do
     prog_jmp = [ jmp 4, nop, nop, nop, jmp 0 ]
 
     -- Stack access
-    prog_push = [ push 101, push 102, push 103, drop, jmp 0 ]
+    prog_push = [ push 7, push 9, push 11, swap, drop, jmp 0 ]
     
     -- Uart control: write + wait done, then loop
-    prog_bus = [ push 0xF, write 2, read 1, jmp 0 ]
+    prog_bus = [ push 0xF,
+                 write uart_tx,
+                 nop,            -- tx_done doesnt clear fast enough
+                 read  uart_tx,  -- waits until tx_done is high
+                 drop,           -- value returned is dummy
+                 jmp 0 ]
 
     -- Loop
     prog_loop = [ push 3, loop 1, jmp 0 ]

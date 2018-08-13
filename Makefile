@@ -47,6 +47,9 @@ cabal-test: default.nix
 
 cabal-test-qc-SeqLib: default.nix
 	$(NIX_SHELL) --run "cabal test test-qc-SeqLib.hs --log=/dev/stdout"
+cabal-test-myhdl: default.nix
+	$(NIX_SHELL) --run "cabal test test-myhdl.hs --log=/dev/stdout"
+
 
 
 

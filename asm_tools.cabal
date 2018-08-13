@@ -11,6 +11,7 @@ license: BSD3
 -- pretty-simple, text, 
 
 
+
 Library
     build-depends:   base, containers, mtl, free, keys, set-extra
     build-depends:   base
@@ -18,12 +19,20 @@ Library
                      SeqLib
                      SeqEmu
     hs-source-dirs:  .
+    ghc-options: -fwarn-incomplete-patterns -Werror
 
 
 Test-Suite test-pru
     build-depends: base, containers, mtl, free, keys
     type:       exitcode-stdio-1.0
     main-is:    test-pru.hs
+    build-depends: base
+
+Test-Suite test-myhdl
+    build-depends: base, containers, mtl, free, keys, set-extra,
+                   template-haskell, parsec, QuickCheck, array, mios, split
+    type:       exitcode-stdio-1.0
+    main-is:    test-myhdl.hs
     build-depends: base
 
 Test-Suite test-seq

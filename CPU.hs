@@ -383,14 +383,14 @@ stack_machine  nb_stack (BusIn bus_rdy bus_data) (Ins iw) = do
 
     op_0_1    <- if' push arg bus_data
 
-    let set    = loop
+    let upd    = loop
         op_1_1 = top_dec
 
     stack'@(top':snd':_) <- cond
       [(push,   op_0_1 : (heads stack)),
        (drop,   tail stack ++ [0]),
        (swap,   snd    : top : (tail2 stack)),
-       (set,    op_1_1 : tail stack)]
+       (upd,    op_1_1 : tail stack)]
       stack
 
     -- reads can take multiple cycles.  it is assumed that rReady is
@@ -413,6 +413,9 @@ stack_machine  nb_stack (BusIn bus_rdy bus_data) (Ins iw) = do
 
 -- FIXME: make register addresses abstract.
 
+uart_rx = 0 :: Int
+uart_tx = 1 :: Int
+
 
 soc :: Seq m r => [r S] -> m [r S]
 soc [rx] = do
@@ -420,27 +423,28 @@ soc [rx] = do
   closeReg [bit, bits 8] $ \[rStrobe,rData] -> do
 
     -- The effect of the CPU is a bus request.
-    (BusOut wStrobe addr wData) <-
+    (BusOut wEn addr wData) <-
       bus_master (BusIn rStrobe rData)
 
     -- Instantiate peripherals, routing i/o registers.
     addr' <- slice' addr 2 0
     let tx_bc = 1 -- FIXME
-        wOp n = addr' `equ` n >>= band wStrobe
+        c = cbits 2
+        write n = addr' `equ` (c n) >>= band wEn
 
     -- Bus write operations
-    tx_wc <- wOp 2
+    tx_wc <- write uart_tx
     (tx, tx_rdy) <- async_transmit tx_bc (tx_wc, wData)
 
     -- Bus read operations
     busin <- switch addr'
-      [(0,
+      [(c uart_rx,
         do
           (s,d) <- async_receive 8 rx;
           "rx_s" .= s
           "rx_d" .= d
           return [s,d]),
-       (1,
+       (c uart_tx,
         do
           -- Blocking read is convenient.
           -- Alternatively, implement this as a global flag.

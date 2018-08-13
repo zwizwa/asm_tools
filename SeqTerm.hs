@@ -10,6 +10,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module SeqTerm where
 import Seq(SType(..),Env,initEnv)
@@ -86,6 +87,7 @@ termType (MemWr _) = error $ "termType: MemWr"
 
 opType (Const t) = t
 opType (Node t _) = t
+opType (MemNode _) = error $ "opType: MemNode"
 
 
 type NodeNum  = Int
@@ -173,6 +175,7 @@ instance Seq.Seq M R where
 
   updateMemory (R (MemNode n)) (R wEn, R wAddr, R wData, R rAddr) = do
     driveNode n $ MemWr (wEn, wAddr, wData, rAddr)
+  updateMemory _ _ = error $ "updateMemory: bad argument"
 
   probe name (R n) = tell $ [Probe n name]
 
@@ -187,7 +190,8 @@ bind cons (R (Node t' dst)) (R src) = do
 
   -- Note that only dst has the correct initial value.
   driveNode dst $ cons t' src
-
+bind _ _ _ = do
+  error $ "bind: bad argument"
 
 -- For constants.
 instance Num (R Seq.S) where
@@ -201,8 +205,11 @@ instance Num (R Seq.S) where
 
 num1 f (R (Const (SInt s a))) =
   R $ Const $ SInt s $ f a
+num1 _ _ = error $ "num1: bad argument"
+  
 num2 f (R (Const (SInt sa a))) (R (Const (SInt sb b))) =
   R $ Const $ SInt (mergeSize [sa,sb]) $ f a b
+num2 _ _ _ = error $ "num2: bad argument"
 
 
 -- Note that this only works for combinatorial results, which do not
