@@ -99,7 +99,6 @@ import Data.Bits hiding (bit)
 -- jump.
 
 data Ins r  = Ins {
-  insRun  :: r S,
   insWord :: r S
   }
 
@@ -140,7 +139,8 @@ closeIMem (IMemWrite wEn wAddr wData) run execute = do
   closeMem [t_wData] $ \[iw] -> do
     (ipNext, o) <- closeReg [t_wAddr] $ \[ip] -> do
       -- Execute instruction, which produces control flow information.
-      (Control loop jump ipJump, o) <- execute (Ins run iw)
+      iw' <- if' run iw 0
+      (Control loop jump ipJump, o) <- execute (Ins iw')
       ipCont   <- inc ip
       rst      <- inv run
       [ipNext] <- cond
@@ -279,6 +279,7 @@ o_drop  = 3
 o_read  = 4
 o_write = 5
 o_swap  = 6
+o_loop  = 7
 
 i1 :: Int -> Int -> Int
 i1 opc arg = opc `shiftL` (16 - o_nb_bits) .|. (arg .&. 0xFF)
@@ -293,6 +294,7 @@ drop  = i0 o_drop
 read  = i1 o_read
 write = i1 o_write
 swap  = i0 o_swap
+loop  = i1 o_loop
 
 -- Each instruction can have push/pop/write/nop wrt imm?  It seems
 -- possible that stack can be manipulated in parallel with bus
@@ -325,43 +327,66 @@ stack_machine ::
   Ins r ->
   m (Control r, BusOut r)
 
-stack_machine  nb_stack (BusIn rReady rData) (Ins run iw) = do
+stack_machine  nb_stack (BusIn rReady rData) (Ins iw) = do
   -- Register file is organized as a stack
   let heads    = take (nb_stack - 1)
       tail2    = tail . tail
       t_stack  = replicate nb_stack $ bits 8
   
   closeReg t_stack $ \stack@(top:snd:_) -> do
-    arg8  <- slice' iw  8 0
+    arg   <- slice' iw  8 0
     opc   <- slice' iw 16 (16 - o_nb_bits)
     
     let opc' n = equ opc $ cbits o_nb_bits n
 
     jmp   <- opc' o_jmp
+    loop  <- opc' o_loop
     read  <- opc' o_read
     write <- opc' o_write
     push  <- opc' o_push
     drop  <- opc' o_drop
     swap  <- opc' o_swap
 
+    dec'   <- dec =<< conc (cbit 0) top
+    top'   <- slice' dec' 8 0
+    carry  <- slice' dec' 9 8
+    ncarry <- inv carry
+
+    loop_jmp <- loop `band` ncarry
+    loop_cnt <- loop `band` carry
+
+    -- FIXME: drop is write to nowhere
+    drop' <- (drop  `bor`) =<<
+             (write `bor` loop_cnt)
+
+    push_read <- read `band` rReady
+
+    push' <- push `bor` push_read
+    wait  <- (read `band`) =<< inv rReady
+  
+    jmp'  <- jmp `bor` loop_jmp
+
+    new   <- if' push arg rData
+
     stack'@(top':snd':_) <- cond
-      [(push, arg8 : (heads stack)),
-       (drop, tail stack ++ [head stack]),
-       (swap, snd : top : (tail2 stack))]
+      [(push', new  : (heads stack)),
+       (drop', tail stack ++ [0]),
+       (swap,  snd  : top : (tail2 stack)),
+       (loop,  top' : tail stack)]
       stack
 
     -- reads can take multiple cycles.  it is assumed that rReady is
     -- high for only one cycle.
-    wait  <- (read `band`) =<< inv rReady
 
     -- probes
     "iw"  .= iw
     "top" .= top'
     "snd" .= snd'
+    "c"   .= carry
     
     return (stack',                   -- internal reg feedback
-            (Control wait jmp arg8,   -- instruction sequencer feedback
-             BusOut write arg8 top))  -- top level output is a bus
+            (Control wait jmp' arg,   -- instruction sequencer feedback
+             BusOut write arg top))   -- top level output is a bus
 
 
 

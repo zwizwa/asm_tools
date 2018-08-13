@@ -213,14 +213,12 @@ t_spi ins =
       return [])
   memZero ins
 
-p_spi = forAll (listOf $ word 8) $ fst . e_spi
-
 e_spi bytes  = (bytes == bytes', (bytes', table)) where
   ins    = [[1,0,0]] ++ [[0,c,d] | (c,d) <- spiBits 2 bits] ++ [[1,0,0]]
   bits   = concat $ map (toBitList 8) bytes
   bytes' = map head $ downSample' $ selectSignals ["s_wc","s_w"] probes outs
   table@(probes, outs) = t_spi ins
-     
+
 x_spi = do
   let bytes = [202,123]
       (_, (bytes', table)) = e_spi bytes
@@ -228,6 +226,8 @@ x_spi = do
   putStrLn "-- x_spi"
   print bytes'
   printProbe ["s_wc","s_w","sclk","sdata","s_bc"] $ table
+
+p_spi = forAll (listOf $ word 8) $ fst . e_spi
 
 
 
@@ -312,6 +312,9 @@ x_soc = do
     -- Uart control: write + wait done, then loop
     prog_bus = [ push 0xF, write 2, read 1, jmp 0 ]
 
+    -- Loop
+    prog_loop = [ push 3, loop 1, jmp 0 ]
+
   putStrLn "-- x_soc"
   
   putStrLn "prog_jmp:"
@@ -325,6 +328,10 @@ x_soc = do
   putStrLn "prog_bus:"
   printProbe ["iw","ip","tx_bc","tx_wc","tx_in","tx_done","tx_out"] $
     t_soc prog_bus $ replicate 30 [1]
+
+  putStrLn "prog_loop:"
+  printProbe ["iw","ip","top","snd","c"] $
+    t_soc prog_loop $ replicate 30 [1]
   
 
   
