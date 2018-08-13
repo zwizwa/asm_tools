@@ -275,7 +275,6 @@ o_nb_bits  = 3
 o_nop   = 0
 o_jmp   = 1
 o_push  = 2
-o_drop  = 3
 o_read  = 4
 o_write = 5
 o_swap  = 6
@@ -290,11 +289,11 @@ i0 c = i1 c 0
 nop   = i0 o_nop
 jmp   = i1 o_jmp
 push  = i1 o_push
-drop  = i0 o_drop
 read  = i1 o_read
 write = i1 o_write
 swap  = i0 o_swap
 loop  = i1 o_loop
+drop  = write 0xff
 
 -- Each instruction can have push/pop/write/nop wrt imm?  It seems
 -- possible that stack can be manipulated in parallel with bus
@@ -327,7 +326,24 @@ stack_machine ::
   Ins r ->
   m (Control r, BusOut r)
 
-stack_machine  nb_stack (BusIn rReady rData) (Ins iw) = do
+
+(.&) :: Seq m r => r S -> r S -> m (r S)
+(.|) :: Seq m r => r S -> r S -> m (r S)
+(.&) = band
+(.|) = bor
+
+
+-- Decrement and and save carry bit
+cdec var = do
+  (SInt (Just n) _) <- stype var
+  var_dec <- conc (cbit 0) var >>= dec
+  carry   <- slice' var_dec (n+1) n
+  var_dec <- slice' var_dec  n    0
+  return (carry, var_dec)
+
+
+
+stack_machine  nb_stack (BusIn bus_rdy bus_data) (Ins iw) = do
   -- Register file is organized as a stack
   let heads    = take (nb_stack - 1)
       tail2    = tail . tail
@@ -339,40 +355,42 @@ stack_machine  nb_stack (BusIn rReady rData) (Ins iw) = do
     
     let opc' n = equ opc $ cbits o_nb_bits n
 
+    -- Simple instructions and control signal init.
+    -- It seems best to just rebind these below
     jmp   <- opc' o_jmp
-    loop  <- opc' o_loop
-    read  <- opc' o_read
     write <- opc' o_write
     push  <- opc' o_push
-    drop  <- opc' o_drop
     swap  <- opc' o_swap
+    let drop = write
 
-    dec'   <- dec =<< conc (cbit 0) top
-    top'   <- slice' dec' 8 0
-    carry  <- slice' dec' 9 8
+    -- ALU
+    (carry, top_dec) <- cdec top
     ncarry <- inv carry
 
-    loop_jmp <- loop `band` ncarry
-    loop_cnt <- loop `band` carry
+    -- loop instruction
+    loop      <- opc' o_loop
+    loop_jmp  <- loop .& ncarry
+    loop_cnt  <- loop .& carry
+    drop      <- drop .| loop_cnt
+    jmp       <- jmp  .| loop_jmp
 
-    -- FIXME: drop is write to nowhere
-    drop' <- (drop  `bor`) =<<
-             (write `bor` loop_cnt)
+    -- read instruction
+    read      <- opc' o_read
+    bus_nrdy  <- inv bus_rdy
+    wait      <- read .& bus_nrdy
+    push_read <- read .& bus_rdy
+    push      <- push .| push_read
 
-    push_read <- read `band` rReady
+    op_0_1    <- if' push arg bus_data
 
-    push' <- push `bor` push_read
-    wait  <- (read `band`) =<< inv rReady
-  
-    jmp'  <- jmp `bor` loop_jmp
-
-    new   <- if' push arg rData
+    let set    = loop
+        op_1_1 = top_dec
 
     stack'@(top':snd':_) <- cond
-      [(push', new  : (heads stack)),
-       (drop', tail stack ++ [0]),
-       (swap,  snd  : top : (tail2 stack)),
-       (loop,  top' : tail stack)]
+      [(push,   op_0_1 : (heads stack)),
+       (drop,   tail stack ++ [0]),
+       (swap,   snd    : top : (tail2 stack)),
+       (set,    op_1_1 : tail stack)]
       stack
 
     -- reads can take multiple cycles.  it is assumed that rReady is
@@ -385,7 +403,7 @@ stack_machine  nb_stack (BusIn rReady rData) (Ins iw) = do
     "c"   .= carry
     
     return (stack',                   -- internal reg feedback
-            (Control wait jmp' arg,   -- instruction sequencer feedback
+            (Control wait jmp arg,    -- instruction sequencer feedback
              BusOut write arg top))   -- top level output is a bus
 
 
