@@ -479,6 +479,13 @@ run_testbench mod_name mod_text = do
       call fun margs = do
         args <- sequence margs
         Py.callArgs fun args
+      castList o = do
+        (Just l) <- Py.cast o
+        Py.fromList l
+      castInt o = do
+        (Just i) <- Py.cast o
+        i <- Py.fromInteger i
+        return $ fromIntegral i
   
   Exception.handle onException $ do
 
@@ -492,15 +499,12 @@ run_testbench mod_name mod_text = do
     run <- attr lib "run"
     busses <- call run [str mod_name, str mod_text]
 
-    -- Lot's of wrapping..
-    Just bs <- Py.cast busses
-    bs <- Py.fromList bs
-    bs <-
-      sequence [do Just b <- Py.cast b ; b <- Py.fromList b
-                   sequence [do Just i <- Py.cast i ; i <- Py.fromInteger i
-                                return $ fromIntegral i
-                            | i <- b]
-               | b <- bs]
+    -- Nested cast
+    bs <- castList busses
+    bs <- sequence
+      [do b <- castList b
+          sequence $ map castInt b
+      | b <- bs]
           
     Py.print busses stdout
     return $ Just bs
