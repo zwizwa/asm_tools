@@ -41,6 +41,7 @@ import qualified Data.Map.Strict as Map
 import Data.Functor.Compose
 import Numeric (showHex, showIntAtBase)
 import Data.Char (intToDigit)
+import Data.Maybe
 
 import System.Process
 import System.IO
@@ -48,12 +49,14 @@ import System.IO
 import qualified CPython as Py
 import qualified CPython.Protocols.Object as Py
 import qualified CPython.Reflection as Py
+import qualified CPython.System as Py
 import qualified CPython.Types as Py
 import qualified CPython.Types.Module as Py
 import qualified CPython.Types.Exception as Py
 import qualified CPython.Types.Module as Py
 import System.IO (stdout)
-import qualified Control.Exception as E
+import qualified Control.Exception as Exception
+import Data.Text(Text)
 
 newtype PrintMyHDL t = PrintExpr {
   runPrintMyHDL :: StateT BlockState (WriterT String (Reader IndentLevel)) t
@@ -460,33 +463,45 @@ hGetContents' h = do
 -- FIXME: write the trampoline in python.  this is a little awkward.
 
 test_py = do
-  Py.initialize
-  let onException :: Py.Exception -> IO ()
-      onException exc = Py.print (Py.exceptionValue exc) stdout
-      s str = fmap Py.toObject $ Py.toUnicode str
+  run_testbench "hdl_mod" "class foo:\n\tdef __init__(self):\n\t\tpass"
+
+run_testbench :: Text -> Text -> IO (Maybe [[Int]])
+run_testbench mod_name mod_text = do
+
+  Py.initialize -- idempotent
+
+  let onException :: Py.Exception -> IO (Maybe [[Int]])
+      onException exc = do
+        Py.print (Py.exceptionValue exc) stdout
+        return Nothing
+      str = (fmap Py.toObject) .  Py.toUnicode
+      attr o a = Py.getAttribute o =<< Py.toUnicode a
       call fun margs = do
         args <- sequence margs
         Py.callArgs fun args
-
-      attr o a = Py.getAttribute o =<< Py.toUnicode a
   
-  E.handle onException $ do
+  Exception.handle onException $ do
+
+    -- CPython.System.setPath is not platform-independent, so leave this in.
     sys <- Py.importModule "sys"
     sys_path <- attr sys "path"
     sys_path_append <- attr sys_path "append"
-    -- sys_path <- Py.getAttribute sys =<< Py.toUnicode "path"
-    -- sys_path_append <- Py.getAttribute sys_path =<< Py.toUnicode "path"
-    -- here <- fmap Py.toObject $ Py.toUnicode "."
-    -- Py.callArgs sys_path_append [here]
-    call sys_path_append [s "."]
-
+    call sys_path_append [str "."]
+    
     lib <- Py.importModule "lib_myhdl"
-      
-    -- call (sys, ["path","append"]) [s "."]
-    -- lib <- Py.importModule "lib_myhdl"
-    -- rv <- call (lib, ["run"])
-    --   [s "hdl_mod",
-    --    s "class foo:\n\tdef __init__(self):\n\t\tpass"]
+    run <- attr lib "run"
+    busses <- call run [str mod_name, str mod_text]
+
+    -- Lot's of wrapping..
+    Just bs <- Py.cast busses
+    bs <- Py.fromList bs
+    bs <-
+      sequence [do Just b <- Py.cast b ; b <- Py.fromList b
+                   sequence [do Just i <- Py.cast i ; i <- Py.fromInteger i
+                                return $ fromIntegral i
+                            | i <- b]
+               | b <- bs]
           
-    -- Py.print rv stdout
-    return ()
+    Py.print busses stdout
+    return $ Just bs
+

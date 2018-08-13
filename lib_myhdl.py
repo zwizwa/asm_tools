@@ -4,4 +4,5 @@ import imp
 def run(mod_name, mod_text):
     m = imp.new_module(mod_name)
     exec(mod_text, m.__dict__)
+    return [[1,2],[3,4]]
 
