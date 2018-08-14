@@ -181,8 +181,8 @@ dec c = sub c 1
 counter :: Seq m r => SType -> m (r S)
 counter t = reg' t inc
 
--- Combinatorial output.
-mod_counter' :: Seq m r => Int -> m (r S)
+-- Combinatorial output for carry.
+mod_counter' :: Seq m r => Int -> m (r S, r S)
 mod_counter' period = do
   -- Use one extra bit to use as carry, to avoid the big comparator.
   let n = nb_bits period
@@ -190,10 +190,14 @@ mod_counter' period = do
   closeReg [bits n] $ \[s] -> do
     (c, dec') <- carry dec s
     s'        <- if' c init dec'
-    return ([s'], c)
+    return ([s'], (c, s))
 
 -- Registered output.
-mod_counter period = mod_counter' period >>= delay
+mod_counter :: Seq m r => Int -> m (r S, r S)
+mod_counter period = do
+  (c, cnt) <- mod_counter' period
+  c' <- delay c
+  return (c', cnt)
 
 -- Combinatorial output for carry flag
 carry_counter' :: Seq m r => SType -> m (r S, r S)
@@ -528,7 +532,7 @@ async_transmit bitClock (wordClock, txData) = do
 
 -- Sample on rising edge only.  I beleive this is the same as the iCE40.
 
-sync_clock sclk = do
+posedge sclk = do
   e <- edge sclk
   e `band` sclk
 
@@ -536,7 +540,7 @@ sync_clock sclk = do
 -- FIXME: It's easier to reuse the counter and transfer directly into
 -- the memory.
 sync_receive nb_bits cs sclk sdata = do
-    sc <- sync_clock sclk
+    sc <- posedge sclk
     bc <- band sc =<< inv cs
     out@(wc, w) <- deser ShiftLeft (bits nb_bits) (bc, sdata)
     "sclk"  .= sclk

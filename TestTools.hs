@@ -167,3 +167,6 @@ printC l = sequence_ $ zipWith f l [0..] where
     printL l'
   
 
+
+list2 (a,b) = do
+  return [a,b]

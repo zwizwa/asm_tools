@@ -31,9 +31,6 @@ d_stack i@[push,pop,wd] = do
 
 
 
-list2 (a,b) = do
-  return [a,b]
-
 -- class ToList a b where
 --   toList :: a -> [b]
 
