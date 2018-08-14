@@ -178,5 +178,5 @@ x_run_myhdl = do
 x_testbench = do
   putStrLn "-- x_testbench"
   let mod [s, d] = do return $ [s, d]
-      (tb, outs) = MyHDL.testbench "x_testbench" [1,8] mod [[1,0],[0,0]]
+      tb = MyHDL.testbench "x_testbench" [1,8] mod [[1,0],[0,0]]
   print tb

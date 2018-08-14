@@ -57,13 +57,13 @@ type PortSpec = (String,Int)
 data MyHDL = MyHDL [PortSpec] String
 instance Show MyHDL where
   show (MyHDL specs code) = str where
-    str = (concat $ map showSpec specs) ++ code
-    showSpec spec = "# " ++ show spec ++ "\n"
+    str = code ++ "\nports = " ++ show specs  ++ "\n"
 
 -- Convert the port specification to a more specific type.
 -- Note that reset value isn't necessary for I/O ports.
 portSpec (name, (SInt (Just bits) rst)) = (name,bits)
-portSpec spec = error $ "portSpec needs bit size: " ++ show spec
+portSpec (name, _) = (name,-1) -- FIXME
+-- portSpec spec = error $ "portSpec needs bit size: " ++ show spec
 
 -- Like Show, but generate a valid Python name from abstract node rep.
 -- Also put the other constraints here.
@@ -410,33 +410,30 @@ testbench ::
   -> [Int]
   -> (forall m r. Seq m r => [r S] -> m [r S])
   -> [[Int]]
-  -> (TestBench, [[Int]])
+  -> TestBench
 
-data TestBench = TestBench String String String
+data TestBench = TestBench MyHDL [[Int]] [[Int]]
 instance (Show TestBench) where
-  show (TestBench m i o) = m ++ i ++ o
-
+  show (TestBench hdl input output) = show hdl ++ input_py ++ output_py where
+    output_py = "\nouts  = " ++ show output ++ "\n"
+    input_py  = "\nins   = " ++ show input  ++ "\n"
 
 testbench name inSizes mod input = tb where
-  tb = (TestBench module_py input_py output_py, output)
+  tb = (TestBench hdl input (take nb_ticks output))
 
-  n_ticks = length input
-  nb_in   = length inSizes
-  inTypes = map bits inSizes
+  nb_ticks = length input
+  nb_in    = length inSizes
+  inTypes  = map bits inSizes
   
   -- Emulation.  This also gives us the output size.
   output = SeqEmu.iticks (SeqEmu.onInts inSizes mod) input
   nb_out = length $ head output
 
-  -- Embed the input/output sequences in the Python module.
-  output_py = "\nouts = " ++ show (take n_ticks $ output) ++ "\n"
-  input_py  = "\nins  = " ++ show input ++ "\n"
-
   -- Module code gen.  Adapt to pyModule interface.
   outTypes  = [SInt Nothing 0 | _ <- [1..nb_out]]
   portTypes = inTypes ++ outTypes
   portNames = ["p" ++ show n | n <- [0..(length portTypes)-1]]
-  (MyHDL _ module_py) = pyModule name portNames portTypes mod'
+  hdl = pyModule name portNames portTypes mod'
   mod' ports = do
     let (ins,outs) = splitAt nb_in ports
     outs' <- mod ins
