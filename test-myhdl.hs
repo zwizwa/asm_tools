@@ -13,6 +13,7 @@ import CPU
 import Names
 import TestTools
 import qualified MyHDL
+import qualified MyHDLRun
 
 import qualified SeqTerm
 import qualified SeqExpr
@@ -31,6 +32,8 @@ main = do
   x_soc_fpga
 
   x_run_myhdl
+
+  x_testbench
     
 -- sequenced if' : does it need to be bundled?
 x_ifs = do
@@ -92,7 +95,7 @@ x_blink_fpga = do
   putStrLn "-- x_blink_fpga"
   board <- CSV.readTagged id "specs/hx8k_breakout.csv"
   let pin = CSV.ff (\[k,_,v,_] -> (k,v)) board
-      (py,pcf) = MyHDL.fpga' "x_blink_fpga" f_blink_fpga pin
+      (py,pcf) = MyHDL.fpgaGen "x_blink_fpga" f_blink_fpga pin
   writeFile "x_blink_fpga.py" $ show py
   writeFile "x_blink_fpga.pcf" $ show pcf
 
@@ -121,7 +124,7 @@ x_uart_fpga = do
   putStrLn "-- x_uart_fpga"
   board <- CSV.readTagged id "specs/hx8k_breakout.csv"
   let pin = CSV.ff (\[k,_,v,_] -> (k,v)) board
-      (py,pcf) = MyHDL.fpga' "x_uart_fpga" f_uart_fpga pin
+      (py,pcf) = MyHDL.fpgaGen "x_uart_fpga" f_uart_fpga pin
   writeFile "x_uart_fpga.py" $ show py
   writeFile "x_uart_fpga.pcf" $ show pcf
 
@@ -144,7 +147,7 @@ x_soc_fpga = do
   putStrLn "-- x_soc_fpga"
   board <- CSV.readTagged id "specs/hx8k_breakout.csv"
   let pin = CSV.ff (\[k,_,v,_] -> (k,v)) board
-      (py,pcf) = MyHDL.fpga' "x_soc_fpga" f_soc_fpga pin
+      (py,pcf) = MyHDL.fpgaGen "x_soc_fpga" f_soc_fpga pin
   writeFile "x_soc_fpga.py" $ show py
   writeFile "x_soc_fpga.pcf" $ show pcf
 
@@ -158,14 +161,22 @@ print_hdl src = do
   putStrLn "-- bindings: "
   printL $ bindings
   let inl = SeqExpr.inlined $ bindings
+      portNames = ["p" ++ show n | (_,n) <- zip ports [0..]]
   putStr $ SeqExpr.sexp' inl
   putStrLn "-- MyHDL: "
-  putStr $ show $ MyHDL.myhdl "module" ports inl
+  putStr $ MyHDL.myhdl "module" ports inl  -- low level interface
   return ()
   
 
 -- http://hackage.haskell.org/package/shelly
 x_run_myhdl = do
   putStrLn "-- x_run_myhdl"
-  MyHDL.run "x_soc_fpga"
-  MyHDL.test_py
+  -- MyHDLRun.run_process "x_soc_fpga"
+  MyHDLRun.test_py
+
+
+x_testbench = do
+  putStrLn "-- x_testbench"
+  let mod [s, d] = do return $ [s, d]
+      (tb, outs) = MyHDL.testbench "x_testbench" [1,8] mod [[1,0],[0,0]]
+  print tb

@@ -19,10 +19,9 @@
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
-module MyHDL(myhdl,MyHDL,testbench,fpga,fpga',PCF(..),pcf,run,test_py) where
+module MyHDL(myhdl,MyHDL,testbench,fpgaGen,PCF(..),pcf) where
 import Seq
 import SeqLib
 import CSV
@@ -41,22 +40,7 @@ import qualified Data.Map.Strict as Map
 import Data.Functor.Compose
 import Numeric (showHex, showIntAtBase)
 import Data.Char (intToDigit)
-import Data.Maybe
 
-import System.Process
-import System.IO
-
-import qualified CPython as Py
-import qualified CPython.Protocols.Object as Py
-import qualified CPython.Reflection as Py
-import qualified CPython.System as Py
-import qualified CPython.Types as Py
-import qualified CPython.Types.Module as Py
-import qualified CPython.Types.Exception as Py
-import qualified CPython.Types.Module as Py
-import System.IO (stdout)
-import qualified Control.Exception as Exception
-import Data.Text(Text)
 
 newtype PrintMyHDL t = PrintExpr {
   runPrintMyHDL :: StateT BlockState (WriterT String (Reader IndentLevel)) t
@@ -69,8 +53,17 @@ type BlockState = (Int,Mode)
 type IndentLevel = Int
 data Mode = None | Seq | Comb deriving Eq
 
-newtype MyHDL = MyHDL { unMyHDL :: String }
-instance Show MyHDL where show = unMyHDL
+type PortSpec = (String,Int)
+data MyHDL = MyHDL [PortSpec] String
+instance Show MyHDL where
+  show (MyHDL specs code) = str where
+    str = (concat $ map showSpec specs) ++ code
+    showSpec spec = "# " ++ show spec ++ "\n"
+
+-- Convert the port specification to a more specific type.
+-- Note that reset value isn't necessary for I/O ports.
+portSpec (name, (SInt (Just bits) rst)) = (name,bits)
+portSpec spec = error $ "portSpec needs bit size: " ++ show spec
 
 -- Like Show, but generate a valid Python name from abstract node rep.
 -- Also put the other constraints here.
@@ -83,8 +76,8 @@ instance Node NodeNum where
 instance Node String where
   nodeName n = n
   
-myhdl :: Node n => String -> [Op n] -> [(n, Expr n)] -> MyHDL
-myhdl name ports bindings = MyHDL str where
+myhdl :: Node n => String -> [Op n] -> [(n, Expr n)] -> String
+myhdl name ports bindings = str where
   m = mGen name ports bindings
   (((), mode), str) =
     runReader (runWriterT (runStateT (runPrintMyHDL m) (0, None))) 0
@@ -172,8 +165,7 @@ assignment n e@(Free (Compose (MemWr (we, wa, wd, ra)))) = do
   sequence_ $ zipWith assign_next mem_signames src_sigs
 assignment n e@(Free (Compose (Input _))) = do
   indent (+ (- 1)) $ do
-    tab
-    tell $ "# " ++ sig n ++ " is an input\n"
+    tab ; tell $ "# input: " ++ sig n ++ "\n"
 assignment n e = do
   need Comb
   assign_next (sig n) (mExp e)
@@ -305,66 +297,7 @@ f2 CONC = error $ "f2 CONC: handled elsewhere"
 
 
 
--- For run_myhdl.py
--- FIXME: generalize this to I/O?
-type M = SeqTerm.M
-type R = SeqTerm.R
-connectIO :: [SType] -> ([R S] -> M [R S]) -> M [R S]
-connectIO inTyp mod = do
-  -- FIXME: assumes inputs are binary
-  in'    <- SeqTerm.inputs inTyp
-  out'   <- mod in'
-  stypes <- sequence $ fmap stype out'
-  out    <- SeqTerm.inputs stypes  -- When assigned, type changes from in->out
-  sequence_ $ zipWith connect out out'
-  return $ in' ++ out
 
-toPy :: String -> [SType] -> ([R S] -> M [R S]) -> String
-toPy name inTyp mod = module_py where
-
-  (ports, bindings) = SeqTerm.compileTerm $ connectIO inTyp mod
-  module_py = show $ myhdl name ports' $ SeqExpr.inlined bindings'
-
-  -- Replace nodes with named nodes.
-  rename :: NodeNum -> String
-  rename n = Map.findWithDefault ("s" ++ show n) n namedPorts
-
-  namedPorts :: Map.Map NodeNum String
-  namedPorts = Map.fromList $
-    [(n, "p" ++ show i) | (Node _ n, i) <- zip ports [0..]]
-  
-  ports'    = (map . fmap) rename ports
-  bindings' = mapBindings  rename bindings
-
-
-
-
-data TestBench = TestBench String String String
-instance (Show TestBench) where
-  show (TestBench m i o) = m ++ i ++ o
-
-testbench ::
-  String
-  -> (forall m r. Seq m r => [r S] -> m [r S])
-  -> [[Int]]
-  -> (TestBench, [[Int]])
-testbench name mod input = (TestBench module_py input_py output_py, output) where
-
-  -- See run_myhdl.py
-  n = length input
-  nb_in = length $ head input
-
-  -- Types. Stick with just bits
-  inTyp = [bits 1 | _ <- [1..nb_in]]
-  inBitSizes = [s | SInt (Just s) _ <- inTyp]
-  
-  -- Emulation
-  output = SeqEmu.iticks (SeqEmu.onInts inBitSizes mod) input
-  output_py = "\nouts = " ++ show (take n $ output) ++ "\n"
-  input_py  = "\nins  = " ++ show input ++ "\n"
-
-  -- Code gen
-  module_py = toPy name inTyp mod
 
 
 -- Don't write a Functor class for bindings.  If an ad-hoc functor
@@ -377,33 +310,54 @@ mapBindings f l = map f' l where
   
 
 
--- Alternative interface used for generating FPGA images.
-fpga :: String -> ([String], [R S] -> M ()) -> MyHDL
-fpga name (portNames, mod) = MyHDL module_py where
+type M = SeqTerm.M
+type R = SeqTerm.R
 
-  -- Assume all input are single pins.
-  pinType = (SInt (Just 1) 0)
+-- Alternative interface used for generating FPGA images.
+pyModule :: String -> [String] -> [SType] -> ([R S] -> M ()) -> MyHDL
+pyModule name portNames portTypes mod = MyHDL portSpecs pyCode where
+
+  -- Note that it is allowed for portTypes to contain undefined bit
+  -- sizes.  These will be determined once they are bound to the
+  -- output nodes in the code.
+  portSpecs = map portSpec $ zip portNames $ map SeqTerm.opType ports
+  
+  
+  pyCode = myhdl name ports' $ SeqExpr.inlined bindings'
+
   mod' = do
-    -- When assigned, type changes from in->out
-    io <- SeqTerm.inputs $ [pinType | _ <- portNames]
+    -- Ports default as input.
+    -- When assigned through 'update', type changes from in->out
+    io <- SeqTerm.inputs $ portTypes
     mod io ; return io
     
-  (ports, bindings) = SeqTerm.compileTerm mod'
-  module_py = show $ myhdl name ports' $ SeqExpr.inlined bindings'
+  (ports, bindings, probes) = SeqTerm.compileTerm' mod'
+  probeNames = SeqTerm.probeNames probes
 
   -- Assign names
   ports'    = (map . fmap) rename ports
   bindings' = mapBindings  rename bindings
   rename :: NodeNum -> String
-  rename n = Map.findWithDefault ("s" ++ show n) n namedPorts
-  namedPorts = Map.fromList $
-    [(n, nm) | (Node _ n, nm) <- zip ports portNames]
+  rename n = Map.findWithDefault ("s" ++ show n) n $ namedNodes
 
--- Using the convention that names are prefixed, so capital letters
--- can be used in Haskell code.  Also generates pcf based on pin map.
-fpga' name (names, fun) pinMap = (py, pcf') where 
+  namedPorts = Map.fromList $ [(n, nm) | (Node _ n, nm) <- zip ports portNames]
+  namedNodes = Map.union namedPorts $ Map.fromList probeNames  -- prefer port names
+
+
+
+-- For ice40 FPGA images, we use the convention that all ports are 1
+-- bit wide.  This makes it easier to relate to the circuit netlist.
+fpgaModule name (portNames, mod) = pyModule name portNames portTypes mod where
+  portTypes = [Seq.SInt (Just 1) 0 | _ <- portNames]
+
+
+-- Generate all files needed for MyHDL and Yosys to produce a binary
+-- (.py module + .pcf pin map). This uses the convention that pin
+-- names names are prefixed with underscores in the code, so capital
+-- letters can be used in Haskell code.
+fpgaGen name (names, fun) pinMap = (py, pcf') where 
   names' = map (\('_':nm) -> nm) names
-  py = fpga name (names', fun)
+  py = fpgaModule name (names', fun)
   pcf' = PCF ("CLK":"RST":names') pinMap
 
 --- ice40 PCF pin configuration files
@@ -421,91 +375,71 @@ instance Show PCF where
 
 
 
--- Running MyHDL
-run :: String -> IO ()
-run funName = do
-  let cmd = "PYTHONPATH=myhdl python3 run_myhdl.py " ++
-        funName ++ " " ++ funName ++ ".py"
-  putStrLn "cmd:"
-  putStrLn cmd
-  (_, Just stdout, Just stderr, _) <-
-    createProcess (shell cmd) { std_out = CreatePipe, std_err = CreatePipe }
-  out <- hGetContents' stdout
-  err <- hGetContents' stderr
 
-  putStrLn "stdout:"
-  putStr out
-  putStrLn "stderr:"
-  putStr err
+
+
+-- Test benches.
+--
+-- Note that when i/o busses are simplified to [r S], there are still
+-- a couple of ways to represent code.
+--
+-- 1) m [r S]            passed into compileTerm , embedded Input nodes
+-- 2) [r S] -> m ()      mirrors MyHDL port api, args can be in or out
+-- 3) [r S] -> m [r S]   mirrors Seq processor, in and out explicit
+--
+-- MyHDL modules are our central idea, so we focus on the second
+-- representation as the canonical one.  See pyModule above, which
+-- performs the conversion from 2) to 1).
+
+-- The code below performs conversion from 3) to 2), and generates
+-- additional information to run the test bench, instantiating the
+-- MyHDL module, applying inputs and collecting outputs.
+
+-- Test benches are then constructed as:
+-- . a MyHDL module
+-- . a data structure to drive instantiation
+
+-- For the test bench, the specification is derived from the SeqEmu
+-- and SeqTH approaches: provide a [r S] -> m [r S] module, a list of
+-- bit sizes, and an input list.
+
+-- See run_myhdl.py
+
+testbench ::
+  String
+  -> [Int]
+  -> (forall m r. Seq m r => [r S] -> m [r S])
+  -> [[Int]]
+  -> (TestBench, [[Int]])
+
+data TestBench = TestBench String String String
+instance (Show TestBench) where
+  show (TestBench m i o) = m ++ i ++ o
+
+
+testbench name inSizes mod input = tb where
+  tb = (TestBench module_py input_py output_py, output)
+
+  n_ticks = length input
+  nb_in   = length inSizes
+  inTypes = map bits inSizes
   
-  hClose stdout   -- FIXME: how to use lazy IO
-  return ()
+  -- Emulation.  This also gives us the output size.
+  output = SeqEmu.iticks (SeqEmu.onInts inSizes mod) input
+  nb_out = length $ head output
 
--- Workaround for lazy IO
-hGetContents' h = do
-  str <- hGetContents h
-  seq str (return str)
+  -- Embed the input/output sequences in the Python module.
+  output_py = "\nouts = " ++ show (take n_ticks $ output) ++ "\n"
+  input_py  = "\nins  = " ++ show input ++ "\n"
 
+  -- Module code gen.  Adapt to pyModule interface.
+  outTypes  = [SInt Nothing 0 | _ <- [1..nb_out]]
+  portTypes = inTypes ++ outTypes
+  portNames = ["p" ++ show n | n <- [0..(length portTypes)-1]]
+  (MyHDL _ module_py) = pyModule name portNames portTypes mod'
+  mod' ports = do
+    let (ins,outs) = splitAt nb_in ports
+    outs' <- mod ins
+    sequence_ $ zipWith connect outs outs'
 
--- What this needs to be:
-
--- For now support only list in -> list out "dumb" test benches.
--- When it gets too messy, use a binary interface:
--- https://john-millikin.com/software/haskell-cpython
-
--- Binary interface isn't too bad.
-
--- s = "class foo:\n\tdef __init__(self):\n\t\tpass"
--- import sys,imp
--- m = imp.new_module('m')
--- exec(s, m.__dict__)
-
--- FIXME: write the trampoline in python.  this is a little awkward.
-
-test_py = do
-  run_testbench "hdl_mod" "class foo:\n\tdef __init__(self):\n\t\tpass"
-
-run_testbench :: Text -> Text -> IO (Maybe [[Int]])
-run_testbench mod_name mod_text = do
-
-  Py.initialize -- idempotent
-
-  let onException :: Py.Exception -> IO (Maybe [[Int]])
-      onException exc = do
-        Py.print (Py.exceptionValue exc) stdout
-        return Nothing
-      str = (fmap Py.toObject) .  Py.toUnicode
-      attr o a = Py.getAttribute o =<< Py.toUnicode a
-      call fun margs = do
-        args <- sequence margs
-        Py.callArgs fun args
-      castList o = do
-        (Just l) <- Py.cast o
-        Py.fromList l
-      castInt o = do
-        (Just i) <- Py.cast o
-        i <- Py.fromInteger i
-        return $ fromIntegral i
-  
-  Exception.handle onException $ do
-
-    -- CPython.System.setPath is not platform-independent, so leave this in.
-    sys <- Py.importModule "sys"
-    sys_path <- attr sys "path"
-    sys_path_append <- attr sys_path "append"
-    call sys_path_append [str "."]
-    
-    lib <- Py.importModule "lib_myhdl"
-    run <- attr lib "run"
-    busses <- call run [str mod_name, str mod_text]
-
-    -- Nested cast
-    bs <- castList busses
-    bs <- sequence
-      [do b <- castList b
-          sequence $ map castInt b
-      | b <- bs]
-          
-    Py.print busses stdout
-    return $ Just bs
 

@@ -367,3 +367,22 @@ sexp e = str where
 mSexp :: Show n => Term (Op n) -> PrintTerm ()
 mSexp e = mTerm sub e where
   sub n = tagged "NODE" [tell $ show n]
+
+
+-- Render probe names unique so they can be used as global circuit names.
+probeNames probes = probes' where
+  -- Throw out constants
+  nodeNum (Node _ n) = Just n
+  nodeNum (MemNode n) = Just n
+  nodeNum _ = Nothing
+  
+  probes' = [(node,name) | (name,node) <- Map.toList uniques]
+  uniques = foldr unique Map.empty probes
+  unique (node, name) map = map' where
+    map' = case nodeNum node of
+      Just n -> Map.insert name' n map
+      Nothing -> map
+    name' = case Map.lookup name map of
+      Nothing -> name
+      Just n -> (name ++ show node)
+  
