@@ -160,11 +160,54 @@ reg' t f = do closeReg [t] $ \[r] -> do r' <- f r ; return ([r'], r)
 inc :: Seq m r => r S -> m (r S)
 inc c = add c 1
 
+top_bit v = do
+  (SInt (Just n) _) <- stype v
+  slice' v n (n-1)
+bottom_bits v = do
+  (SInt (Just n) _) <- stype v
+  slice' v (n-1) 0
+
+carry :: Seq m r => (r S -> m (r S)) -> r S -> m (r S, r S)
+carry inc c = do
+  inc' <- inc =<< conc (cbit 0) c
+  c    <- top_bit inc'
+  bits <- bottom_bits inc'
+  return (c, bits)
+
+
 dec :: Seq m r => r S -> m (r S)
 dec c = sub c 1
 
 counter :: Seq m r => SType -> m (r S)
 counter t = reg' t inc
+
+-- Combinatorial output.
+mod_counter' :: Seq m r => Int -> m (r S)
+mod_counter' period = do
+  -- Use one extra bit to use as carry, to avoid the big comparator.
+  let n = nb_bits period
+      init = cbits n $ period - 1
+  closeReg [bits n] $ \[s] -> do
+    (c, dec') <- carry dec s
+    s'        <- if' c init dec'
+    return ([s'], c)
+
+-- Registered output.
+mod_counter period = mod_counter' period >>= delay
+
+-- Combinatorial output for carry flag
+carry_counter' :: Seq m r => SType -> m (r S, r S)
+carry_counter' t = do
+  closeReg [t] $ \[s] -> do
+    (c, s') <- carry inc s
+    return ([s'], (c, s))
+
+carry_counter t = do
+  (c, cnt) <- carry_counter t
+  c' <- delay c
+  return (c', cnt)
+    
+
 
 delay :: Seq m r => r S -> m (r S)
 delay x = do

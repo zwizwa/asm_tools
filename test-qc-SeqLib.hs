@@ -71,6 +71,7 @@ main = do
   x_async_transmit
   x_spi
   x_soc
+  x_mod_counter
   
 
 -- Tests for library code.
@@ -122,7 +123,7 @@ x_async_receive_sample = do
   
 x_async_receive_sample_for t = do
   printC $ chunksOf 8 $ t 8
-    [[i] | i <- rle (1,[8,8*9,8])]
+    [[i] | i <- rle' (1,[8,8*9,8])]
 
 
 -- async_receive
@@ -339,7 +340,15 @@ x_soc = do
     t_soc prog_loop $ replicate 30 [1]
   
 
+t_mod_counter ins =
+  snd $
+  $(compile noProbe [] $
+     \[] -> do c <- mod_counter 13 ; return [c])
+  memZero ins
   
+x_mod_counter = do
+  putStrLn "x_mod_counter"
+  print $ rle $ t_mod_counter $ replicate 30 []
 
 
 

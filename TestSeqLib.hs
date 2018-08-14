@@ -30,6 +30,7 @@ d_stack i@[push,pop,wd] = do
   return (rd:i)
 
 
+
 list2 (a,b) = do
   return [a,b]
 
@@ -103,3 +104,4 @@ selectSignals columns names signals = signals' where
   fromJust' nm Nothing = error $
     "showSelectSignals: " ++ show nm ++ " not found in " ++ show names
   
+

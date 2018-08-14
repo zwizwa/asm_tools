@@ -33,9 +33,23 @@ int2bool 1 = True
 bool2int False = 0
 bool2int True = 1
 
-rle (val,ns) = f (int2bool val) ns where
+-- I forgot why this is called rle.  Rename it
+rle' (val,ns) = f (int2bool val) ns where
   f _ [] = []
   f v (n:ns) = (replicate n $ bool2int v) ++ f (not v) ns
+
+
+-- This routine seems more useful for printing trace outputs
+rle :: (Eq t, Integral i) => [t] -> [(i,t)]
+rle [] = error "rle needs non-empty list"
+rle (b:bs) = f 1 b bs where
+  f n s [] = [(n,s)]
+  f n s (b:bs) = case s == b of
+    True  -> f (n+1) s bs
+    False -> (n,s) : f 1 b bs
+    
+
+
 
 mask nb_bits v = v .&. msk where
   msk = (1 `shiftL` nb_bits) - 1
