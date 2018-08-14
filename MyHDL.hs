@@ -40,6 +40,7 @@ import qualified Data.Map.Strict as Map
 import Data.Functor.Compose
 import Numeric (showHex, showIntAtBase)
 import Data.Char (intToDigit)
+import Data.Maybe
 
 
 newtype PrintMyHDL t = PrintExpr {
@@ -62,8 +63,8 @@ instance Show MyHDL where
 -- Convert the port specification to a more specific type.
 -- Note that reset value isn't necessary for I/O ports.
 portSpec (name, (SInt (Just bits) rst)) = (name,bits)
-portSpec (name, _) = (name,-1) -- FIXME
--- portSpec spec = error $ "portSpec needs bit size: " ++ show spec
+-- portSpec (name, _) = (name,-1) -- FIXME
+portSpec spec = error $ "portSpec needs bit size: " ++ show spec
 
 -- Like Show, but generate a valid Python name from abstract node rep.
 -- Also put the other constraints here.
@@ -315,13 +316,7 @@ type R = SeqTerm.R
 
 -- Alternative interface used for generating FPGA images.
 pyModule :: String -> [String] -> [SType] -> ([R S] -> M ()) -> MyHDL
-pyModule name portNames portTypes mod = MyHDL portSpecs pyCode where
-
-  -- Note that it is allowed for portTypes to contain undefined bit
-  -- sizes.  These will be determined once they are bound to the
-  -- output nodes in the code.
-  portSpecs = map portSpec $ zip portNames $ map SeqTerm.opType ports
-  
+pyModule name portNames portTypes mod = MyHDL portSpecs (pyCode ++ dbg) where
   
   pyCode = myhdl name ports' $ SeqExpr.inlined bindings'
 
@@ -344,6 +339,20 @@ pyModule name portNames portTypes mod = MyHDL portSpecs pyCode where
   namedNodes = Map.union namedPorts $ Map.fromList probeNames  -- prefer port names
 
 
+  -- Note that in general we don't know the output types until after
+  -- compileTerm', so portTypes needs to contain undefined bit sizes.
+  -- Once compiled, the type information can be restored from Connect
+  -- nodes.
+  conns = catMaybes $ map conn bindings where
+    conn (port, Connect typ node) = Just (rename port, typ)
+    conn _ = Nothing
+  portSpecs = zipWith portSpec' portNames portTypes
+  portSpec' name origType =
+    (portSpec $ (name,
+                 Map.findWithDefault origType name $
+                 Map.fromList conns))
+  
+  dbg = ""
 
 -- For ice40 FPGA images, we use the convention that all ports are 1
 -- bit wide.  This makes it easier to relate to the circuit netlist.

@@ -161,10 +161,9 @@ instance Seq.Seq M R where
 
   -- Combinatorial drive is needed to support combinatorial module
   -- outputs, but otherwise not used in Seq.hs code.
-  connect = bind Connect
-
+  connect = connect'
   -- register drive
-  update   = bind Delay
+  update  = delay'
 
   -- see comments in Seq.erl
   getEnv = ask
@@ -184,16 +183,22 @@ instance Seq.Seq M R where
 fromRight' (Right a) = a
 fromRight' (Left e) = error e
 
-bind cons (R (Node t' dst)) (R src) = do
-  -- let t = opType src
-  -- case t == t' of
-  --   False -> error $ "bind: different node types: " ++ show (t',t)
-  --   True  -> driveNode dst $ cons t src
 
-  -- Note that only dst has the correct initial value.
-  driveNode dst $ cons t' src
-bind _ _ _ = do
-  error $ "bind: bad argument"
+-- Note: these should use proper unification.  For now, this is a workaround.
+
+-- For delay, the type constraint comes from the destination register.
+delay' (R (Node t dst)) (R src) = do
+  driveNode dst $ Delay t src
+delay' _ _ = do
+  error $ "delay': bad argument"
+
+-- For connect, type is propageated from the source.  See MyHDL.hs
+connect' (R (Node _ dst)) (R src) = do
+  driveNode dst $ Connect (opType src) src
+connect' _ _ = do
+  error $ "connect': bad argument"
+
+
 
 -- For constants.
 instance Num (R Seq.S) where
