@@ -4,7 +4,7 @@
 # possibly run a Simulation to compare against an "output" list.  For
 # more complicated synthesis setup and Python test benches, a custom
 # script is more appropriate.
- 
+
 import sys
 import imp
 import inspect
@@ -12,16 +12,16 @@ import importlib.util
 from myhdl import *
 import ram
 
-def load_module(hdl_fun_name, filename):
+def load_module(hdl_module_name, filename):
     # Load the test bench module
-    spec  = importlib.util.spec_from_file_location(hdl_fun_name, filename)
+    spec  = importlib.util.spec_from_file_location(hdl_module_name, filename)
     modul = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(modul)
     return modul
 
-def interpret_module(hdl_fun_name, modul):
+def interpret_module(hdl_module_name, modul):
     # Python function to instantiate HDL module
-    hdl_fun = getattr(modul, hdl_fun_name)
+    hdl_fun = getattr(modul, hdl_module_name)
     ports = getattr(modul, "ports")
     #print(ports)
     ins = False
@@ -45,7 +45,8 @@ def inst_testbench(hdl_fun, ports, tb_input, tb_output):
     #RST = ResetSignal(0,1,True)
 
     nb_input  = len(tb_input[0])
-    nb_output = len(tb_output[0])
+    if tb_output:
+        nb_output = len(tb_output[0])
 
     # Inputs are assumed to be 1-bit signals.  We model them as
     # registers, so first input vector determines reset values.
@@ -72,12 +73,19 @@ def inst_testbench(hdl_fun, ports, tb_input, tb_output):
         # Keep track of time.
         n.next = n + 1
 
-        print(n,tb_input[n],tb_output[n])
+        if tb_output:
+            # Perform output assert.
+            print(n,tb_input[n],tb_output[n])
 
-        for (a,b) in zip(out_signals, tb_output[n]):
-            assert a == b
+            for (a,b) in zip(out_signals, tb_output[n]):
+                assert a == b
 
-        if n+1 >= len(tb_output):
+        else:
+            # Just run the entire simulation.
+            vals = [s + 0 for s in out_signals]
+            print(vals)
+
+        if n+1 >= len(tb_input):
             raise StopSimulation
 
         # tb_input[0] is set at reset.  By induction this needs n+1
@@ -88,31 +96,29 @@ def inst_testbench(hdl_fun, ports, tb_input, tb_output):
     return [tb_inst, clock(), io]
 
 
-def run_module(hdl_fun_name, modul):
+def run_module(hdl_module_name, modul):
 
-    hdl_fun, ports, tb_input, tb_output = interpret_module(hdl_fun_name, modul)
+    hdl_fun, ports, tb_input, tb_output = interpret_module(hdl_module_name, modul)
 
     # Run it if it is a test bench
-    if tb_input and tb_output:
+    if tb_input:
         insts = inst_testbench(hdl_fun, ports, tb_input, tb_output)
         Simulation(insts).run()
     else:
         print("not a testbench")
         
-    # Which are special cases.
-    CLK = Signal(bool(False))
+        # Which are special cases.
+        CLK = Signal(bool(False))
 
-    # FIXME: workaround for HX8K board
-    #RST = ResetSignal(1,0,True)
-    RST = ResetSignal(0,1,True)
-    port_signals = [Signal(modbv(0)[bits:]) for (_,bits) in ports]
-    signals = [CLK, RST] + port_signals
+        # FIXME: workaround for HX8K board
+        #RST = ResetSignal(1,0,True)
+        RST = ResetSignal(0,1,True)
+        port_signals = [Signal(modbv(0)[bits:]) for (_,bits) in ports]
+        signals = [CLK, RST] + port_signals
 
-    # Generate code
-    toVerilog(hdl_fun, *signals)
-    toVHDL(hdl_fun, *signals)
-
-    return [[1,2,3],[4,5,6]]
+        # Generate code
+        toVerilog(hdl_fun, *signals)
+        toVHDL(hdl_fun, *signals)
 
 # Invoked as library call from MyHDL.hs
 def run_text(mod_name, mod_text):
@@ -123,6 +129,6 @@ def run_text(mod_name, mod_text):
 # Invoked as script.  See Makefile
 if __name__ == '__main__':
     if sys.argv[2]:
-        name = sys.argv[1]
-        modul = load_module(hdl_fun_name, sys.argv[2])
-        run_module(hdl_fun_name, modul)
+        hdl_module_name = sys.argv[1]
+        modul = load_module(hdl_module_name, sys.argv[2])
+        run_module(hdl_module_name, modul)

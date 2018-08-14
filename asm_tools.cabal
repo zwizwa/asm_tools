@@ -30,8 +30,7 @@ Test-Suite test-pru
 
 Test-Suite test-myhdl
     build-depends: base, containers, mtl, free, keys, set-extra,
-                   template-haskell, parsec, QuickCheck, split, process,
-                   cpython, text
+                   template-haskell, parsec, QuickCheck, split, process
     type:       exitcode-stdio-1.0
     main-is:    test-myhdl.hs
     build-depends: base

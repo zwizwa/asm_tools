@@ -6,22 +6,16 @@
 -- The task here is to generate that syntax, and defer as much as
 -- possible to function calls.  E.g. signal instantiation.
 
-
-
--- {-# LANGUAGE MultiParamTypeClasses #-}
--- {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
-module MyHDL(myhdl,MyHDL,testbench,fpgaGen,PCF(..),pcf) where
+module MyHDL(myhdl,MyHDL,testbench,fpgaGen,PCF(..),pcf,noOutputCheck) where
 import Seq
 import SeqLib
 import CSV
@@ -417,18 +411,23 @@ instance Show PCF where
 testbench ::
   String
   -> [Int]
+  -- Rank 2, because we instantiate it twice.
   -> (forall m r. Seq m r => [r S] -> m [r S])
   -> [[Int]]
   -> TestBench
 
-data TestBench = TestBench MyHDL [[Int]] [[Int]]
+data TestBench = TestBench MyHDL [[Int]] (Maybe [[Int]])
 instance (Show TestBench) where
   show (TestBench hdl input output) = show hdl ++ input_py ++ output_py where
-    output_py = "\nouts  = " ++ show output ++ "\n"
     input_py  = "\nins   = " ++ show input  ++ "\n"
+    output_py = case output of
+      Just output -> "\nouts  = " ++ show output ++ "\n"
+      Nothing -> ""
+
+noOutputCheck (TestBench hdl ins _) = TestBench hdl ins Nothing
 
 testbench name inSizes mod input = tb where
-  tb = (TestBench hdl input (take nb_ticks output))
+  tb = TestBench hdl input $ Just $ take nb_ticks output
 
   nb_ticks = length input
   nb_in    = length inSizes

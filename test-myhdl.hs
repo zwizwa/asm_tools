@@ -152,7 +152,9 @@ x_soc_fpga = do
   writeFile "x_soc_fpga.pcf" $ show pcf
 
 
-
+-- Old test routine.  This is the only one that needs access to
+-- MyHDL.myhdl directly.  In practice a little more metadata is needed
+-- to instantiate the module.  See MyHDL.pyModule
 print_hdl :: SeqTerm.M [SeqTerm.R S] -> IO ()
 print_hdl src = do
   let (ports, bindings) = SeqTerm.compileTerm src
@@ -172,7 +174,7 @@ print_hdl src = do
 x_run_myhdl = do
   putStrLn "-- x_run_myhdl"
   -- MyHDLRun.run_process "x_soc_fpga"
-  MyHDLRun.test_py
+  MyHDLRun.test
 
 
 x_testbench = do
