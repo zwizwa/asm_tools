@@ -6,6 +6,7 @@
 # script is more appropriate.
  
 import sys
+import imp
 import inspect
 import importlib.util
 from myhdl import *
@@ -16,9 +17,12 @@ def load_module(hdl_fun_name, filename):
     spec  = importlib.util.spec_from_file_location(hdl_fun_name, filename)
     modul = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(modul)
+    return modul
+
+def interpret_module(hdl_fun_name, modul):
     # Python function to instantiate HDL module
     hdl_fun = getattr(modul, hdl_fun_name)
-    ports = inspect.getargspec(hdl_fun).args
+    ports = getattr(modul, "ports")
     #print(ports)
     ins = False
     outs = False
@@ -40,10 +44,13 @@ def inst_testbench(hdl_fun, ports, tb_input, tb_output):
 
     #RST = ResetSignal(0,1,True)
 
+    nb_input  = len(tb_input[0])
+    nb_output = len(tb_output[0])
+
     # Inputs are assumed to be 1-bit signals.  We model them as
     # registers, so first input vector determines reset values.
-    in_signals  = [Signal(modbv(v)[1:]) for v in tb_input[0]]
-    out_signals = [Signal(modbv(0)[1:]) for _ in tb_output[0]]
+    in_signals  = [Signal(modbv(v)[t:]) for (v,(_,t)) in zip(tb_input[0],ports)]
+    out_signals = [Signal(modbv(0)[t:]) for (_,t) in ports[nb_input:]]
 
     io_signals = in_signals + out_signals
     signals = [CLK, RST] + io_signals
@@ -81,9 +88,9 @@ def inst_testbench(hdl_fun, ports, tb_input, tb_output):
     return [tb_inst, clock(), io]
 
 
-def load_and_run(hdl_fun_name, filename):
+def run_module(hdl_fun_name, modul):
 
-    hdl_fun, ports, tb_input, tb_output = load_module(hdl_fun_name, filename)
+    hdl_fun, ports, tb_input, tb_output = interpret_module(hdl_fun_name, modul)
 
     # Run it if it is a test bench
     if tb_input and tb_output:
@@ -92,23 +99,30 @@ def load_and_run(hdl_fun_name, filename):
     else:
         print("not a testbench")
         
-    # The first two arguments are CLK and RST.
-    out_ports = ports[2:]
     # Which are special cases.
     CLK = Signal(bool(False))
 
     # FIXME: workaround for HX8K board
     #RST = ResetSignal(1,0,True)
     RST = ResetSignal(0,1,True)
-    # For FPGA output, we assume 1-bit signals.
-    out_signals = [Signal(modbv(0)[1:]) for _ in out_ports]
-    signals = [CLK, RST] + out_signals
+    port_signals = [Signal(modbv(0)[bits:]) for (_,bits) in ports]
+    signals = [CLK, RST] + port_signals
 
     # Generate code
     toVerilog(hdl_fun, *signals)
     toVHDL(hdl_fun, *signals)
 
+    return [[1,2,3],[4,5,6]]
 
+# Invoked as library call from MyHDL.hs
+def run_text(mod_name, mod_text):
+    modul = imp.new_module(mod_name)
+    exec(mod_text, modul.__dict__)
+    return run_module(mod_name, modul)
+
+# Invoked as script.  See Makefile
 if __name__ == '__main__':
     if sys.argv[2]:
-        load_and_run(sys.argv[1], sys.argv[2])
+        name = sys.argv[1]
+        modul = load_module(hdl_fun_name, sys.argv[2])
+        run_module(hdl_fun_name, modul)

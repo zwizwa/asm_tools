@@ -2,6 +2,8 @@
 
 module MyHDLRun where
 
+import qualified MyHDL
+
 import qualified CPython as Py
 import qualified CPython.Protocols.Object as Py
 import qualified CPython.Reflection as Py
@@ -12,7 +14,7 @@ import qualified CPython.Types.Exception as Py
 import qualified CPython.Types.Module as Py
 
 import qualified Control.Exception as Exception
-import Data.Text(Text)
+import Data.Text(Text,pack)
 import Data.Maybe
 import Control.Monad
 import System.IO
@@ -49,11 +51,19 @@ import System.IO
 
 -- Binary interface
 
--- There is a _lot_ of packing/unpacking, but with a couple of helpers
--- it is manageable.
+-- Note that inspect.py needs access to the source file through a
+-- getsourcefile() call, so we write it out.
+
+-- https://stackoverflow.com/questions/12072252/
+
 
 test_py = do
-  rv <- run_testbench "hdl_mod" "class foo:\n\tdef __init__(self):\n\t\tpass"
+  let
+    name = "x_tb"
+    ins = map (:[]) [1,0,1,1,0,0]
+    mod i = do return i
+    pyCode = show $ MyHDL.testbench name [1] mod ins
+  rv <- run_testbench (pack name) (pack pyCode)
   print $ fromJust $ rv
 
 run_testbench :: Text -> Text -> IO (Maybe [[Int]])
@@ -85,9 +95,10 @@ run_testbench mod_name mod_text = do
     sys_path <- attr sys "path"
     sys_path_append <- attr sys_path "append"
     call sys_path_append [str "."]
+    call sys_path_append [str "myhdl"]
     
-    lib <- Py.importModule "lib_myhdl"
-    run <- attr lib "run"
+    lib <- Py.importModule "run_myhdl"
+    run <- attr lib "run_text"
     busses <- call run [str mod_name, str mod_text]
 
     -- Py.print busses stdout
