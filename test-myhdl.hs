@@ -88,7 +88,7 @@ f_blink_fpga =
    [|
     \[ _LED0 ] -> do
       c <- counter $ (bits 24)
-      led <- slice c (Just 23) 23
+      led <- slice' c 23 22
       connect _LED0 led
     |])
 x_blink_fpga = do

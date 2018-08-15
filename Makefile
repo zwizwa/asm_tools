@@ -105,10 +105,8 @@ build/testbench_gen.py: .stamp.generate
 %.icedude: %.bin  
 	PATH=~/.cabal/bin:$$PATH iCEDude -U flash:w:$<
 
+# SRAM programming.  Note that the jumpers J6 need to be in the
+# correct position (horizontal when holding the board up with USB
+# connector at the bottom).
 %.iceprog: %.bin
-	iceprog
-
-
-
-
-
+	iceprog -S $<

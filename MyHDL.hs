@@ -96,12 +96,21 @@ mGen name ports bindings = do
   indent (+ 1) $ do
     sequence_ $ map defSignal internalBindings
     indent (+ 1 ) $ sequence_ $ [assignment n e | (n, e) <- bindings]
+
+    ice40_reset
+    
     (n,_) <- get
     tab
     tell "return ["
     tell $ commas $ map inst [1..n]
     tell "]\n"
     -- tell $ "# " ++ show (nodeRefcounts nodes) ++ "\n"
+
+-- FIXME: hardcoded hack for the ice40 reset generator.
+ice40_reset = do
+  i <- new_inst
+  tab ; tell $ (inst i) ++ " = ice40_reset(CLK, RST)\n"
+
 
 inst n = "inst" ++ show n
 sig n = nodeName n
@@ -123,7 +132,7 @@ defSignal :: Node n => (n, Expr n) -> PrintMyHDL ()
 --   and called directly.
 
 defSignal (n, (Free (Compose (MemWr (_, o_wa, o_wd, _))))) = do
-  i <- memory_inst
+  i <- new_inst
 
   -- Assumes read and write are same size.
   let ta = SeqTerm.opType o_wa
@@ -191,8 +200,8 @@ need context = do
       indent (+ (-1)) $ render state
 
 -- FIXME: repurpose state to also track the memory instances.
-memory_inst :: PrintMyHDL Int
-memory_inst = do
+new_inst :: PrintMyHDL Int
+new_inst = do
   (n, context) <- get
   let state = (n+1, context)
   put state
