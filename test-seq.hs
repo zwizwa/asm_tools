@@ -43,6 +43,7 @@ import SeqSyntax
 import Names
 import SeqPrim
 import TestTools
+import qualified Forth
 import qualified SeqArr
 import qualified SeqApp
 import qualified SeqStatic

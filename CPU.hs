@@ -17,6 +17,7 @@
 module CPU where
 import Seq
 import SeqLib
+import qualified Forth
 import Control.Monad
 import Control.Applicative
 import Data.Bits hiding (bit)
@@ -280,8 +281,24 @@ o_write = 5
 o_swap  = 6
 o_loop  = 7
 
-i1 :: Int -> Int -> Int
-i1 opc arg = opc `shiftL` (16 - o_nb_bits) .|. (arg .&. 0xFF)
+-- Use Forth for flow control structures.
+
+-- Note that this is a Forth /
+-- Asm hybrid: operations do not have to be nullary.
+
+for'  n = push 3 >> for
+for   = Forth.mark
+next  = Forth.cpop >>= loop
+begin = Forth.mark
+again = Forth.cpop >>= jmp
+
+-- Note that this is a Forth / Asm hybrid: operations do not have to
+-- be nullary.
+
+ins i = Forth.save [i]
+
+i1 :: Int -> Int -> Forth.M ()
+i1 opc arg = ins $ opc `shiftL` (16 - o_nb_bits) .|. (arg .&. 0xFF)
 
 i0 c = i1 c 0
 
@@ -294,6 +311,9 @@ write = i1 o_write
 swap  = i0 o_swap
 loop  = i1 o_loop
 drop  = write 0xff
+
+
+
 
 -- Each instruction can have push/pop/write/nop wrt imm?  It seems
 -- possible that stack can be manipulated in parallel with bus

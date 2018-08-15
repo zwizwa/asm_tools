@@ -8,6 +8,8 @@ Low-level macro languages embedded in Haskell
   which can target Verilog, VHDL.  A fast Template Haskell step is
   included for QuickCheck-based simulation.
 
+- A stack CPU + embedded Forth/Assembler hybrid
+
 - Misc tools  (VCD, netlists)
 
 This is work in progress.  Functionality is added as needed.

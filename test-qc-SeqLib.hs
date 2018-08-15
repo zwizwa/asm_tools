@@ -32,6 +32,8 @@ import SeqPrim
 import TestSeqLib
 import TestTools
 
+import qualified Forth
+
 import SeqTH(compile,compile',noProbe,allProbe)
 
 import Prelude hiding (read, drop)
@@ -41,7 +43,7 @@ import Data.List hiding (drop)
 import Data.List.Split
 import Data.Bits
 import Data.Maybe
-import Test.QuickCheck hiding ((.&.),(.|.))
+import Test.QuickCheck hiding ((.&.),(.|.),again)
 import Test.QuickCheck.Gen hiding (bitSize, getLine)
 import Language.Haskell.TH
 
@@ -304,23 +306,29 @@ printProbe columns (names, signals) = do
 
 x_soc = do
   let
+    c = Forth.compile
     -- Most basic operation is a jump.
-    prog_jmp = [ jmp 4, nop, nop, nop, jmp 0 ]
+    prog_jmp =  c $ do jmp 4; nop; nop; nop; jmp 0
 
     -- Stack access
-    prog_push = [ push 7, push 9, push 11, swap, drop, jmp 0 ]
+    prog_push = c $ do push 7; push 9; push 11; swap; drop; jmp 0
     
     -- Uart control: write + wait done, then loop
-    prog_bus = [ push 0xF,
-                 write uart_tx,
-                 nop,            -- tx_done doesnt clear fast enough
-                 read  uart_tx,  -- waits until tx_done is high
-                 drop,           -- value returned is dummy
-                 jmp 0 ]
+    prog_bus =  c $ do
+      push 0xf
+      -- push 0xF
+      write uart_tx
+      nop            -- tx_done doesnt clear fast enough
+      read  uart_tx  -- waits until tx_done is high
+      drop           -- value returned is dummy
+      jmp 0
 
     -- Loop
-    prog_loop = [ push 3, loop 1, jmp 0 ]
+    prog_loop = c $ do push 3; loop 1; jmp 0
 
+    -- Same, using Forth control words
+    prog_loop2 = c $ do begin; for' 3; next; again
+  
   putStrLn "-- x_soc"
   
   putStrLn "prog_jmp:"
@@ -338,12 +346,16 @@ x_soc = do
   putStrLn "prog_loop:"
   printProbe ["iw","ip","top","snd","c"] $
     t_soc prog_loop $ replicate 30 [1]
-  
+
+  putStrLn "prog_loop2:"
+  printProbe ["iw","ip","top","snd","c"] $
+    t_soc prog_loop2 $ replicate 30 [1]
+
 
 t_mod_counter ins =
   snd $
   $(compile noProbe [] $
-     \[] -> do c <- mod_counter 13 ; return [c])
+     \[] -> do (c,_) <- mod_counter 13 ; return [c])
   memZero ins
   
 x_mod_counter = do
