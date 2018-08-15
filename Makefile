@@ -12,10 +12,11 @@ all: compile
 .SECONDARY:
 
 clean:
-	rm -f result *~ x_* *.v *.bin *.blif *.asc f_*.py x_*.py
+	rm -f result *~ x_* *.v *.vhd *.bin *.blif *.asc f_*.py x_*.py *.compile *.tmp *.vcd
+	rm -rf __pycache__
 
 .PHONY: myhdl_test
-myhdl_test:  x_blink_fpga.ct256.bin x_soc_fpga.ct256.bin
+myhdl_test:  f_blink.ct256.bin f_soc.ct256.bin
 
 
 
@@ -51,13 +52,8 @@ cabal-test-myhdl: default.nix
 	$(NIX_SHELL) --run "cabal test test-myhdl --log=/dev/stdout"
 
 # These need corresponding entries in the .cabal file
-f_%.compile: f_%.hs
-	$(NIX_SHELL) --run "cabal test f_$* --log=/dev/stdout" >$@.tmp
-	mv $@.tmp $@
-f_%.py: f_%.compile
-	touch $@
-f_%.pcf: f_%.compile
-	touch $@
+f_%.py f_%.pcf: f_%.hs
+	$(NIX_SHELL) --run "cabal test f_$* --log=/dev/stdout"
 
 
 test: cabal-test
@@ -68,10 +64,9 @@ test: cabal-test
 # FPGA: MyHDL + yosys + arachne-pnr
 MYHDL:=$(shell readlink -f myhdl)
 
-
-%.myhdl: %.py run_myhdl.py $(MYHDL) Makefile
-	PYTHONPATH="$(MYHDL)" python3 run_myhdl.py $* $< >$@.tmp
-	mv $@.tmp $@
+# FIXME: side effect files .v -> .vhd
+%.v %.vhd: %.py run_myhdl.py $(MYHDL) Makefile
+	PYTHONPATH="$(MYHDL)" python3 run_myhdl.py $* $<
 
 # apt-get install gtkwave
 # gtkwave module.vcd
@@ -91,13 +86,6 @@ MYHDL:=$(shell readlink -f myhdl)
 %.ct256.time: %.pcf %.ct256.asc
 	icetime -p $*.pcf -o $*.ct256.nl.v -P ct256 -d hx8k -t $*.ct256.asc
 
-# Some fake fanout.  Do check that the file exists before touching.
-%.v: %.myhdl
-	[ -f "$@" ] && touch $@
-%.vhd: %.myhdl
-	[ -f "$@" ] && touch $@
-%.pcf: %.myhdl
-	[ -f "$@" ] && touch $@
 build/fpga_trigger_gen.py: .stamp.generate
 	[ -f "$@" ] && touch $@
 build/testbench_gen.py: .stamp.generate

@@ -389,5 +389,7 @@ probeNames probes = probes' where
       Nothing -> map
     name' = case Map.lookup name map of
       Nothing -> name
-      Just n -> (name ++ show node)
+      Just n -> case node of
+        (Node _ n) -> name ++ show n
+        _ -> error "probeNames: constant"
   
