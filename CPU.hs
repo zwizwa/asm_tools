@@ -227,11 +227,11 @@ closeIMem (IMemWrite wEn wAddr wData) run execute = do
 -- signal to appear.  Seperate read/write addresses are removed as the
 -- CPU is kept simple: no read/write at the same time.
 
-data BusIn r = BusIn {
+data BusRd r = BusRd {
   busReadRdy  :: r S,
   busReadData :: r S
 }
-data BusOut r = BusOut {
+data BusWr r = BusWr {
   busWriteEn   :: r S,
   busAddr      :: r S,
   busWriteData :: r S
@@ -254,14 +254,6 @@ data BusOut r = BusOut {
 -- Some testing
 
 
--- Defaults for startup, memory size, and no memory write (rom).
-cpu_imem :: Seq m r => Int -> Int -> (Ins r -> m (Control r, BusOut r)) -> m (BusOut r)
-cpu_imem abits ibits decode = do
-  -- Do not update the instruction pointer at the first instruction,
-  -- as rData will be invalid.  The first cycle is used to perform the
-  -- first instruction read.  After that, instruction pointer is updated.
-  run <- seq01 -- 0,1,1,1....
-  closeIMem (noIMemWrite ibits abits) run decode
 
 
 data OpCode = IJMP
@@ -364,17 +356,15 @@ unpackProgram bytes = prog where
 -- not many instructions, use one-hot encoding to keep the logic
 -- simple.
 
-bus_master :: Seq m r => BusIn r -> m (BusOut r)
-bus_master busIn = busOut where
-  execute = stack_machine 3 busIn
-  busOut = cpu_imem 8 16 execute
+-- The "read" and "write" directions are from the perspective of the
+-- CPU (i.e. the programmer).
 
 stack_machine ::
   Seq m r =>
   Int ->
-  BusIn r ->
+  BusRd r ->
   Ins r ->
-  m (Control r, BusOut r)
+  m (Control r, BusWr r)
 
 
 (.&) :: Seq m r => r S -> r S -> m (r S)
@@ -393,7 +383,7 @@ cdec var = do
 
 
 
-stack_machine  nb_stack (BusIn bus_rdy bus_data) (Ins iw) = do
+stack_machine  nb_stack (BusRd bus_rdy bus_data) (Ins iw) = do
   -- Register file is organized as a stack
   let heads    = take (nb_stack - 1)
       tail2    = tail . tail
@@ -454,7 +444,7 @@ stack_machine  nb_stack (BusIn bus_rdy bus_data) (Ins iw) = do
     
     return (stack',                   -- internal reg feedback
             (Control wait jmp arg,    -- instruction sequencer feedback
-             BusOut write arg top))   -- top level output is a bus
+             BusWr write arg top))   -- top level output is a bus
 
 
 
@@ -467,41 +457,75 @@ uart_rx = 0 :: Int
 uart_tx = 1 :: Int
 
 
-soc :: Seq m r => [r S] -> m [r S]
-soc [rx] = do
+bus [rx] (BusWr wEn addr wData) = do
   
-  closeReg [bit, bits 8] $ \[rStrobe,rData] -> do
+  -- Instantiate peripherals, routing i/o registers.
+  addr' <- slice' addr 2 0
+  let tx_bc = 1 -- FIXME
+      c = cbits 2
+      write n = addr' `equ` (c n) >>= band wEn
 
-    -- The effect of the CPU is a bus request.
-    (BusOut wEn addr wData) <-
-      bus_master (BusIn rStrobe rData)
+  -- Bus write operations
+  tx_wc <- write uart_tx
+  (tx, tx_rdy) <- async_transmit tx_bc (tx_wc, wData)
 
-    -- Instantiate peripherals, routing i/o registers.
-    addr' <- slice' addr 2 0
-    let tx_bc = 1 -- FIXME
-        c = cbits 2
-        write n = addr' `equ` (c n) >>= band wEn
+  -- Bus read operations
+  [rStrobe, rData] <- switch addr'
+    [(c uart_rx,
+      do
+        (s,d) <- async_receive 8 rx;
+        "rx_s" .= s
+        "rx_d" .= d
+        return [s,d]),
+     (c uart_tx,
+      do
+        -- Blocking read is convenient.
+        -- Alternatively, implement this as a global flag.
+        return [tx_rdy,0])]
+    (return [0,0])
+  return (BusRd rStrobe rData, [tx])
 
-    -- Bus write operations
-    tx_wc <- write uart_tx
-    (tx, tx_rdy) <- async_transmit tx_bc (tx_wc, wData)
+-- For now these are fixed to 16 bit instruction words and 8 bit address.
+spi_boot cs sck sda = do
+  (wc, w) <- sync_receive 16 cs sck sda
+  a <- fifoPtr (bits 8) wc
+  return $ IMemWrite wc a w
 
-    -- Bus read operations
-    busin <- switch addr'
-      [(c uart_rx,
-        do
-          (s,d) <- async_receive 8 rx;
-          "rx_s" .= s
-          "rx_d" .= d
-          return [s,d]),
-       (c uart_tx,
-        do
-          -- Blocking read is convenient.
-          -- Alternatively, implement this as a global flag.
-          return [tx_rdy,0])]
-      (return [0,0])
-      
-    return (busin, [tx])
+rom_boot :: Seq m r => IMemWrite r
+rom_boot = noIMemWrite 16 8  
+
+soc :: Seq m r => [r S] -> m [r S]
+soc [rx,cs,sck,sda] = do
+
+  -- A soc is the bundling of a CPU, an instruction memory (sequencer
+  -- and boot), a peripheral bus, and a reset circuit.
+
+  -- Do not update the instruction pointer at the first instruction,
+  -- as rData will be invalid.  The first cycle is used to perform the
+  -- first instruction read.  After that, instruction pointer is updated.
+  reset <- seq01 -- 0,1,1,1....
+  reset <- reset `band` cs
+
+  boot <- spi_boot cs sck sda
+  
+  let 
+    ins_bits  = 16
+    imem_bits = 8
+    bus_bits  = 8
+
+    -- boot = rom_boot
+
+    -- Couple CPU and instruction memory
+    bus_master busIn = busOut where
+      execute = stack_machine 3 busIn
+      busOut = closeIMem boot reset execute
+
+  
+  -- Couple bus master and bus
+  closeReg [bit, bits bus_bits] $ \[rStrobe,rData] -> do
+    bus_wr <- bus_master (BusRd rStrobe rData)
+    (BusRd rStrobe' rData', soc_output) <- bus [rx] bus_wr
+    return ([rStrobe', rData'], soc_output)
 
 
 soc_test :: Seq m r => [r S] -> m [r S]

@@ -293,7 +293,7 @@ memRef mem n = v where
     True -> 0
     False -> mem !! n
 
-t_soc prog = $(compile allProbe [1] soc_test) [memRef prog]
+t_soc prog = $(compile allProbe [1,1,1,1] soc_test) [memRef prog]
 
 printProbe :: [String] -> ([String],[[Int]]) -> IO ()
 printProbe columns (names, signals) = do
@@ -328,28 +328,30 @@ x_soc = do
 
     -- Same, using Forth control words
     prog_loop2 = c $ do begin; for' 3; next; again
+
+    idle = [1,1,0,0]
   
   putStrLn "-- x_soc"
   
   putStrLn "prog_jmp:"
   printProbe ["iw","ip"] $
-    t_soc prog_jmp $ replicate 10 [1]
+    t_soc prog_jmp $ replicate 10 idle
 
   putStrLn "prog_push:"
   printProbe ["iw","ip","top","snd"] $
-    t_soc prog_push $ replicate 10 [1]
+    t_soc prog_push $ replicate 10 idle
 
   putStrLn "prog_bus:"
   printProbe ["iw","ip","tx_bc","tx_wc","tx_in","tx_done","tx_out"] $
-    t_soc prog_bus $ replicate 30 [1]
+    t_soc prog_bus $ replicate 30 idle
 
   putStrLn "prog_loop:"
   printProbe ["iw","ip","top","snd","c"] $
-    t_soc prog_loop $ replicate 30 [1]
+    t_soc prog_loop $ replicate 30 idle
 
   putStrLn "prog_loop2:"
   printProbe ["iw","ip","top","snd","c"] $
-    t_soc prog_loop2 $ replicate 30 [1]
+    t_soc prog_loop2 $ replicate 30 idle
 
 
 -- Full example, includes uploading program and starting CPU.
@@ -363,21 +365,27 @@ x_soc_boot = do
       -- wait for tx ready. nop is needed for flag to clear.
       nop ; read uart_tx ; drop
 
-
-    -- The 16-bit words are in big-endian form, and the
-    -- most significant bit of the first word is the first serial bit
-    -- sent.
+    -- The 16-bit words are in big-endian form, and the most
+    -- significant bit of the first word is the first serial bit sent.
     bytes = packProgram prog
     prog' = unpackProgram bytes
-    progbits = map (toBitList 16)
-    
+    prog_bits = map (toBitList 16)
+
+    -- SPI transfer
+    spi_c_d = spiBits 2 $ concat $ prog_bits prog'
+    spi = [[1, 0, 0],
+           [0, 0, 0]] ++
+          [[0,sck,sda] | (sck,sda) <- spi_c_d] ++
+          [[0, 0, 0],
+           [1, 0, 0]]
+
+    -- Clock it for a bit to make sure it works.
+    postamble = replicate 100 [1,0,0]
 
   putStrLn "-- x_soc_boot"
   printProbe ["iw","ip","tx_bc","tx_wc","tx_in","tx_done","tx_out"] $
-    t_soc prog $ replicate 30 [1]
-  printL $ progbits prog
-  print bytes
-  printL $ progbits prog'
+    t_soc prog $ replicate 30 [1,1,0,0]
+  printL $ prog_bits prog'
 
 
 
