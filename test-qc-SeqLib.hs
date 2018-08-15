@@ -383,8 +383,15 @@ x_soc_boot = do
     postamble = replicate 100 [1,0,0]
 
   putStrLn "-- x_soc_boot"
+
+  putStrLn "-- reference: execute from ROM"
   printProbe ["iw","ip","tx_bc","tx_wc","tx_in","tx_done","tx_out"] $
     t_soc prog $ replicate 30 [1,1,0,0]
+  printL $ prog_bits prog'
+
+  putStrLn "-- boot: execute from SPI booted RAM"
+  printProbe ["iw","ip","tx_bc","tx_wc","tx_in","tx_done","tx_out"] $
+    t_soc [] $ map ([1] ++) $ spi ++ postamble
   printL $ prog_bits prog'
 
 
