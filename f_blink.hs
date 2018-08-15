@@ -35,12 +35,11 @@ f_blink =
       led <- slice' c 23 22
       connect _LED0 led
     |])
+  
 generate = do
-  putStrLn "-- f_blink.py, f_blink.pcf"
+  putStrLn "-- f_blink"
   board <- CSV.readTagged id "specs/hx8k_breakout.csv"
   let pin = CSV.ff (\[k,_,v,_] -> (k,v)) board
-      (py,pcf) = MyHDL.fpgaGen "f_blink" f_blink pin
-  writeFile "f_blink.py" $ show py
-  writeFile "f_blink.pcf" $ show pcf
+  MyHDL.fpgaWrite "f_blink" f_blink pin
 
 

@@ -104,3 +104,4 @@ build/testbench_gen.py: .stamp.generate
 # connector at the bottom).
 %.iceprog: %.bin
 	iceprog -S $<
+

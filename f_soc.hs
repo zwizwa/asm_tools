@@ -48,12 +48,11 @@ f_soc =
       [tx] <- soc [_RX]
       connect _TX tx
     |])
+
 generate = do
-  putStrLn "-- f_soc.py, f_soc.pcf"
+  putStrLn "-- f_soc"
   board <- CSV.readTagged id "specs/hx8k_breakout.csv"
   let pin = CSV.ff (\[k,_,v,_] -> (k,v)) board
-      (py,pcf) = MyHDL.fpgaGen "f_soc" f_soc pin
-  writeFile "f_soc.py" $ show py
-  writeFile "f_soc.pcf" $ show pcf
+  MyHDL.fpgaWrite "f_soc" f_soc pin
 
 

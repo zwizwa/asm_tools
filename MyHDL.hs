@@ -15,7 +15,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
-module MyHDL(myhdl,MyHDL,testbench,fpgaGen,PCF(..),pcf,noOutputCheck) where
+module MyHDL(myhdl,MyHDL,testbench,fpgaGen,fpgaWrite,PCF(..),pcf,noOutputCheck) where
 import Seq
 import SeqLib
 import CSV
@@ -374,6 +374,13 @@ fpgaGen name (names, fun) pinMap = (py, pcf') where
   names' = map (\('_':nm) -> nm) names
   py = fpgaModule name (names', fun)
   pcf' = PCF ("CLK":"RST":names') pinMap
+
+fpgaWrite name mod pins = do
+  let (py,pcf) = fpgaGen name mod pins
+  writeFile (name ++ ".py")  $ show py
+  writeFile (name ++ ".pcf") $ show pcf
+
+
 
 --- ice40 PCF pin configuration files
 pcf :: [String] -> (String -> String) -> String
