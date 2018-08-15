@@ -120,7 +120,7 @@ def run_module(hdl_module_name, modul):
 
         # Generate code
         toVerilog(hdl_fun, *signals)
-        toVHDL(hdl_fun, *signals)
+        #toVHDL(hdl_fun, *signals)
 
 # Invoked as library call from MyHDL.hs
 def run_text(mod_name, mod_text):

@@ -18,11 +18,7 @@ import qualified CSV
 
   
 main = do
-  test
   generate
-
-test = do
-  return ()
 
 -- Blink-a-LED example for HX8K breakout
 -- On-board clock is 12MHz
@@ -31,9 +27,16 @@ f_blink =
   $(named
    [|
     \[ _LED0 ] -> do
+
+      -- The blink-a-led
       c <- counter $ (bits 24)
       led <- slice' c 23 22
       connect _LED0 led
+
+      
+      
+
+      
     |])
   
 generate = do
