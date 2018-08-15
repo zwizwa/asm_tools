@@ -27,10 +27,6 @@ main = do
   x_hdl
   x_hdl_sync
   
-  x_blink_fpga
-  x_uart_fpga
-  x_soc_fpga
-
   x_run_myhdl
 
   x_testbench
@@ -100,56 +96,7 @@ x_blink_fpga = do
   writeFile "x_blink_fpga.pcf" $ show pcf
 
 
--- UART
 
-f_uart_fpga :: ([String], [SeqTerm.R S] -> SeqTerm.M ())
-f_uart_fpga =
-  $(named
-   [|
-    \[ _RX,
-       _LED0, _LED1, _LED2, _LED3,
-       _LED4, _LED5, _LED6, _LED7
-     ] -> do
-      (wStrobe, wData) <- async_receive 8 _RX
-      -- b0 <- slice' wData 1 0
-      -- connect _LED0 b0
-      let leds = [_LED0, _LED1, _LED2, _LED3,
-                  _LED4, _LED5, _LED6, _LED7]
-          connData n pin =
-            slice' wData (n+1) n >>= connect pin
-      sequence_ $ zipWith connData [0..] leds
-    |])
-
-x_uart_fpga = do
-  putStrLn "-- x_uart_fpga"
-  board <- CSV.readTagged id "specs/hx8k_breakout.csv"
-  let pin = CSV.ff (\[k,_,v,_] -> (k,v)) board
-      (py,pcf) = MyHDL.fpgaGen "x_uart_fpga" f_uart_fpga pin
-  writeFile "x_uart_fpga.py" $ show py
-  writeFile "x_uart_fpga.pcf" $ show pcf
-
-
-
--- SOC
-f_soc_fpga :: ([String], [SeqTerm.R S] -> SeqTerm.M ())
-f_soc_fpga =
-  $(named
-   [|
-    \[ _RX, _TX,
-       _LED0, _LED1, _LED2, _LED3,
-       _LED4, _LED5, _LED6, _LED7
-     ] -> do
-      [tx] <- soc [_RX]
-      connect _TX tx
-    |])
-
-x_soc_fpga = do
-  putStrLn "-- x_soc_fpga"
-  board <- CSV.readTagged id "specs/hx8k_breakout.csv"
-  let pin = CSV.ff (\[k,_,v,_] -> (k,v)) board
-      (py,pcf) = MyHDL.fpgaGen "x_soc_fpga" f_soc_fpga pin
-  writeFile "x_soc_fpga.py" $ show py
-  writeFile "x_soc_fpga.pcf" $ show pcf
 
 
 -- Old test routine.  This is the only one that needs access to

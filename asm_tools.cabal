@@ -56,6 +56,27 @@ Test-Suite test-qc-SeqLib
     build-depends: base
 
 
+
+-- FPGA projects are test suites
+Test-Suite f_blink
+    build-depends: base, containers, mtl, free, keys, set-extra,
+                   template-haskell, parsec, QuickCheck, split, array
+    type:       exitcode-stdio-1.0
+    main-is:    f_blink.hs
+    build-depends: base
+
+Test-Suite f_soc
+    build-depends: base, containers, mtl, free, keys, set-extra,
+                   template-haskell, parsec, QuickCheck, split, array
+    type:       exitcode-stdio-1.0
+    main-is:    f_soc.hs
+    build-depends: base
+
+
+
+
+
+
 -- For this I only have proprietary test files.
 -- Test-Suite test-edif
 --     build-depends: base, mtl, parsec, sqlite-simple, free, containers

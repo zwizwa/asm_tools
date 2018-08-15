@@ -12,7 +12,7 @@ all: compile
 .SECONDARY:
 
 clean:
-	rm -f result *~ x_*
+	rm -f result *~ x_* *.v *.bin *.blif *.asc f_*.py x_*.py
 
 .PHONY: myhdl_test
 myhdl_test:  x_blink_fpga.ct256.bin x_soc_fpga.ct256.bin
@@ -50,8 +50,14 @@ cabal-test-qc-SeqLib: default.nix
 cabal-test-myhdl: default.nix
 	$(NIX_SHELL) --run "cabal test test-myhdl --log=/dev/stdout"
 
-
-
+# These need corresponding entries in the .cabal file
+f_%.compile: f_%.hs
+	$(NIX_SHELL) --run "cabal test f_$* --log=/dev/stdout" >$@.tmp
+	mv $@.tmp $@
+f_%.py: f_%.compile
+	touch $@
+f_%.pcf: f_%.compile
+	touch $@
 
 
 test: cabal-test
