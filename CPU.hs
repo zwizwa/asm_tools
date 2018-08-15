@@ -21,6 +21,10 @@ import qualified Forth
 import Control.Monad
 import Control.Applicative
 import Data.Bits hiding (bit)
+import qualified Data.ByteString.Lazy as ByteString
+import Data.Binary
+import Data.Binary.Builder
+import Data.Binary.Get
 
 -- Some notes on how this got built.
 
@@ -311,6 +315,32 @@ write = i1 o_write
 swap  = i0 o_swap
 loop  = i1 o_loop
 drop  = write 0xff
+
+forever m = begin >> m >> again
+
+-- Put it in a representation that can be sent as bytes over SPI.
+writeProgram :: String -> Forth.Program -> IO ()
+writeProgram name lst = do
+  encodeFile name $ packProgram lst
+
+-- packProgram returns binary data, encoded such that it can be sent
+-- over SPI using an 8-bit transfer, most significant bit sent
+-- first. (D7-D0, the most common configuration and what is used by
+-- iCE40 boot).  The SPI receiver is implemented as 16-bit, most
+-- significant bit first.  This means the data inside the binary is
+-- 16bit big endian.
+  
+packProgram = toLazyByteString . mconcat . (map (putWord16be . fromIntegral))
+
+-- Undo packProgram to recover the word list.
+unpackProgram :: ByteString.ByteString -> Forth.Program
+unpackProgram bytes = prog where
+  prog = runGet get bytes
+  nb_words = (ByteString.length bytes) `div` 2 
+  get = do
+    ws <- sequence $ [getWord16be | _ <- [1..nb_words]]
+    return $ map fromIntegral ws
+
 
 
 

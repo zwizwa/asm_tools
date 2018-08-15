@@ -72,9 +72,9 @@ main = do
   x_stack
   x_async_transmit
   x_spi
-  x_soc
   x_mod_counter
-  
+  x_soc
+  x_soc_boot
 
 -- Tests for library code.
 --    t_  Trace wrapper (_emu or _th)
@@ -350,6 +350,36 @@ x_soc = do
   putStrLn "prog_loop2:"
   printProbe ["iw","ip","top","snd","c"] $
     t_soc prog_loop2 $ replicate 30 [1]
+
+
+-- Full example, includes uploading program and starting CPU.
+
+x_soc_boot = do
+  let
+    prog = Forth.compile p
+    p = forever $ do
+      -- just one bit transition. easy to check for
+      push 0xff ; write uart_tx
+      -- wait for tx ready. nop is needed for flag to clear.
+      nop ; read uart_tx ; drop
+
+
+    -- The 16-bit words are in big-endian form, and the
+    -- most significant bit of the first word is the first serial bit
+    -- sent.
+    bytes = packProgram prog
+    prog' = unpackProgram bytes
+    progbits = map (toBitList 16)
+    
+
+  putStrLn "-- x_soc_boot"
+  printProbe ["iw","ip","tx_bc","tx_wc","tx_in","tx_done","tx_out"] $
+    t_soc prog $ replicate 30 [1]
+  printL $ progbits prog
+  print bytes
+  printL $ progbits prog'
+
+
 
 
 t_mod_counter ins =

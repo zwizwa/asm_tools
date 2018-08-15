@@ -40,23 +40,22 @@ repl-test-edif: default.nix
 
 # Cabal is smarter about recompiling only part of the project for
 # incremental development.
-cabal-configure: default.nix
+configure: default.nix
 	$(NIX_SHELL) --run "cabal configure --disable-optimization"
-cabal-test: default.nix
+test: default.nix
 	$(NIX_SHELL) --run "cabal test --log=/dev/stdout"
 
-
-cabal-test-qc-SeqLib: default.nix
+# Inidividual tests
+test-qc-SeqLib: default.nix
 	$(NIX_SHELL) --run "cabal test test-qc-SeqLib --log=/dev/stdout"
-cabal-test-myhdl: default.nix
+test-myhdl: default.nix
 	$(NIX_SHELL) --run "cabal test test-myhdl --log=/dev/stdout"
 
 # These need corresponding entries in the .cabal file
-f_%.py f_%.pcf: f_%.hs
+f_%.py f_%.pcf f_%.ram.bin: f_%.hs *.hs
 	$(NIX_SHELL) --run "cabal test f_$* --log=/dev/stdout"
 
 
-test: cabal-test
 
 
 # MyHDL

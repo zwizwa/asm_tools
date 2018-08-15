@@ -50,7 +50,8 @@ Test-Suite test-sat
 
 Test-Suite test-qc-SeqLib
     build-depends: base, containers, mtl, free, keys, set-extra,
-                   template-haskell, parsec, QuickCheck, split, array
+                   template-haskell, parsec, QuickCheck, split, array,
+                   binary, bytestring
     type:       exitcode-stdio-1.0
     main-is:    test-qc-SeqLib.hs
     build-depends: base
@@ -67,7 +68,7 @@ Test-Suite f_blink
 
 Test-Suite f_soc
     build-depends: base, containers, mtl, free, keys, set-extra,
-                   template-haskell, parsec, QuickCheck, split, array
+                   template-haskell, parsec, QuickCheck, split, array, binary
     type:       exitcode-stdio-1.0
     main-is:    f_soc.hs
     build-depends: base

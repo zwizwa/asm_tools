@@ -3,6 +3,9 @@
 -- This is mostly to avoid named labels.
 -- See CPU.hs for an example.
 
+-- EDIT: This is probably entirely unnecessary because loop bodies can
+-- just go in do blocks, but let's keep it as an underlying structure
+-- anyway.
 
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -18,18 +21,19 @@ import Control.Monad.State
 import Control.Monad.Writer
 
 
+type Program = [Instruction]
 type Instruction = Int
 type Address = Int
 type ControlStack = [Address]
 type CompState = (ControlStack, Address)
 
 newtype M t = M { unM ::
-                    WriterT [Instruction]
+                    WriterT Program
                     (State CompState)
                     t
                 } deriving
   (Functor, Applicative, Monad,
-   MonadWriter [Instruction],
+   MonadWriter Program,
    MonadState CompState)
 
 compile :: M () -> [Instruction]
