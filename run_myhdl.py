@@ -10,7 +10,7 @@ import imp
 import inspect
 import importlib.util
 from myhdl import *
-import ram
+import lib
 
 def load_module(hdl_module_name, filename):
     # Load the test bench module
@@ -100,19 +100,21 @@ def run_module(hdl_module_name, modul):
 
     hdl_fun, ports, tb_input, tb_output = interpret_module(hdl_module_name, modul)
 
-    # Run it if it is a test bench
     if tb_input:
+        # Run it if it is a test bench
         insts = inst_testbench(hdl_fun, ports, tb_input, tb_output)
         Simulation(insts).run()
+
     else:
-        print("not a testbench")
+        # Otherwise synthesize code
         
         # Which are special cases.
         CLK = Signal(bool(False))
 
         # FIXME: workaround for HX8K board
-        #RST = ResetSignal(1,0,True)
-        RST = ResetSignal(0,1,True)
+        RST = ResetSignal(1,0,True)
+        # RST = ResetSignal(0,1,True)
+
         port_signals = [Signal(modbv(0)[bits:]) for (_,bits) in ports]
         signals = [CLK, RST] + port_signals
 
@@ -125,6 +127,8 @@ def run_text(mod_name, mod_text):
     modul = imp.new_module(mod_name)
     exec(mod_text, modul.__dict__)
     return run_module(mod_name, modul)
+
+
 
 # Invoked as script.  See Makefile
 if __name__ == '__main__':

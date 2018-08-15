@@ -363,7 +363,14 @@ x_mod_counter = do
   print $ rle $ t_mod_counter $ replicate 30 []
 
 
-
+-- -- Add-hoc way to test periodic signals
+-- check_periodic :: [t] -> [t] -> Bool
+-- check_periodic per@(_:_) seq@(_:_:_) = _ where
+--   seq' = head $ take (length seq - 1) seq
+  
+  
+-- check_periodic per seq =
+--   error $ "check_periodic: invalid argument: " ++ show (len per, len seq)
 
 
 -- A slightly more involved program: read uart data into fifo until

@@ -35,6 +35,7 @@ import Data.Functor.Compose
 import Numeric (showHex, showIntAtBase)
 import Data.Char (intToDigit)
 import Data.Maybe
+import Data.Bits hiding (bit)
 
 
 newtype PrintMyHDL t = PrintExpr {
@@ -87,7 +88,7 @@ mGen name ports bindings = do
       isInternal (n,_) = not $ elem n portNodes
 
   tell $ "from myhdl import *\n"
-  tell $ "from ram import *\n"
+  tell $ "from lib import *\n"
   tell $ "def " ++ name ++ "("
   tell $ commas $ ["CLK","RST"] ++ map sig portNodes
   tell "):\n"
@@ -142,8 +143,10 @@ defSignal (n, (Free (Compose (MemWr (_, o_wa, o_wd, _))))) = do
 defSignal (n, e) = do
   tab ; tell $ sig n ++ " = " ++ (sigSpec $ eType e) ++ "\n"
 
+mask n v = v .&. ((1 `shiftL` n) - 1)
+
 sigSpec (SInt Nothing _) = error "Signals need to be fully specified"
-sigSpec (SInt (Just n) v0) = "Signal(modbv(" ++ show v0 ++ ")[" ++ show n ++ ":])"
+sigSpec (SInt (Just n) v0) = "Signal(modbv(" ++ (show $ mask n v0) ++ ")[" ++ show n ++ ":])"
 eType :: Expr n -> SType
 eType (Free (Compose t)) = SeqTerm.termType t
 eType (Pure n) = error "eType doesn't work on node references"

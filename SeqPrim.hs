@@ -45,6 +45,7 @@ seqCONC  = op3 $ \bs a b -> (a `shiftL` bs) .|. b
 seqSLICE = op2 $ shiftR
 
 type Mem s = STUArray s Int Int
+type Mem'  = UArray Int Int
 
 seqMemInit :: Int -> (Int -> Int) -> ST s (Mem s)
 seqMemInit addrBits init = do
@@ -88,3 +89,21 @@ seqRun update memSpec (rd0, r0) probeNames memInits i = (probeNames, out) where
           return (o:os)
     u rd0 r0 i
 
+
+-- To run lazily, chunk the ST runs.  This requires dumping out state.
+-- Simplest to do that by splitting state init and run.
+
+-- Here's the core routine: return the array.
+
+-- seqRunInit ::
+--   (forall s. ([Mem s], rd, r, [Int]) -> ST s (rd, r, [Int]))
+--   -> [Int]
+--   -> (rd, r)
+--   -> [String]
+--   -> [Int -> Int]
+--   -> [[Int]] -> ([Mem'], rd, r)
+-- seqRunInit update memSpec (rd0, r0) probeNames memInits i =
+--   runST $ do
+--     as  <- sequence $ zipWith seqMemInit memSpec memInits
+--     as' <- sequence $ map runSTUArray as
+--     return (as', rd0, r0)

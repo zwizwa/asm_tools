@@ -15,7 +15,7 @@ clean:
 	rm -f result *~ x_*
 
 .PHONY: myhdl_test
-myhdl_test:  x_blink_fpga.ct256.bin
+myhdl_test:  x_blink_fpga.ct256.bin x_soc_fpga.ct256.bin
 
 
 
@@ -80,6 +80,10 @@ MYHDL:=$(shell readlink -f myhdl)
 	arachne-pnr -P qn84 -d 1k -p $*.pcf $< -o $@ >$*.qn84.pnr
 %.ct256.asc: %.blif %.pcf
 	arachne-pnr -P ct256 -d 8k -p $*.pcf $< -o $@ >$*.ct256.pnr
+
+
+%.ct256.time: %.pcf %.ct256.asc
+	icetime -p $*.pcf -o $*.ct256.nl.v -P ct256 -d hx8k -t $*.ct256.asc
 
 # Some fake fanout.  Do check that the file exists before touching.
 %.v: %.myhdl
