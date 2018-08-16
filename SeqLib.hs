@@ -719,37 +719,12 @@ sync_receive mode nb_bits cs sclk sdata = do
   "s_w"   <-- w
   return out
 
--- sync_receive_sample nb_bits@16 cs sclk = do
---   closeReg [bits nb_bits] $ \[count] -> do
---     sc     <- sync_clock sclk
---     bc     <- band sc =<< inv cs
---     count1 <- inc count
---     count' <- if' bc count1 count
---     wc     <- count' `equ` (-1)
---     return ([count'], (bc, wc))
-  
 
 -- Seserializer for converting bit streams to word streams.
--- FIXME: needs reset, and possibly off by one?
-deser :: Seq m r => ShiftDir -> Int -> r S -> r S -> r S -> m (r S, r S)
-
--- deser dir t_sr@(SInt (Just nb_bits) _) nrst bitClock bitVal = do
---   let t_sr' = t_nb_bits t_sr
---       n_max = constant $ SInt Nothing $ nb_bits - 1
---   (wordClock', wordVal) <-
---     closeRegEn bitClock [t_sr, t_sr'] $
---     \[sr,n] -> do
---       wc  <- n `equ` n_max
---       n1  <- inc n
---       n'  <- if' wc 0 n1
---       sr' <- shiftUpdate dir sr bitVal
---       return ([sr',n'], (wc, sr'))
---   wordClock <- bitClock `band` wordClock'
---   return (wordClock, wordVal)
-
 -- Combinatorial output to allow for bc, wc to coincide.
-
 -- The 'rst' input is an enable line, active low.
+
+deser :: Seq m r => ShiftDir -> Int -> r S -> r S -> r S -> m (r S, r S)
 deser dir sr_bits rst bc b = do
   -- Use carry trick to obtain word clock. The trick is then to
   -- properly initialize the counter.
