@@ -19,13 +19,42 @@ import Data.Bits hiding (bit)
 
 -- Some general guidelines.
 --
--- . Don't write library routines that take monadic values as
---   arguments, unless they behave as macros.
+-- (1) As a general rule, don't write library routines that take monadic
+--     values as arguments, unless they behave as macros and instantiate
+--     conditionally or multiple times.
 --
--- . The exception seems to be switch.  The reason?  It allows the use
---   of local variables in the clauses to make the code more readable.
---   Even if the signals could be reused, they likely won't be,
---   because the behavior "belongs" to that clause.
+--     The exception seems to be switch.  The reason?  It allows the use
+--     of local variables in the clauses to make the code more readable.
+--     Even if the signals could be reused, they likely won't be,
+--     because the behavior "belongs" to that clause.
+--
+-- (2) It seems more appropriate to write in ANF form.  Do notation is
+--     really awkward for an expression language.  (Note: the reasons
+--     for the Monad are sharing and metaprogramming).  There is a
+--     readability tradeoff:
+--
+--     - imperative update
+--
+--     - lots of names for different intermediates
+--
+--     - lots of connective glue noise, e.g. >>=, lift2
+--
+--     I've come to the conclusion that imperative form is better.  To
+--     solve this issue, create a syntactic overlay or use Conal
+--     Eliott's 'concat' work.
+--
+-- (3) Since Seq is RTL with an abstract clock, the word "clock" can
+--     be repurposed to mean "clock enable".  The latter is too
+--     cumbersome.  The notational convention is to postfix
+--     identifiers with "c".  E.g. "wc" is word clock (enable), "bc"
+--     is bit clock (enable).
+--
+--     Note that when dealing with external signals such as SPI, there
+--     will be a "real" clock signal.  The idea there is to sample it
+--     and convert it to a clock enable signal as soon as possible,
+--     and not carry around sampled external clocks.
+
+
 
 
 
@@ -225,6 +254,141 @@ delay x = do
 edge d = do
   d0 <- delay d
   d `bxor` d0
+
+
+-- SPI
+
+-- Convention used in the Linux kernel, user space interface spi/spidev.h
+--
+-- #define SPI_CPHA		0x01
+-- #define SPI_CPOL		0x02
+
+-- #define SPI_MODE_0		(0|0)
+-- #define SPI_MODE_1		(0|SPI_CPHA)
+-- #define SPI_MODE_2		(SPI_CPOL|0)
+-- #define SPI_MODE_3		(SPI_CPOL|SPI_CPHA)
+
+-- Documentation/spi/spidev
+-- SPI_CPOL: clock polarity, idle high iff this is set
+-- SPI_CPHA: clock phase, sample on trailing edge iff this is set
+
+
+-- Using the mode number seems most convenience.  Encode it as a flat
+-- datatype, then define projections.
+
+data SpiMode = Mode0 | Mode1 | Mode2 | Mode3
+spi_mode Mode0 = (0,0)  -- sample 0->1
+spi_mode Mode1 = (0,1)  -- sample 1->0
+spi_mode Mode2 = (1,0)  -- sample 1->0
+spi_mode Mode3 = (1,1)  -- sample 0->1
+
+-- Derive bit clock from SPI signals and compile time mode parameter.
+-- Combinatorial output to keep it aligned to corresponding data line.
+
+
+
+spi_bc mode cs sck = do
+  let (cpol, cpha) = spi_mode mode
+      sample_edge = 1 `xor` cpol `xor` cpha
+  
+  closeReg [bit' cpol] $ \[d_sck] -> do
+    ncs  <- inv cs
+    edge <- sck .^ d_sck
+    -- bc selects the correct edge when cs is active
+    bc   <- sck .== cbit sample_edge
+    bc   <- bc .& edge
+    bc   <- bc .& ncs
+    -- properly initialize the edge detector to the idle phase when
+    -- not selected (cs=1, assuming active low)
+    sck' <- if' cs (cbit cpol) sck
+    return ([sck'], bc)
+
+
+
+
+
+-- From the perspective of a decoder, it makes most sense to think of
+-- initial phase and sampling edge.
+
+-- mode cpol cpha edge
+-- 0    0    0    0->1
+-- 1    0    1    1->0
+-- 2    1    0    1->0
+-- 3    1    1    0->1
+
+
+-- As an example, use the mode that is used by iceprog.c FT2232H MPSSE
+-- mode configured using:
+-- 
+-- #define MPSSE_WRITE_NEG   0x01 /* Write TDI/DO on negative TCK/SK edge*/
+--
+-- This implies:
+-- . the idle clock is 1
+-- . data is written out at 1->0
+-- . data should be read in at 0->1 (or using a fixed delay after 1->0)
+--
+-- So this is CPOL=1, CPHA=1  (mode 3),  samples on 0->1
+--
+-- The iCE40 supports both mode 0 and mode 3.  Both sample on 0->1.
+
+
+
+-- At the read end, we use synchronous machines:
+-- . Sample sck and sda using a double-D synchronizer
+-- . Convert (cs,sck,sda) to a (rst,bc,b) signal
+
+-- As a convention, rst=cs.
+
+-- First, implement mode3 correctly.
+
+
+
+-- For the read end, one would think that the only thing important is
+-- sampling edges.  I.e. that the initial level of the clock doesn't
+-- matter.
+--
+-- But when using an edge detector to find the edges, it is important
+-- to initialize it properly such that there is no spurious pulse in
+-- the beginning.
+--
+-- E.g. suppose initial clock phase is 1, but we initialize the edge
+-- detector with 0.  If the sampling edge is 0->1, it will detect a
+-- pulse when enabled.
+
+
+-- What I want is a circuit that can sample on 0->1, but will work
+-- with both inital phases.
+
+-- To solve this, I see a couple of solutions:
+
+-- .  Use a free-running edge detector and gate the output with the
+--    chip select line.  This assumes that there is enough space
+--    between the master setting the initial clock level and issuing
+--    the chip select pulse.
+--
+-- .  Sample the value of the clock when CS goes low.
+--
+-- .  Explicitly initialize the delay
+--
+
+
+
+
+
+
+
+
+
+-- But the initial phase is important to properly reset the edge
+-- detector in order not to introduce spurious pulses.  E.g. suppose
+-- we're sampling on 0->1, but the initial clock phase is 1 and the
+-- reset value of the delay is 0.  The circuit will see a spurious
+-- pulse when enabled.
+
+-- What does matter, is how the edge detector gets initialized, to
+-- ensure there is no spurios pulse.  E.g. if the delay element is
+-- initialized at 0, but the clock level starts out at 1, it will see
+-- a pulse.
 
 posedge sclk = do
   e <- edge sclk
@@ -544,16 +708,16 @@ async_transmit bitClock (wordClock, txData) = do
 -- Assume wordsize is power of two so we can roll around the counter.
 -- FIXME: It's easier to reuse the counter and transfer directly into
 -- the memory.
-sync_receive nb_bits cs sclk sdata = do
-    sc <- posedge sclk
-    bc <- band sc =<< inv cs
-    out@(wc, w) <- deser ShiftLeft (bits nb_bits) (bc, sdata)
-    "sclk"  <-- sclk
-    "sdata" <-- sdata
-    "s_bc"  <-- bc
-    "s_wc"  <-- wc
-    "s_w"   <-- w
-    return out
+sync_receive mode nb_bits cs sclk sdata = do
+  bc <- spi_bc mode cs sclk
+  -- FIXME: shift register needs reset
+  out@(wc, w) <- deser ShiftLeft (bits nb_bits) (bc, sdata)
+  "sclk"  <-- sclk
+  "sdata" <-- sdata
+  "s_bc"  <-- bc
+  "s_wc"  <-- wc
+  "s_w"   <-- w
+  return out
 
 -- sync_receive_sample nb_bits@16 cs sclk = do
 --   closeReg [bits nb_bits] $ \[count] -> do
@@ -734,3 +898,17 @@ updateProbe str val = do
   case env (Probe str) of
     Nothing  -> return ()
     Just reg -> update reg val
+
+
+-- These are just too convenient
+
+(.&) :: Seq m r => r S -> r S -> m (r S)
+(.|) :: Seq m r => r S -> r S -> m (r S)
+(.^) :: Seq m r => r S -> r S -> m (r S)
+(.==) :: Seq m r => r S -> r S -> m (r S)
+
+(.&) = band
+(.|) = bor
+(.^) = bxor
+(.==) = equ
+

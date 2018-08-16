@@ -1,6 +1,7 @@
 -- Misc collection of sequence testing tools.
 module TestTools where
 
+import qualified SeqLib
 import Data.Char
 import Data.Bits
 import Data.List
@@ -60,14 +61,26 @@ uartBits factor str = samps where
   toBits w = [1,0] ++ (reverse $ toBitList 8 w) ++ [1,1]
   samps = upSample factor bits
 
--- Note that oversample is relative to the 2x oversampling already
--- needed to represent the clock.
 
-spiBits :: Int -> [Int] -> [(Int,Int)]
-spiBits factorDiv2 bits = out where
-  sclk  = cycle [0,1]
-  sdata = upSample 2 bits
-  out   = upSample factorDiv2 $ zip sclk sdata
+-- This upsamples by 2 to accomodate the clock toggles.
+-- Terminology is the one used in the Linux kernel.
+-- See also SeqLib.hs
+
+
+spiBits :: SeqLib.SpiMode -> [Int] -> [(Int,Int)]
+spiBits _ [] = [] -- degenerate QC case
+spiBits mode bits@(bit0:_) = p $ SeqLib.spi_mode mode where
+  -- Different clock and data shifts
+  c_01@(_:c_10) = cycle [0,1]
+  d_bb = upSample 2 bits
+  d__b = take (length d_bb) (bit0 : d_bb)
+
+  -- (cpol,cpha)
+  p (0,0) = zip c_01 d_bb
+  p (0,1) = zip c_01 d__b
+  p (1,0) = zip c_10 d_bb
+  p (1,1) = zip c_10 d__b
+  
 
   
 -- Bus sequences.
@@ -165,7 +178,9 @@ printC l = sequence_ $ zipWith f l [0..] where
   f l' n  = do
     putStrLn $ "-- " ++ show n
     printL l'
-  
+
+printL' :: Show n => [n] -> IO ()
+printL' = putStr . concatLinesRLE . (map show)
 
 
 list2 (a,b) = do
@@ -179,14 +194,16 @@ showSignals' doRle header signals = str where
   table = padTable (header : (map (map show) signals))
   (header':signals') = map (concat . (intersperse " ")) table
   sep = replicate (length header') '-'
-
-  lines  = header':sep:signals'
-  lines' = map rle' $ rle lines
-  rle' (1, line) = line
-  rle' (n, line) = line ++ " (" ++ show n ++ "x)"
-  
-  str = concat $ map (++ "\n") $ if doRle then lines' else lines
+  str = concatLines' $ header':sep:signals'
+  concatLines' = if doRle then concatLinesRLE else concatLines
       
+concatLinesRLE l = concatLines $ map showRLE $ rle l
+concatLines = concat . (map (++ "\n")) 
+
+showRLE (1, line) = line
+showRLE (n, line) = line ++ " (" ++ show n ++ "x)"
+  
+
     
 
 showSignals = showSignals' False
@@ -214,3 +231,4 @@ selectSignals columns names signals = signals' where
   fromJust' nm Nothing = error $
     "showSelectSignals: " ++ show nm ++ " not found in " ++ show names
   
+

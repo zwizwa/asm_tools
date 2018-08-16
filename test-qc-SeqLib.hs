@@ -88,16 +88,18 @@ main = do
 
 -- deser
 
-p_deser = forAll vars pred where
+p_deser = forAll vars $ fst . e_deser where
   vars = do
     sub <- choose (1,8)
     wl  <- wordList
     return (sub, wl)
-  pred (sub, (nb_bits, words)) = words == words' where
+
+e_deser (sub, (nb_bits, words)) = (words == words', outs) where
     bits   = toBits nb_bits words
     ins    = reSample' (cycle [sub]) $ map (:[]) bits
     outs   = t_deser nb_bits ins
     words' = map head $ downSample' outs
+
 
 t_deser :: Int -> [[Int]] -> [[Int]]
 t_deser nb_bits = trace [1,1] $ \[bc,bv] -> do
@@ -106,6 +108,9 @@ t_deser nb_bits = trace [1,1] $ \[bc,bv] -> do
 
 x_deser = do
   putStrLn "-- x_deser"
+  let (_, outs) = e_deser (2, (8, [1,2,3]))
+  printL' outs
+  
   -- TODO
 
 -- async_receive_sample
@@ -216,12 +221,12 @@ x_async_transmit = do
 t_spi ins =
   $(compile allProbe [1,1,1] $
     \[cs, sclk,sdata] -> do
-      sync_receive 8 cs sclk sdata
+      sync_receive Mode0 8 cs sclk sdata
       return [])
   memZero ins
 
 e_spi bytes  = (bytes == bytes', (bytes', table)) where
-  ins    = [[1,0,0]] ++ [[0,c,d] | (c,d) <- spiBits 2 bits] ++ [[1,0,0]]
+  ins    = [[1,0,0]] ++ [[0,c,d] | (c,d) <- upSample 2 $ spiBits Mode0 bits] ++ [[1,0,0]]
   bits   = concat $ map (toBitList 8) bytes
   bytes' = map head $ downSample' $ selectSignals ["s_wc","s_w"] probes outs
   table@(probes, outs) = t_spi ins
@@ -231,6 +236,7 @@ x_spi = do
       (_, (bytes', table)) = e_spi bytes
 
   putStrLn "-- x_spi"
+  print bytes
   print bytes'
   printProbe ["s_wc","s_w","sclk","sdata","s_bc"] $ table
 
@@ -384,7 +390,7 @@ x_soc_boot = do
 
     -- SPI transfer.  Don't oversample to keep example small.
     -- FIXME: add rle display to printProbe
-    spi_c_d = spiBits 1 $ concat $ prog_bits prog'
+    spi_c_d = spiBits Mode3 $ concat $ prog_bits prog'
     spi = [[1, 0, 0],
            [0, 0, 0]] ++
           [[0,sck,sda] | (sck,sda) <- spi_c_d] ++

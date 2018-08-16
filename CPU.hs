@@ -368,13 +368,6 @@ stack_machine ::
   m (Control r, BusWr r)
 
 
-(.&) :: Seq m r => r S -> r S -> m (r S)
-(.|) :: Seq m r => r S -> r S -> m (r S)
-(.=) :: Seq m r => r S -> r S -> m (r S)
-(.&) = band
-(.|) = bor
-(.=) = equ
-
 
 -- Decrement and and save carry bit
 cdec var = do
@@ -468,7 +461,7 @@ bus [rx] (BusWr wEn addr wData) = do
   addr' <- slice' addr 2 0
   let tx_bc = 1 -- FIXME
       c = cbits 2
-      write n = addr' .= (c n) >>= band wEn
+      write n = (addr' .== c n) >>= band wEn
 
   -- Bus write operations
   tx_wc <- write uart_tx
@@ -496,7 +489,7 @@ bus [rx] (BusWr wEn addr wData) = do
 
 -- For now these are fixed to 16 bit instruction words and 8 bit address.
 spi_boot cs sck sda = do
-  (wc, w) <- sync_receive 16 cs sck sda
+  (wc, w) <- sync_receive Mode3 16 cs sck sda
   a <- arrPtr (bits 8) cs wc
   -- a <- fifoPtr (bits 8) wc
   return $ IMemWrite wc a w
