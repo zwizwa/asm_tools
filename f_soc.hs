@@ -46,10 +46,11 @@ f_soc =
         sequence $ map sample [_RX, _SPI_SI, _SPI_SCK, _SPI_SS_B]
 
       -- Instantiate the SOC
-      iw  <- signal $ bits 16
-      dbg <- slice' iw 16 8
+      -- iw  <- signal $ bits 16
+      -- dbg <- slice' iw 16 8
+      dbg <- signal $ bits 8
       
-      [tx, dbg'] <- withProbe "iw" dbg $
+      [tx, dbg'] <- withProbe "ip" dbg $
         soc [rx, cs, sck, sda]
 
       -- (spi_rx_e,  spi_rx)  <- sync_receive 8 spi_ss_b spi_sck spi_si

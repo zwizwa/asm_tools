@@ -276,7 +276,7 @@ edge d = do
 -- Using the mode number seems most convenience.  Encode it as a flat
 -- datatype, then define projections.
 
-data SpiMode = Mode0 | Mode1 | Mode2 | Mode3
+data SpiMode = Mode0 | Mode1 | Mode2 | Mode3 deriving Show
 spi_mode Mode0 = (0,0)  -- sample 0->1
 spi_mode Mode1 = (0,1)  -- sample 1->0
 spi_mode Mode2 = (1,0)  -- sample 1->0
@@ -711,7 +711,7 @@ async_transmit bitClock (wordClock, txData) = do
 sync_receive mode nb_bits cs sclk sdata = do
   bc <- spi_bc mode cs sclk
   -- FIXME: shift register needs reset
-  out@(wc, w) <- deser ShiftLeft (bits nb_bits) (bc, sdata)
+  out@(wc, w) <- deser ShiftLeft nb_bits cs bc sdata
   "sclk"  <-- sclk
   "sdata" <-- sdata
   "s_bc"  <-- bc
@@ -731,20 +731,45 @@ sync_receive mode nb_bits cs sclk sdata = do
 
 -- Seserializer for converting bit streams to word streams.
 -- FIXME: needs reset, and possibly off by one?
-deser :: Seq m r => ShiftDir -> SType -> (r S, r S) -> m (r S, r S)
-deser dir t_sr@(SInt (Just nb_bits) _) (bitClock, bitVal) = do
-  let t_sr' = t_nb_bits t_sr
-      n_max = constant $ SInt Nothing $ nb_bits - 1
-  (wordClock', wordVal) <-
-    closeRegEn bitClock [t_sr, t_sr'] $
-    \[sr,n] -> do
-      wc  <- n `equ` n_max
-      n1  <- inc n
-      n'  <- if' wc 0 n1
-      sr' <- shiftUpdate dir sr bitVal
-      return ([sr',n'], (wc, sr'))
-  wordClock <- bitClock `band` wordClock'
-  return (wordClock, wordVal)
+deser :: Seq m r => ShiftDir -> Int -> r S -> r S -> r S -> m (r S, r S)
+
+-- deser dir t_sr@(SInt (Just nb_bits) _) nrst bitClock bitVal = do
+--   let t_sr' = t_nb_bits t_sr
+--       n_max = constant $ SInt Nothing $ nb_bits - 1
+--   (wordClock', wordVal) <-
+--     closeRegEn bitClock [t_sr, t_sr'] $
+--     \[sr,n] -> do
+--       wc  <- n `equ` n_max
+--       n1  <- inc n
+--       n'  <- if' wc 0 n1
+--       sr' <- shiftUpdate dir sr bitVal
+--       return ([sr',n'], (wc, sr'))
+--   wordClock <- bitClock `band` wordClock'
+--   return (wordClock, wordVal)
+
+-- Combinatorial output to allow for bc, wc to coincide.
+
+-- The 'rst' input is an enable line, active low.
+deser dir sr_bits rst bc b = do
+  -- Use carry trick to obtain word clock. The trick is then to
+  -- properly initialize the counter.
+  let cnt_bits  = nb_bits cnt_init'
+      cnt_init' = sr_bits - 1
+      cnt_init  = cbits cnt_bits $ cnt_init'
+  closeReg [bits' cnt_bits cnt_init',
+            bits sr_bits] $
+    \[cnt, sr] -> do
+      
+      sr_shift     <- shiftUpdate dir sr b
+      (c, cnt_dec) <- carry dec cnt
+      
+      [wc, cnt', sr'] <- cond
+        [(rst, [0, cnt_init, 0]),
+         (bc,  [c, cnt_dec,  sr_shift])]
+        [0, cnt, sr]
+
+      return ([cnt',sr'], (wc, sr'))
+
 
 
 

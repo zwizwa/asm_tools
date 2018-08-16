@@ -73,7 +73,7 @@ spiBits mode bits@(bit0:_) = p $ SeqLib.spi_mode mode where
   -- Different clock and data shifts
   c_01@(_:c_10) = cycle [0,1]
   d_bb = upSample 2 bits
-  d__b = take (length d_bb) (bit0 : d_bb)
+  d__b = bit0 : d_bb  -- extra 1/2 clock cycle!
 
   -- (cpol,cpha)
   p (0,0) = zip c_01 d_bb

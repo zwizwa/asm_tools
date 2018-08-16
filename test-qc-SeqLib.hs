@@ -103,7 +103,7 @@ e_deser (sub, (nb_bits, words)) = (words == words', outs) where
 
 t_deser :: Int -> [[Int]] -> [[Int]]
 t_deser nb_bits = trace [1,1] $ \[bc,bv] -> do
-  (wc, wv) <- deser ShiftLeft (SInt (Just nb_bits) 0) (bc, bv)
+  (wc, wv) <- deser ShiftLeft nb_bits 1 bc bv
   return [wc, wv]
 
 x_deser = do
@@ -218,29 +218,38 @@ x_async_transmit = do
 
 
 -- spi
-t_spi ins =
-  $(compile allProbe [1,1,1] $
-    \[cs, sclk,sdata] -> do
-      sync_receive Mode0 8 cs sclk sdata
-      return [])
-  memZero ins
 
-e_spi bytes  = (bytes == bytes', (bytes', table)) where
-  ins    = [[1,0,0]] ++ [[0,c,d] | (c,d) <- upSample 2 $ spiBits Mode0 bits] ++ [[1,0,0]]
+t_spi' code ins = code memZero ins
+t_spi Mode0 = t_spi' $(compile allProbe [1,1,1] $ d_spi Mode0 8)
+t_spi Mode1 = t_spi' $(compile allProbe [1,1,1] $ d_spi Mode1 8)
+t_spi Mode2 = t_spi' $(compile allProbe [1,1,1] $ d_spi Mode2 8)
+t_spi Mode3 = t_spi' $(compile allProbe [1,1,1] $ d_spi Mode3 8)
+
+e_spi (mode, bytes)  = (bytes == bytes', (bytes', table)) where
+  (cpol, cpha) = spi_mode mode
+  ins    = [[1,cpol,0]] ++
+           [[0,c,d] | (c,d) <- upSample 2 $ spiBits mode bits] ++
+           [[1,cpol,0]]
+
   bits   = concat $ map (toBitList 8) bytes
   bytes' = map head $ downSample' $ selectSignals ["s_wc","s_w"] probes outs
-  table@(probes, outs) = t_spi ins
+  table@(probes, outs) = t_spi mode ins
 
 x_spi = do
-  let bytes = [202,123]
-      (_, (bytes', table)) = e_spi bytes
+  let cfg' = (Mode0, [202,123])
+      cfg@(_,bytes)  = (Mode1, [4,5])
+      (_, (bytes', table)) = e_spi cfg
 
   putStrLn "-- x_spi"
   print bytes
   print bytes'
   printProbe ["s_wc","s_w","sclk","sdata","s_bc"] $ table
 
-p_spi = forAll (listOf $ word 8) $ fst . e_spi
+p_spi = forAll vars $ fst . e_spi where
+  vars = do
+    bytes <- listOf $ word 8
+    mode  <- oneof $ map return [Mode0,Mode1,Mode2,Mode3]
+    return (mode, bytes)
 
 
 
@@ -391,11 +400,11 @@ x_soc_boot = do
     -- SPI transfer.  Don't oversample to keep example small.
     -- FIXME: add rle display to printProbe
     spi_c_d = spiBits Mode3 $ concat $ prog_bits prog'
-    spi = [[1, 0, 0],
-           [0, 0, 0]] ++
+    spi = [[1, 1, 0],
+           [0, 1, 0]] ++
           [[0,sck,sda] | (sck,sda) <- spi_c_d] ++
-          [[0, 0, 0],
-           [1, 0, 0]]
+          [[0, 1, 0],
+           [1, 1, 0]]
 
     -- Clock it for a bit to make sure it works.
     postamble = replicate 100 [1,0,0]

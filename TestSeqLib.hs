@@ -30,6 +30,10 @@ d_stack i@[push,pop,wd] = do
   return (rd:i)
 
 
+d_spi mode bits [cs, sclk,sdata] = do
+  sync_receive mode bits cs sclk sdata
+  return []
+
 
 -- class ToList a b where
 --   toList :: a -> [b]

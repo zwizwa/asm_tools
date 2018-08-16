@@ -53,6 +53,7 @@ test-myhdl: default.nix
 
 # These need corresponding entries in the .cabal file
 f_%.py f_%.pcf f_%.imem.bin: f_%.hs *.hs
+	rm -f f_$*.imem.bin # workaround: openBinaryFile: resource exhausted (Resource temporarily unavailable)
 	$(NIX_SHELL) --run "cabal test f_$* --log=/dev/stdout"
 
 
