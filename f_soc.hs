@@ -17,7 +17,7 @@ import qualified SeqTerm
 import qualified SeqExpr
 import qualified CSV
 
-import Control.Monad
+import Control.Monad hiding (forever)
   
 main = do
   test
@@ -46,12 +46,11 @@ f_soc =
         sequence $ map sample [_RX, _SPI_SI, _SPI_SCK, _SPI_SS_B]
 
       -- Instantiate the SOC
-      iw  <- signal $ bits 16
-      dbg <- slice' iw 16 8
+      -- iw  <- signal $ bits 16
+      -- dbg <- slice' iw 16 8
       -- dbg <- signal $ bits 8
-      
-      [tx, dbg'] <- withProbe "iw" iw $
-        soc [rx, cs, sck, sda]
+      -- [tx, dbg'] <- withProbe "iw" iw $ soc [rx, cs, sck, sda]
+      [tx, dbg] <- soc [rx, cs, sck, sda]
 
       -- (spi_rx_e,  spi_rx)  <- sync_receive 8 spi_ss_b spi_sck spi_si
       -- dbg <- register spi_rx_e spi_rx
@@ -74,9 +73,15 @@ generate = do
   putStrLn "-- f_soc"
   board <- CSV.readTagged id "specs/hx8k_breakout.csv"
   let pin = CSV.ff (\[k,_,v,_] -> (k,v)) board
-      prog' = Forth.compile $ do push 0x55 ; write dbg
-      prog = Forth.compile $ do nop ; nop ; nop ; nop ; begin ; again
+      c = Forth.compile
+      busywait = do for' 100 $ for' 255 $ for' 255 $ nop
+      prog1 = c $ do push 0x55 ; write dbg ; begin ; again
+      prog2 = c $ do begin ; push 0 ; again
+      prog3 = c $ forever $ do
+        push 0x55 ; write dbg ; busywait
+        push 0xAA ; write dbg ; busywait
+
   MyHDL.fpgaWrite "f_soc" f_soc pin
-  writeProgram "f_soc.imem.bin" prog
+  writeProgram "f_soc.imem.bin" prog3
 
 

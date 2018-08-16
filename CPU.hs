@@ -283,7 +283,7 @@ o_loop  = 7
 -- Note that this is a Forth /
 -- Asm hybrid: operations do not have to be nullary.
 
-for'  n = push 3 >> for
+for' n m = do push n ; for ; m ; next
 for   = Forth.mark
 next  = Forth.cpop >>= loop
 begin = Forth.mark
