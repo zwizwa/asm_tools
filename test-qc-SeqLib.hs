@@ -346,7 +346,7 @@ x_soc = do
     prog_loop = c $ do push 3; loop 1; jmp 0
 
     -- Same, using Forth control words
-    prog_loop2 = c $ do begin; for' 3; next; again
+    prog_loop2 = c $ do begin; push 3; for; next; again
 
     -- Write to debug register
     prog_dbg = c $ do push 123; write dbg

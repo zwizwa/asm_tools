@@ -29,8 +29,6 @@ test = do
 -- SOC example for HX8K breakout
 -- On-board clock is 12MHz
 
--- tom@tp:/i/tom/asm_tools$ echo -ne 'U' >/tmp/test.bin ; iceprog -x /tmp/test.bin
-
 
 f_soc :: ([String], [SeqTerm.R S] -> SeqTerm.M ())
 f_soc =

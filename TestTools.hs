@@ -71,15 +71,15 @@ spiBits :: SeqLib.SpiMode -> [Int] -> [(Int,Int)]
 spiBits _ [] = [] -- degenerate QC case
 spiBits mode bits@(bit0:_) = p $ SeqLib.spi_mode mode where
   -- Different clock and data shifts
-  c_01@(_:c_10) = cycle [0,1]
-  d_bb = upSample 2 bits
-  d__b = bit0 : d_bb  -- extra 1/2 clock cycle!
+  _01@(_:_10) = cycle [0,1]
+  _bb  = upSample 2 bits
+  _xbb = 0 : _bb  -- extra 1/2 clock cycle!
 
   -- (cpol,cpha)
-  p (0,0) = zip c_01 d_bb
-  p (0,1) = zip c_01 d__b
-  p (1,0) = zip c_10 d_bb
-  p (1,1) = zip c_10 d__b
+  p (0,0) = zip _01 _bb
+  p (0,1) = zip _01 _xbb
+  p (1,0) = zip _10 _bb
+  p (1,1) = zip _10 _xbb
   
 
   

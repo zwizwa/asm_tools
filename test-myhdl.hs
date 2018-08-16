@@ -19,6 +19,7 @@ import qualified SeqTerm
 import qualified SeqExpr
 import qualified CSV
 
+import qualified Verilog
   
 main = do
 
