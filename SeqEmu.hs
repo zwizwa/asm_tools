@@ -138,6 +138,7 @@ instance Seq M R where
   
   probe _ _ = return () -- ignore names
 
+
 -- This can happen due to []'s applicative functor.
 insert' tag = Map.insertWithKey err where
   err k v v_old = error $ tag ++ "double insert: (k,v,v_old)=" ++ show (k,v,v_old)

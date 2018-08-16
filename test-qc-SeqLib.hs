@@ -75,6 +75,7 @@ main = do
   x_mod_counter
   x_soc
   x_soc_boot
+  x_deser
 
 -- Tests for library code.
 --    t_  Trace wrapper (_emu or _th)
@@ -103,6 +104,9 @@ t_deser nb_bits = trace [1,1] $ \[bc,bv] -> do
   (wc, wv) <- deser ShiftLeft (SInt (Just nb_bits) 0) (bc, bv)
   return [wc, wv]
 
+x_deser = do
+  putStrLn "-- x_deser"
+  -- TODO
 
 -- async_receive_sample
 
@@ -298,7 +302,7 @@ t_soc prog = $(compile allProbe [1,1,1,1] soc_test) [memRef prog]
 printProbe :: [String] -> ([String],[[Int]]) -> IO ()
 printProbe columns (names, signals) = do
   let signals' = selectSignals columns names signals
-  putStr $ showSignals columns signals'
+  putStr $ showSignals' True columns signals'
 
 -- For testing, it seems simplest to embed the CPU inside a SOC.  What
 -- is important is the integration, not so much the CPU itself, which
@@ -329,6 +333,9 @@ x_soc = do
     -- Same, using Forth control words
     prog_loop2 = c $ do begin; for' 3; next; again
 
+    -- Write to debug register
+    prog_dbg = c $ do push 123; write dbg
+  
     idle = [1,1,0,0]
   
   putStrLn "-- x_soc"
@@ -353,6 +360,10 @@ x_soc = do
   printProbe ["iw","ip","top","snd","c"] $
     t_soc prog_loop2 $ replicate 30 idle
 
+  putStrLn "prog_dbg:"
+  printProbe ["iw","ip","top","snd","dbg"] $
+    t_soc prog_dbg $ replicate 10 idle
+
 
 -- Full example, includes uploading program and starting CPU.
 
@@ -371,8 +382,9 @@ x_soc_boot = do
     prog' = unpackProgram bytes
     prog_bits = map (toBitList 16)
 
-    -- SPI transfer
-    spi_c_d = spiBits 2 $ concat $ prog_bits prog'
+    -- SPI transfer.  Don't oversample to keep example small.
+    -- FIXME: add rle display to printProbe
+    spi_c_d = spiBits 1 $ concat $ prog_bits prog'
     spi = [[1, 0, 0],
            [0, 0, 0]] ++
           [[0,sck,sda] | (sck,sda) <- spi_c_d] ++
@@ -390,8 +402,8 @@ x_soc_boot = do
   printL $ prog_bits prog'
 
   putStrLn "-- boot: execute from SPI booted RAM"
-  printProbe ["iw","ip","tx_bc","tx_wc","tx_in","tx_done","tx_out"] $
-    t_soc [] $ map ([1] ++) $ spi ++ postamble
+  printProbe ["run","iw","ip","tx_bc","tx_wc","tx_in","tx_done","tx_out"] $
+    t_soc [] $ map ([1] ++) $ spi ++ postamble ++ spi ++ postamble
   printL $ prog_bits prog'
 
 

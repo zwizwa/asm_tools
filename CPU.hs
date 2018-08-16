@@ -153,7 +153,8 @@ closeIMem (IMemWrite wEn wAddr wData) run execute = do
                    (loop, [ip]),
                    (jump, [ipJump])]
                   [ipCont]
-      "ip" .= ip
+      "ip"  <-- ip
+      "run" <-- run
                   
       return ([ipNext], (ipNext, o))  -- comb ipNext to avoid extra delay
     return ([(wEn, wAddr, wData, ipNext)], o)
@@ -313,7 +314,7 @@ forever m = begin >> m >> again
 -- Put it in a representation that can be sent as bytes over SPI.
 writeProgram :: String -> Forth.Program -> IO ()
 writeProgram name lst = do
-  encodeFile name $ packProgram lst
+  ByteString.writeFile name $ packProgram lst
 
 -- packProgram returns binary data, encoded such that it can be sent
 -- over SPI using an 8-bit transfer, most significant bit sent
@@ -369,8 +370,10 @@ stack_machine ::
 
 (.&) :: Seq m r => r S -> r S -> m (r S)
 (.|) :: Seq m r => r S -> r S -> m (r S)
+(.=) :: Seq m r => r S -> r S -> m (r S)
 (.&) = band
 (.|) = bor
+(.=) = equ
 
 
 -- Decrement and and save carry bit
@@ -392,6 +395,7 @@ stack_machine  nb_stack (BusRd bus_rdy bus_data) (Ins iw) = do
   closeReg t_stack $ \stack@(top:snd:_) -> do
     arg   <- slice' iw  8 0
     opc   <- slice' iw 16 (16 - o_nb_bits)
+    opc8  <- slice' iw 16 8
     
     let opc' n = equ opc $ cbits o_nb_bits n
 
@@ -437,10 +441,10 @@ stack_machine  nb_stack (BusRd bus_rdy bus_data) (Ins iw) = do
     -- high for only one cycle.
 
     -- probes
-    "iw"  .= iw
-    "top" .= top'
-    "snd" .= snd'
-    "c"   .= carry
+    "iw"  <-- iw
+    "top" <-- top'
+    "snd" <-- snd'
+    "c"   <-- carry
     
     return (stack',                   -- internal reg feedback
             (Control wait jmp arg,    -- instruction sequencer feedback
@@ -455,7 +459,8 @@ stack_machine  nb_stack (BusRd bus_rdy bus_data) (Ins iw) = do
 
 uart_rx = 0 :: Int
 uart_tx = 1 :: Int
-
+dbg     = 2 :: Int
+-- 0xFF is the void for "drop"
 
 bus [rx] (BusWr wEn addr wData) = do
   
@@ -463,19 +468,23 @@ bus [rx] (BusWr wEn addr wData) = do
   addr' <- slice' addr 2 0
   let tx_bc = 1 -- FIXME
       c = cbits 2
-      write n = addr' `equ` (c n) >>= band wEn
+      write n = addr' .= (c n) >>= band wEn
 
   -- Bus write operations
   tx_wc <- write uart_tx
   (tx, tx_rdy) <- async_transmit tx_bc (tx_wc, wData)
+
+  dbg_wc <- write dbg
+  dbg' <- register dbg_wc wData
+  "dbg" <-- dbg'
 
   -- Bus read operations
   [rStrobe, rData] <- switch addr'
     [(c uart_rx,
       do
         (s,d) <- async_receive 8 rx;
-        "rx_s" .= s
-        "rx_d" .= d
+        "rx_s" <-- s
+        "rx_d" <-- d
         return [s,d]),
      (c uart_tx,
       do
@@ -483,12 +492,13 @@ bus [rx] (BusWr wEn addr wData) = do
         -- Alternatively, implement this as a global flag.
         return [tx_rdy,0])]
     (return [0,0])
-  return (BusRd rStrobe rData, [tx])
+  return (BusRd rStrobe rData, [tx, dbg'])
 
 -- For now these are fixed to 16 bit instruction words and 8 bit address.
 spi_boot cs sck sda = do
   (wc, w) <- sync_receive 16 cs sck sda
-  a <- fifoPtr (bits 8) wc
+  a <- arrPtr (bits 8) cs wc
+  -- a <- fifoPtr (bits 8) wc
   return $ IMemWrite wc a w
 
 rom_boot :: Seq m r => IMemWrite r
@@ -504,7 +514,7 @@ soc [rx,cs,sck,sda] = do
   -- as rData will be invalid.  The first cycle is used to perform the
   -- first instruction read.  After that, instruction pointer is updated.
   reset <- seq01 -- 0,1,1,1....
-  reset <- reset `band` cs
+  reset <- reset .& cs
 
   boot <- spi_boot cs sck sda
   
@@ -531,6 +541,6 @@ soc [rx,cs,sck,sda] = do
 soc_test :: Seq m r => [r S] -> m [r S]
 soc_test ins = do
   outs <- soc ins
-  -- Testing only uses named internam probe signals, not the
+  -- Testing only uses named internal probe signals, not the
   -- production circuit's outputs.
   return []

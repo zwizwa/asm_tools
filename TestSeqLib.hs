@@ -69,36 +69,4 @@ d_stack i@[push,pop,wd] = do
 -- Define instructions next to the decoder.
 
 
--- Format a signal table.
-
-showSignals :: [String] -> [[Int]] -> String
-showSignals header signals = str where
-  table = padTable (header : (map (map show) signals))
-  (header':signals') = map (concat . (intersperse " ")) table
-  sep = replicate (length header') '-'
-  str = concat $ map ((++ "\n")) (header':sep:signals')
-
-padTable :: [[String]] -> [[String]]
-padTable rows = prows where
-  columns  = transpose rows
-  widths   = map (maximum . (map length)) columns
-  pcolumns = zipWith pad widths columns
-  pad n column = map padCell column where
-    padCell str = lpad ++ str where
-      n' = n - length str
-      lpad = replicate n' ' '
-  prows = transpose pcolumns
-
-
-selectSignals columns names signals = signals' where
-  signals' = map select signals
-  select row = map (row !!) indices
-  indices = map name2col columns
-  name2col nm = fromJust' nm $ lookup nm $ zip names [0..]
-  -- Assume that probe names are correct.  This is only supposed to be
-  -- used for testing, so raise an error when a probe is not found.
-  fromJust' _ (Just x) = x
-  fromJust' nm Nothing = error $
-    "showSelectSignals: " ++ show nm ++ " not found in " ++ show names
-  
 

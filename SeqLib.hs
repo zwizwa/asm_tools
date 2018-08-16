@@ -144,14 +144,18 @@ cbits :: Seq m r => Int -> Int -> r S
 cbits n = constant . (bits' n)
 
 -- Special closeReg case: single register, with register as output
-reg' :: Seq m r => SType -> (r S -> m (r S)) -> m (r S)
-reg' t f = do closeReg [t] $ \[r] -> do r' <- f r ; return ([r'], r)
+reg1 :: Seq m r => SType -> (r S -> m (r S)) -> m (r S)
+reg1 t f = do closeReg [t] $ \[r] -> do r' <- f r ; return ([r'], r)
+
+-- Register with write enable.  This is what a programmer thinks upon
+-- hearing "register": something that can be written to.
+register we v = do
+  t <- stype v
+  withClockEnable we $ reg1 t $ \_ -> return v
 
 
 
--- Convenient shortcut for test probe
-(.=) :: Seq m r => String -> r S -> m ()
-(.=) = probe
+
 
 
 
@@ -179,7 +183,7 @@ dec :: Seq m r => r S -> m (r S)
 dec c = sub c 1
 
 counter :: Seq m r => SType -> m (r S)
-counter t = reg' t inc
+counter t = reg1 t inc
 
 -- Combinatorial output for carry.
 mod_counter' :: Seq m r => Int -> m (r S, r S)
@@ -216,11 +220,16 @@ carry_counter t = do
 delay :: Seq m r => r S -> m (r S)
 delay x = do
   t <- stype x
-  reg' t $ \_ -> return x
+  reg1 t $ \_ -> return x
 
 edge d = do
   d0 <- delay d
   d `bxor` d0
+
+posedge sclk = do
+  e <- edge sclk
+  e `band` sclk
+
 
 
 -- 1,1,1 and delayed versions
@@ -244,7 +253,7 @@ sync' s0 i s = do
 -- Bound to register
 sync :: Seq m r => SType -> r S -> m (r S)
 sync t i = do
-  reg' t $ sync' (constant t) i
+  reg1 t $ sync' (constant t) i
 
 
 -- Shift register in terms of slice + conc.
@@ -280,7 +289,7 @@ shiftUpdate dir r i = do
 integral :: Seq m r => r S -> m (r S)
 integral x = do
   t <- stype x
-  reg' t $ add x
+  reg1 t $ add x
 
 
 -- Multi-argument versions
@@ -463,9 +472,9 @@ async_receive_sample nb_data_bits@8 rx = sm where
       (return [0, 0, 0, 0])
 
     -- test probes
-    "rx_in" .= rx
-    "rx_bc" .= bc
-    "rx_wc" .= wc
+    "rx_in" <-- rx
+    "rx_bc" <-- bc
+    "rx_wc" <-- wc
       
     return (regs', (bc,wc))
 --    return (regs', rx:bc:wc:regs')
@@ -511,11 +520,11 @@ async_transmit bitClock (wordClock, txData) = do
          (bitClock,  [shifted,  cntDec])]
         [shiftReg, cnt]
 
-      "tx_bc"   .= bitClock
-      "tx_wc"   .= wordClock
-      "tx_in"   .= txData
-      "tx_done" .= done
-      "tx_out"  .= out
+      "tx_bc"   <-- bitClock
+      "tx_wc"   <-- wordClock
+      "tx_in"   <-- txData
+      "tx_done" <-- done
+      "tx_out"  <-- out
       
       -- return ([shiftReg', cnt'],
       --         [out, done,
@@ -532,10 +541,6 @@ async_transmit bitClock (wordClock, txData) = do
 
 -- Sample on rising edge only.  I beleive this is the same as the iCE40.
 
-posedge sclk = do
-  e <- edge sclk
-  e `band` sclk
-
 -- Assume wordsize is power of two so we can roll around the counter.
 -- FIXME: It's easier to reuse the counter and transfer directly into
 -- the memory.
@@ -543,11 +548,11 @@ sync_receive nb_bits cs sclk sdata = do
     sc <- posedge sclk
     bc <- band sc =<< inv cs
     out@(wc, w) <- deser ShiftLeft (bits nb_bits) (bc, sdata)
-    "sclk"  .= sclk
-    "sdata" .= sdata
-    "s_bc"  .= bc
-    "s_wc"  .= wc
-    "s_w"   .= w
+    "sclk"  <-- sclk
+    "sdata" <-- sdata
+    "s_bc"  <-- bc
+    "s_wc"  <-- wc
+    "s_w"   <-- w
     return out
 
 -- sync_receive_sample nb_bits@16 cs sclk = do
@@ -561,6 +566,7 @@ sync_receive nb_bits cs sclk sdata = do
   
 
 -- Seserializer for converting bit streams to word streams.
+-- FIXME: needs reset, and possibly off by one?
 deser :: Seq m r => ShiftDir -> SType -> (r S, r S) -> m (r S, r S)
 deser dir t_sr@(SInt (Just nb_bits) _) (bitClock, bitVal) = do
   let t_sr' = t_nb_bits t_sr
@@ -593,13 +599,23 @@ fifo ta (rc,wc,wd) = do
   closeMem [td] $ \[rd] -> do
     return ([(wc, wa, wd, ra)], rd)
 
--- open interface, memory closed elsewhere
+
 fifoPtr :: Seq m r => SType -> r S -> m (r S)
 fifoPtr t wc = do
   closeReg [t] $ \[a] -> do
     a1 <- inc a
     a' <- if' wc a1 a
     return ([a'], a)
+
+-- Polarity as used with SPI
+arrPtr :: Seq m r => SType -> r S -> r S -> m (r S)
+arrPtr t cs wc = do
+  closeReg [t] $ \[a] -> do
+    a1 <- inc a
+    a' <- if' wc a1 a
+    a' <- if' cs 0 a'
+    return ([a'], a)
+
 
 
 -- Stack / LIFO
@@ -674,3 +690,47 @@ index sel sigs = index' sel zeroExtend where
   even (a:_:as) = (a : even as)
   odd (a:as) = even as
 
+
+
+
+
+-- Probes consist of two mechanisms:
+--
+-- . Meta-level, using the 'probe' primitive.  This records a binding
+--   between the string name and the signal representation.  This is
+--   used e.g. in renaming output signals for MyHDL output.
+--
+-- . Object level, where signals can be "teleported" into an enclosing
+--   dynamic scope.  This is useful for defining debugging context.
+--   E.g. on an FPGA board, LEDs could be assigned a name such that
+--   they can be driven by deeper signals without a need for
+--   propagation through the abstract interface.  ( Debugging is at
+--   odds with data hiding. )
+
+
+
+-- Convenient shortcut for test probe
+(<--) :: Seq m r => String -> r S -> m ()
+(<--) name val = do
+  probe name val
+  updateProbe name val
+  
+
+-- An 'update' variant that works on environment variables.
+
+-- An attempt to create a different probe mechanism for FPGA circuits.
+-- This is for debug only as it imposes global constraints.
+
+withProbe str reg m = do
+  let f env var@(Probe str') =
+        case str == str' of
+          True  -> Just reg
+          False -> env var
+      f env var = env var
+  withEnv f m
+
+updateProbe str val = do
+  env <- getEnv
+  case env (Probe str) of
+    Nothing  -> return ()
+    Just reg -> update reg val

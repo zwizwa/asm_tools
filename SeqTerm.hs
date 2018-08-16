@@ -180,6 +180,7 @@ instance Seq.Seq M R where
 
   probe name (R n) = tell $ [Probe n name]
 
+
 fromRight' (Right a) = a
 fromRight' (Left e) = error e
 

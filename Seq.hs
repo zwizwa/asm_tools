@@ -174,7 +174,6 @@ class (Monad m, Num (r S)) => Seq m r | r -> m, m -> r where
   -- So support is added inside the language.
   probe :: String -> r S -> m ()
 
-
   -- FIXME: add support for probing/tracing.  Production code will not
   -- generate it, but it would allow debug code to be traced without
   -- the need to pass along a lot of debug information explicitly.
@@ -241,8 +240,10 @@ initEnv = const Nothing
 -- Seq uses local context for
 data EnvVar =
   ClockEnable |  -- the "time base" of the local state machines.
-  EnvVar String  -- for extensions
+  Probe String   -- see SeqLib implementation of (<--)
   deriving Show
+
+
 
 
 

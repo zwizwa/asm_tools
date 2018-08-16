@@ -52,7 +52,7 @@ test-myhdl: default.nix
 	$(NIX_SHELL) --run "cabal test test-myhdl --log=/dev/stdout"
 
 # These need corresponding entries in the .cabal file
-f_%.py f_%.pcf f_%.ram.bin: f_%.hs *.hs
+f_%.py f_%.pcf f_%.imem.bin: f_%.hs *.hs
 	$(NIX_SHELL) --run "cabal test f_$* --log=/dev/stdout"
 
 

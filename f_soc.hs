@@ -10,6 +10,7 @@ import SeqLib
 import CPU
 import Names
 import TestTools
+import qualified Forth
 import qualified MyHDL
 
 import qualified SeqTerm
@@ -41,34 +42,40 @@ f_soc =
        _LED4, _LED5, _LED6, _LED7
      ] -> do
       let sample = delay >=> delay
-      [rx, spi_si, spi_sck, spi_ss_b] <-
+      [rx, sda, sck, cs] <-
         sequence $ map sample [_RX, _SPI_SI, _SPI_SCK, _SPI_SS_B]
 
-      (uart_rx_e, uart_rx) <- async_receive 8 rx
-      (spi_rx_e,  spi_rx)  <- sync_receive 8 spi_ss_b spi_sck spi_si
-
-      dbg <- closeReg [bits 8] $ \[dbg] -> do
-        dbg' <- if' spi_rx_e spi_rx dbg
-        return ([dbg'],dbg)
+      -- Instantiate the SOC
+      iw  <- signal $ bits 16
+      dbg <- slice' iw 16 8
       
-      -- b0 <- slice' uart_rx 1 0
-      -- connect _LED0 b0
+      [tx, dbg'] <- withProbe "iw" dbg $
+        soc [rx, cs, sck, sda]
+
+      -- (spi_rx_e,  spi_rx)  <- sync_receive 8 spi_ss_b spi_sck spi_si
+      -- dbg <- register spi_rx_e spi_rx
+
+      connect _TX tx
+      
       let leds = [_LED0, _LED1, _LED2, _LED3,
                   _LED4, _LED5, _LED6, _LED7]
           connDbg n pin = slice' dbg (n+1) n >>= connect pin
           connLEDs = sequence_ $ zipWith connDbg  [0..] leds
 
       connLEDs
+      -- connect _LED5 sda
+      -- connect _LED6 sck
+      -- connect _LED7 cs
       
-      -- Instantiate the SOC
-      [tx] <- soc [_RX]
-      connect _TX tx
     |])
 
 generate = do
   putStrLn "-- f_soc"
   board <- CSV.readTagged id "specs/hx8k_breakout.csv"
   let pin = CSV.ff (\[k,_,v,_] -> (k,v)) board
+      prog' = Forth.compile $ do push 0x55 ; write dbg
+      prog = Forth.compile $ do nop ; nop ; nop ; nop ; begin ; again
   MyHDL.fpgaWrite "f_soc" f_soc pin
+  writeProgram "f_soc.imem.bin" prog
 
 
