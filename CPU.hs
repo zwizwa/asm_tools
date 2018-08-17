@@ -146,6 +146,7 @@ data BusRd r = BusRd {
   busReadData :: r S
 }
 data BusWr r = BusWr {
+  busReadEn    :: r S,  -- needed for side-effecting read, e.g. pop
   busWriteEn   :: r S,
   busAddr      :: r S,
   busWriteData :: r S
@@ -165,13 +166,19 @@ o_nb_bits  = 4
 o_nop   = 0
 o_jmp   = 1
 o_push  = 2
--- 3
+o_down  = 3
 o_read  = 4
 o_write = 5
 o_swap  = 6
 o_loop  = 7
 o_call  = 8
 o_ret   = 9
+-- 10
+-- 11
+-- 12
+-- 13
+-- 14
+-- 15
 
 
 -- Use Forth for flow control structures.
@@ -194,6 +201,7 @@ loop  = i1 o_loop
 drop  = write (-1)
 call  = i1 o_call
 ret   = i0 o_ret
+down  = i0 o_down
 
 -- In any case, a monad implementing a Forth compile stack is
 -- convenient if only because of familiarity.
@@ -251,20 +259,6 @@ stack_machine ::
   Ins r ->
   m (Control r, BusWr r)
 
-
-
--- Decrement and and save carry bit
-cdec var = do
-  (SInt (Just n) _) <- stype var
-  var_dec <- conc (cbit 0) var >>= dec
-  carry   <- slice' var_dec (n+1) n
-  var_dec <- slice' var_dec  n    0
-  return (carry, var_dec)
-
-multi _  [a]    = return a
-multi op (a:as) = op a =<< multi op as
-multi _  _      = error $ "multi: need at least 1 operand"
-
 stack_machine  nb_stack (BusRd bus_rdy bus_data) (Ins iw ip) = do
 
   -- Word size is determined by pointer size
@@ -288,15 +282,16 @@ stack_machine  nb_stack (BusRd bus_rdy bus_data) (Ins iw ip) = do
     swap  <- opc' o_swap
     loop  <- opc' o_loop
     read  <- opc' o_read
+    down  <- opc' o_down
 
     -- ALU operations
-    (carry, top_dec) <- cdec top
+    (carry, top_dec) <- carry dec top
     ncarry           <- inv carry
 
     -- control flow
     loop_again <- loop .& ncarry
     loop_done  <- loop .& carry
-    goto_en    <- multi (.|) [ jmp, loop_again, call, ret ]
+    goto_en    <- one_of [ jmp, loop_again, call, ret ]
     goto_addr  <- if' ret top arg
 
     -- read instruction
@@ -305,8 +300,8 @@ stack_machine  nb_stack (BusRd bus_rdy bus_data) (Ins iw ip) = do
     push_read <- read .& bus_rdy
 
     -- stack operation flags
-    pop  <- multi (.|) [ write, loop_done, ret ]
-    push <- multi (.|) [ push, push_read, call ]
+    pop  <- one_of [ write, loop_done, ret ]
+    push <- one_of [ push, push_read, call ]
     
     -- what to push
     [push_data] <- cond
@@ -314,8 +309,8 @@ stack_machine  nb_stack (BusRd bus_rdy bus_data) (Ins iw ip) = do
                     (push_read, [bus_data])]
                    [arg]
 
-    let set      = loop
-        set_data = top_dec
+    set <- loop .| down
+    let set_data = top_dec
 
         stac_ = take (nb_stack - 1) stack
         _tack = tail stack
@@ -340,7 +335,7 @@ stack_machine  nb_stack (BusRd bus_rdy bus_data) (Ins iw ip) = do
     
     return (stack',                           -- internal reg feedback
             (Control wait goto_en goto_addr,  -- instruction sequencer feedback
-             BusWr write arg top))            -- top level output is a bus
+             BusWr read write arg top))       -- top level output is a bus
 
 
 
@@ -354,23 +349,28 @@ uart_tx = 1 :: Int
 dbg     = 2 :: Int
 -- -1 is the void used for "drop"
 
-bus [rx] (BusWr wEn addr wData) = do
+bus [rx] (BusWr rEn wEn addr wData) = do
   
   -- Instantiate peripherals, routing i/o registers.
   addr' <- slice' addr 2 0
   let tx_bc = 1 -- FIXME
       c = cbits 2  -- numeric case used in switch
-      write n = (addr' .== c n) >>= band wEn  -- register write clock
+      wEn' n = (addr' .== c n) >>= band wEn  -- register write clock
 
   -- Bus write operations
-  tx_wc <- write uart_tx
+
+  -- UART.  Baud generator should probably be a circuit.
+  tx_wc <- wEn' uart_tx
   (tx, tx_rdy) <- async_transmit tx_bc (tx_wc, wData)
 
-  dbg_wc <- write dbg
-  dbg' <- register dbg_wc wData
-  "dbg" <-- dbg'
+  -- Debug register.  Useful for connecting to LEDs
+  dbg_wc <- wEn' dbg
+  dbg_reg <- register dbg_wc wData
+  "dbg" <-- dbg_reg
 
-  -- Bus read operations
+  -- Bus read operations.  It's ok to leave these always on, e.g. for
+  -- streaming data ports, but when a read causes a side effect, the
+  -- rEn bit should be used.
   [rStrobe, rData] <- switch addr'
     [(c uart_rx,
       do
@@ -384,7 +384,7 @@ bus [rx] (BusWr wEn addr wData) = do
         -- Alternatively, implement this as a global flag.
         return [tx_rdy,0])]
     (return [0,0])
-  return (BusRd rStrobe rData, [tx, dbg'])
+  return (BusRd rStrobe rData, [tx, dbg_reg])
 
 -- For now these are fixed to 16 bit instruction words
 spi_boot nb_bits cs sck sda = do
@@ -403,7 +403,9 @@ soc [rx,cs,sck,sda] = do
   let
     -- Instruction width is fixed at 16 bits for now
     ins_bits  = 16
-    -- Memory address size.  Also sets stack and bus width
+
+    -- Memory address size.  Also sets stack and bus width.  Note that
+    -- this has a large effect on the circuit size.
     imem_bits = 12
 
   -- Do not update the instruction pointer at the first instruction,

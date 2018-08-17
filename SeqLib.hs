@@ -902,3 +902,12 @@ updateProbe str val = do
 (.^) = bxor
 (.==) = equ
 
+
+reduce' _  [a]    = return a
+reduce' op (a:as) = op a =<< reduce' op as
+reduce' _  _      = error $ "reduce': need at least 1 operand"
+
+one_of :: Seq m r => [r S] -> m (r S)
+all_of :: Seq m r => [r S] -> m (r S)
+one_of = reduce OR
+all_of = reduce AND
