@@ -187,8 +187,10 @@ o_ret   = 9
 -- primitive operations do not have to be nullary.
 ins i = Forth.save [i]
 
+asm opc arg = opc `shiftL` (16 - o_nb_bits) .|. (arg .&. 0xFF)
+
 i1 :: Int -> Int -> Forth.M ()
-i1 opc arg = ins $ opc `shiftL` (16 - o_nb_bits) .|. (arg .&. 0xFF)
+i1 opc arg = ins $ asm opc arg
 i0 c = i1 c 0
 
 nop   = i0 o_nop
@@ -216,6 +218,11 @@ again = Forth.cpop >>= jmp
 -- instructions.  E.g.:
 for' n code = do push n ; for ; code ; next
 forever m = begin >> m >> again
+
+
+program = Forth.program $ asm o_jmp
+fun     = Forth.fun     $ asm o_call
+start   = Forth.fun'
 
 
 

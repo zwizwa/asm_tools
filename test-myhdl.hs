@@ -139,5 +139,8 @@ x_verilog = do
   let mod [rx, tx] = do
         tx' <- inv rx
         connect tx tx'
-  print $ Verilog.vModule "mymod" ["rx", "tx"] [bit, bit] mod
+      v = Verilog.vModule "mymod" ["rx", "tx"] [bit, bit] mod
+  print $ v
+  writeFile "x_verilog.v" $ show v
+  
   

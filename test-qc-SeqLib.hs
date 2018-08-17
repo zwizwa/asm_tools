@@ -359,7 +359,13 @@ x_soc = do
       jmp 3
       nop
       ret
-  
+
+    -- Subroutine abstractions
+    prog_fun = program $ do
+      proc1 <- fun $ do push 1 ; swap ; ret
+      proc2 <- fun $ do push 2 ; swap ; ret
+      start $ forever $ do proc1 ; proc2
+    
     idle = [1,1,0,0]
   
   putStrLn "-- x_soc"
@@ -391,6 +397,10 @@ x_soc = do
   putStrLn "prog_call:"
   printProbe ["iw","ip","top","snd"] $
     t_soc prog_call $ replicate 20 idle
+
+  putStrLn "prog_fun:"
+  printProbe ["iw","ip","top","snd"] $
+    t_soc prog_fun $ replicate 20 idle
 
 
 -- Full example, includes uploading program and starting CPU.

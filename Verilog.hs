@@ -30,7 +30,7 @@ instance Show Verilog where
 vModule :: String -> [String] -> [SType] -> ([R S] -> M ()) -> Verilog
 vModule name portNames portTypes mod = Verilog portSpecs' vCode where
   
-  -- Seq SeqTerm for some post processing steps that are shared
+  -- See SeqTerm for some post processing steps that are shared
   -- between HDLs.
   (portSpecs', (ports', bindings')) =
     SeqTerm.hdl_compile name portNames portTypes mod
