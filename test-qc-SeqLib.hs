@@ -348,10 +348,15 @@ p_soc_fun = forAll vars prop where
 -- Most tests don't need inputs.  
 soc_idle = [1,1,0,0]
 
-e_soc_fun v1 v2 = (True, out) where -- FIXME!
+e_soc_fun v1 v2 = (dbg == dbg', (dbg', out)) where -- FIXME!
   -- Run time can be constant for now.
-  ins = replicate 30 soc_idle
-  out = t_soc (prog_fun v1 v2) ins
+  ins = replicate 40 soc_idle
+  out@(names, signals) = t_soc (prog_fun v1 v2) ins
+  dbg  = take 6 $ cycle [[v1],[v2]]
+  dbg' = take 6 $ downSample' $
+    selectSignals ["bus_dbg", "bus_data"] names signals
+
+  
 
 x_soc = do
   let
@@ -424,7 +429,8 @@ x_soc = do
     t_soc prog_call $ replicate 20 idle
 
   putStrLn "prog_fun:"
-  let (_, out) = e_soc_fun 1 2
+  let (_, (dbg, out)) = e_soc_fun 1 2
+  print dbg
   printProbe ["iw","ip","top","snd","bus_dbg","bus_data"] out
 
 
