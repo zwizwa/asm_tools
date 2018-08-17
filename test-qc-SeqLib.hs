@@ -350,6 +350,15 @@ x_soc = do
 
     -- Write to debug register
     prog_dbg = c $ do push 123; write dbg
+
+    -- Call, ret
+    prog_call = c $ do
+      call 4
+      call 4
+      call 4
+      jmp 3
+      nop
+      ret
   
     idle = [1,1,0,0]
   
@@ -378,6 +387,10 @@ x_soc = do
   putStrLn "prog_dbg:"
   printProbe ["iw","ip","top","snd","dbg"] $
     t_soc prog_dbg $ replicate 10 idle
+
+  putStrLn "prog_call:"
+  printProbe ["iw","ip","top","snd"] $
+    t_soc prog_call $ replicate 20 idle
 
 
 -- Full example, includes uploading program and starting CPU.
