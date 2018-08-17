@@ -43,12 +43,23 @@ f_soc =
       [rx, sda, sck, cs] <-
         sequence $ map sample [_RX, _SPI_SI, _SPI_SCK, _SPI_SS_B]
 
+      -- Instantiate the SOC with dbg probe.  FIXME:
+
+      -- FIXME: Probably ok for debug, but these are
+      -- double-registered.  Change 'withProbe' to allow enables or to
+      -- contain some Dynamic type, or allow combinatorial Connect.
+      bus_data <- signal $ bits 8
+      bus_dbg  <- signal $ bit
+      dbg      <- register bus_dbg bus_data
+      [tx]     <- withProbe "bus_data" bus_data $
+                  withProbe "bus_dbg"  bus_dbg  $
+                  soc [rx, cs, sck, sda]
+    
       -- Instantiate the SOC
       -- iw  <- signal $ bits 16
       -- dbg <- slice' iw 16 8
       -- dbg <- signal $ bits 8
       -- [tx, dbg'] <- withProbe "iw" iw $ soc [rx, cs, sck, sda]
-      [tx, dbg] <- soc [rx, cs, sck, sda]
 
       -- (spi_rx_e,  spi_rx)  <- sync_receive 8 spi_ss_b spi_sck spi_si
       -- dbg <- register spi_rx_e spi_rx

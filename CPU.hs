@@ -370,10 +370,12 @@ bus [rx] (BusWr rEn wEn addr wData) = do
   tx_wc <- wEn' uart_tx
   (tx, tx_rdy) <- async_transmit tx_bc (tx_wc, wData)
 
-  -- Debug register.  Useful for connecting to LEDs
+  -- Debug writes.  Used for
+  -- 1) CPU test programs in test suite
+  -- 2) FPGA LED output (see with_debug and f_sock.hs)
   dbg_wc <- wEn' dbg
-  dbg_reg <- register dbg_wc wData
-  "dbg" <-- dbg_reg
+  "bus_data" <-- wData
+  "bus_dbg"  <-- dbg_wc
 
   -- Bus read operations.  It's ok to leave these always on, e.g. for
   -- streaming data ports, but when a read causes a side effect, the
@@ -391,7 +393,7 @@ bus [rx] (BusWr rEn wEn addr wData) = do
         -- Alternatively, implement this as a global flag.
         return [tx_rdy,0])]
     (return [0,0])
-  return (BusRd rStrobe rData, [tx, dbg_reg])
+  return (BusRd rStrobe rData, [tx])
 
 -- For now these are fixed to 16 bit instruction words
 spi_boot nb_bits cs sck sda = do

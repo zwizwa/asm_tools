@@ -69,6 +69,8 @@ main = do
   qc "p_spi" p_spi
   qc "p_fifo" p_fifo
 
+  qc "p_soc_fun" p_soc_fun
+
   x_stack
   x_async_transmit
   x_spi
@@ -323,6 +325,34 @@ printProbe columns (names, signals) = do
 -- is important is the integration, not so much the CPU itself, which
 -- is fairly straightforward.
 
+-- Programs are factored out as quickcheck properties get built
+
+-- Subroutine abstractions.  Note that this is not a 2-stack
+-- machine, so the return address needs to be restored to the top
+-- of stack before returning.
+prog_fun v1 v2 = program $ do
+  proc1 <- fun $ do push v1 ; swap ; ret
+  proc2 <- fun $ do push v2 ; swap ; ret
+  start $ forever $ do
+    proc1 ; write dbg
+    proc2 ; write dbg
+
+p_soc_fun = forAll vars prop where
+  vars = do
+    v1 <- word 8
+    v2 <- word 8
+    return (v1, v2)
+  prop (v1, v2) = fst $ e_soc_fun v1 v2
+    
+
+-- Most tests don't need inputs.  
+soc_idle = [1,1,0,0]
+
+e_soc_fun v1 v2 = (True, out) where -- FIXME!
+  -- Run time can be constant for now.
+  ins = replicate 30 soc_idle
+  out = t_soc (prog_fun v1 v2) ins
+
 x_soc = do
   let
     c = Forth.compile
@@ -360,13 +390,8 @@ x_soc = do
       nop
       ret
 
-    -- Subroutine abstractions
-    prog_fun = program $ do
-      proc1 <- fun $ do push 1 ; swap ; ret
-      proc2 <- fun $ do push 2 ; swap ; ret
-      start $ forever $ do proc1 ; proc2
     
-    idle = [1,1,0,0]
+    idle = soc_idle
   
   putStrLn "-- x_soc"
   
@@ -391,7 +416,7 @@ x_soc = do
     t_soc prog_loop2 $ replicate 30 idle
 
   putStrLn "prog_dbg:"
-  printProbe ["iw","ip","top","snd","dbg"] $
+  printProbe ["iw","ip","top","snd","bus_dbg","bus_data"] $
     t_soc prog_dbg $ replicate 10 idle
 
   putStrLn "prog_call:"
@@ -399,8 +424,8 @@ x_soc = do
     t_soc prog_call $ replicate 20 idle
 
   putStrLn "prog_fun:"
-  printProbe ["iw","ip","top","snd"] $
-    t_soc prog_fun $ replicate 20 idle
+  let (_, out) = e_soc_fun 1 2
+  printProbe ["iw","ip","top","snd","bus_dbg","bus_data"] out
 
 
 -- Full example, includes uploading program and starting CPU.
