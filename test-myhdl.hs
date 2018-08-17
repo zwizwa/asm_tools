@@ -137,7 +137,7 @@ x_testbench = do
 x_verilog = do
   putStrLn "-- x_verilog"
   let mod [rx, tx] = do
-        tx' <- inv rx
+        tx' <- inv rx >>= delay
         connect tx tx'
       v = Verilog.vModule "mymod" ["rx", "tx"] [bit, bit] mod
   print $ v

@@ -61,6 +61,16 @@ vModule name portNames portTypes mod = Verilog portSpecs vCode where
     "assign " ++ name ++ " = " ++ expr term ++ ";" ++
     comment b ++ "\n"
 
+  updates = concat $ map update $ part Delays
+  resets  = concat $ map reset  $ part Delays
+
+  reset b@(name, (Delay (SInt _ rv) _)) =
+    tab ++ tab ++ name ++ " <= " ++ show rv ++ ";" ++
+    comment b ++ "\n"
+  update b@(name, (Delay _ o)) =
+    tab ++ tab ++ name ++ " <= " ++ op o ++ ";" ++
+    comment b ++ "\n"
+
   expr (Comb1 _ INV o) = "!" ++ op o
   expr (Connect _ o) = op o
   expr _ = "..."
@@ -70,14 +80,27 @@ vModule name portNames portTypes mod = Verilog portSpecs vCode where
 
   commas = intercalate ", "
   -- portNames = map (\(Node _ name) -> name) ports
+
+  tab = "    "
   
   vCode =
-    "`timescale 1ns/10ps\n" ++  -- from MyHDL output
-    "module " ++ name ++ "(" ++ commas portNames ++ ");\n" ++
+    -- "`timescale 1ns/10ps\n" ++  -- from MyHDL output
+    "module " ++ name ++ "(" ++ commas (["CLK","RST"] ++ portNames) ++ ");\n" ++
+    "input CLK;\n" ++
+    "input RST;\n" ++
     decls "wire"   Exprs ++
     decls "input"  Inputs ++
     decls "output" Connects ++
+    decls "reg"    Delays ++
     assigns ++
+    "always @(posedge CLK, negedge RST) begin: SEQ\n" ++
+    tab ++ "if (RST==0) begin\n" ++
+    resets ++
+    tab ++ "end\n" ++
+    tab ++ "else begin\n" ++
+    updates ++
+    tab ++ "end\n" ++
+    "end\n" ++
     "endmodule\n"
     
 
