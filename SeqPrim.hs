@@ -15,6 +15,7 @@ import Data.Bits
 import Control.Monad.ST
 import Data.Array.Unboxed
 import Data.Array.ST
+import Data.Array.Unsafe
 
 type T = Int
 
@@ -107,3 +108,28 @@ seqRun update memSpec (rd0, r0) probeNames memInits i = (probeNames, out) where
 --     as  <- sequence $ zipWith seqMemInit memSpec memInits
 --     as' <- sequence $ map runSTUArray as
 --     return (as', rd0, r0)
+
+
+
+seqRun' ::
+  (forall s. ([Mem s], rd, r, [Int]) -> ST s (rd, r, [Int]))
+  -> [Int]
+  -> (rd, r)
+  -> [String]
+  -> [Int -> Int]
+  -> [[Int]] -> ([String], ([Mem'], [[Int]]))
+seqRun' update memSpec (rd0, r0) probeNames memInits i = (probeNames, out) where
+  out = runST $ do
+    as <- sequence $ zipWith seqMemInit memSpec memInits
+    let u _ _ [] = return []
+        u rd r (i:is) = do
+          (rd',r',o) <- update (as, rd, r, i)
+          os <- u rd' r' is
+          return (o:os)
+    outs <- u rd0 r0 i
+    as' <- sequence $ map unsafeFreeze as
+    -- Do not mutate the as after unsafeFreeze
+    return (as', outs)
+
+mem2memInit :: Mem' -> Int -> Int
+mem2memInit = (!)
