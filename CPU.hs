@@ -1,8 +1,5 @@
--- A CPU?
 
--- It is the natural progression from Seq and Pru.
--- . implement CPU in Seq
--- . generalize assembler from Pru
+-- A small control CPU.
 
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
@@ -26,39 +23,52 @@ import Data.Binary
 import Data.Binary.Builder
 import Data.Binary.Get
 
--- Some notes on how this got built.
+-- Some realizations came up when this got built.
 
 -- . It starts with a desire to build a stack machine, followed by a
 --   realization of lack of insight.  As with many leaps: where to
 --   begin?  For many tasks, a full processor is overkill, so what is
 --   the essence?
 
--- . A relization that instruction sequencing is the key element that
---   distinguishes a state machine from a processor.  This required
---   support for memories, so they got built into Seq in several
---   iterations.  Experiments indicated that emulation was really
---   slow, so SeqTH/SeqPrim got built on top of STUArray.
+-- . Instruction sequencing is the key element that distinguishes a
+--   state machine from a processor.  This required support for
+--   memories, so they got built into Seq in several iterations.
+--   Experiments indicated that emulation was really slow, so
+--   SeqTH/SeqPrim got built on top of STUArray.
 
 -- . First attempts at modularizing the design.  It is obvious that a
---   CPU can't be anything else but a monadic function from input to
---   output, but it was not at all clear what this I/O would be, or
+--   Seq CPU can't be anything else but a monadic function from input
+--   to output, but it was not at all clear what this I/O would be, or
 --   how to practically decompose the submachines.
 
 -- . A design emerged for a cont/wait/jmp machine coupled to an
 --   instruction memory, parameterized by an instruction decoder.
 
--- . The realization that the input/output of the instruction decoder
---   is a bus that can be lifted out of the composition.  I.e. a CPU
---   consists of exposed bus operations, with closed instruction
---   sequencing and internal processor state.
+-- . The essence of a bus.  The input/output of the instruction
+--   decoder is a bus that can be lifted out of the composition.
+--   I.e. a CPU consists of exposed bus operations, with closed
+--   instruction sequencing and internal processor state.
 
--- . The realization that the implementation of the bus is something
---   that happens at the very top.  The processor is truly "embedded",
---   and the bus devices are truly "periphery", sitting beteen processor
---   (bus) and external I/O.
+-- . The implementation of the bus is something that happens at the
+--   very top.  The processor is truly "embedded", and the bus devices
+--   are truly "periphery", sitting beteen processor (bus) and
+--   external I/O.
 
--- . The realization (from SwapForth), that a stack is better
---   implemented as registers, and that it is trivial.
+-- . (from SwapForth), A stack is better implemented as registers
+--   instead of memory, and it is trivial.  Also, the resource use of
+--   additional registers is minimal.  Thise can be added as code
+--   needs it.
+
+-- . A "control processor" (CP) doesn't need two stacks because lack
+--   of data flow between instructions.  The itch being scratched is
+--   the replacement of state machines with something more modular and
+--   flexible.  What a CP needs is nested loops and procedure calls.
+
+-- . A full Forth language is not necessary, because many control
+--   structs can be implemented as meta functions in the Monad.
+--
+
+
 
 
 -- Original notes on stack macchines:
@@ -133,13 +143,13 @@ noIMemWrite ibits abits = IMemWrite e w d where
   d = cbits ibits 0
 
 
-closeIMem :: Seq m r =>
+sequencer :: Seq m r =>
   IMemWrite r
   -> r S
   -> (Ins r -> m (Control r, o))
   -> m o
 
-closeIMem (IMemWrite wEn wAddr wData) run execute = do
+sequencer (IMemWrite wEn wAddr wData) run execute = do
   t_wAddr <- stype wAddr
   t_wData <- stype wData
   closeMem [t_wData] $ \[iw] -> do
@@ -160,7 +170,7 @@ closeIMem (IMemWrite wEn wAddr wData) run execute = do
       return ([ipNext], (ipNext, o))  -- comb ipNext to avoid extra delay
     return ([(wEn, wAddr, wData, ipNext)], o)
 
--- A simple test for closeIMem:
+-- A simple test for sequencer:
 -- . program outputs iw as output
 -- . tied to a memory writer defined in the test lib
 
@@ -388,13 +398,17 @@ multi op (a:as) = op a =<< multi op as
 multi _  _      = error $ "multi: need at least 1 operand"
 
 stack_machine  nb_stack (BusRd bus_rdy bus_data) (Ins iw ip) = do
-  -- Register file is organized as a stack
-  let t_stack  = replicate nb_stack $ bits 8
+
+  -- Word size is determined by pointer size
+  (SInt (Just word_size) _) <- stype ip
+
+  -- Registers are organized in a stack
+  let t_stack  = replicate nb_stack $ bits word_size
   
   closeReg t_stack $ \stack@(top:snd:_) -> do
     
     -- Decode instructions
-    arg   <- slice' iw  8 0
+    arg   <- slice' iw word_size 0
     opc   <- slice' iw 16 (16 - o_nb_bits)
     let opc' n = equ opc $ cbits o_nb_bits n
     
@@ -505,9 +519,9 @@ bus [rx] (BusWr wEn addr wData) = do
   return (BusRd rStrobe rData, [tx, dbg'])
 
 -- For now these are fixed to 16 bit instruction words and 8 bit address.
-spi_boot cs sck sda = do
+spi_boot nb_bits cs sck sda = do
   (wc, w) <- sync_receive Mode3 16 cs sck sda
-  a <- arrPtr (bits 8) cs wc
+  a <- arrPtr (bits nb_bits) cs wc
   -- a <- fifoPtr (bits 8) wc
   return $ IMemWrite wc a w
 
@@ -520,29 +534,29 @@ soc [rx,cs,sck,sda] = do
   -- A soc is the bundling of a CPU, an instruction memory (sequencer
   -- and boot), a peripheral bus, and a reset circuit.
 
+  let
+    -- Instruction width is fixed at 16 bits for now
+    ins_bits  = 16
+    -- Memory address size.  Also sets stack and bus width
+    imem_bits = 12
+
   -- Do not update the instruction pointer at the first instruction,
   -- as rData will be invalid.  The first cycle is used to perform the
   -- first instruction read.  After that, instruction pointer is updated.
   reset <- seq01 -- 0,1,1,1....
-  reset <- reset .& cs
 
-  boot <- spi_boot cs sck sda
+  -- Processor can be restarted with a program from SPI.
+  reset <- reset .& cs
+  boot  <- spi_boot imem_bits cs sck sda
   
   let 
-    ins_bits  = 16
-    imem_bits = 8
-    bus_bits  = 8
-
-    -- boot = rom_boot
-
     -- Couple CPU and instruction memory
     bus_master busIn = busOut where
-      execute = stack_machine 3 busIn
-      busOut = closeIMem boot reset execute
-
+      execute = stack_machine 4 busIn
+      busOut = sequencer boot reset execute
   
-  -- Couple bus master and bus
-  closeReg [bit, bits bus_bits] $ \[rStrobe,rData] -> do
+  -- Couple bus master and slave through bus registers.
+  closeReg [bit, bits imem_bits] $ \[rStrobe,rData] -> do
     bus_wr <- bus_master (BusRd rStrobe rData)
     (BusRd rStrobe' rData', soc_output) <- bus [rx] bus_wr
     return ([rStrobe', rData'], soc_output)
