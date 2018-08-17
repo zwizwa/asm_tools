@@ -31,6 +31,8 @@ main = do
   x_run_myhdl
 
   x_testbench
+
+  x_verilog
     
 -- sequenced if' : does it need to be bundled?
 x_ifs = do
@@ -130,3 +132,12 @@ x_testbench = do
   let mod [s, d] = do return $ [s, d]
       tb = MyHDL.testbench "x_testbench" [1,8] mod [[1,0],[0,0]]
   print tb
+
+
+x_verilog = do
+  putStrLn "-- x_verilog"
+  let mod [rx, tx] = do
+        tx' <- inv rx
+        connect tx tx'
+  print $ Verilog.vModule "mymod" ["rx", "tx"] [bit, bit] mod
+  

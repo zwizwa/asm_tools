@@ -155,6 +155,19 @@ lift3 f ma mb mc = do a <- ma ; b <- mb ; c <- mc ; f a b c
 
 -- Shortcuts for common type constructions.
 
+sbits' :: Seq m r => r S -> m (Maybe Int)
+sbits' sig = do
+  (SInt sz _) <- stype sig
+  return sz
+
+sbits :: Seq m r => r S -> m Int
+sbits sig = do
+  t <- sbits' sig
+  case t of
+    (Just n) -> return n
+    _ -> error $ "sbits: undefined bit size"
+
+
 -- Bit size and reset value
 bits' :: Int -> Int -> SType
 bits' n = SInt (Just n)
@@ -194,10 +207,10 @@ inc :: Seq m r => r S -> m (r S)
 inc c = add c 1
 
 top_bit v = do
-  (SInt (Just n) _) <- stype v
+  n <- sbits v
   slice' v n (n-1)
 bottom_bits v = do
-  (SInt (Just n) _) <- stype v
+  n <- sbits v
   slice' v (n-1) 0
 
 carry :: Seq m r => (r S -> m (r S)) -> r S -> m (r S, r S)
@@ -437,10 +450,8 @@ slice' s hi lo = slice s (Just hi) lo
 -- Inner routine is useful without feedback.
 -- This is "natural order", or MSB first.
 shiftUpdate dir r i = do
-  tr <- stype r
-  ti <- stype i
-  let SInt (Just r_bits) _ = tr
-      SInt (Just i_bits) _ = ti
+  r_bits <- sbits r
+  i_bits <- sbits i
   case dir of
     ShiftLeft -> do
       r_drop <- slice r (Just $ r_bits - i_bits) 0
@@ -590,14 +601,14 @@ async_receive_sample ::
 async_receive_sample nb_data_bits@8 rx = sm where
 
   -- This could be parameterized, but really, I only need one kind.
-  [idle, start, bits, stop] = [0,1,2,3] :: [r S]
+  [idle, start, word, stop] = [0,1,2,3] :: [r S]
 
   half_bit =  4-1 :: r S
   one_bit  =  8-1 :: r S
   all_bits = 64-1 :: r S
 
-  t_state = SInt (Just 2) 0  -- state
-  t_count = SInt (Just 6) 0  -- sub-bit counter
+  t_state = bits 2  -- state
+  t_count = bits 6  -- sub-bit counter
 
   sm :: m (r S, r S)
   sm = closeReg [t_state,t_count] update
@@ -616,9 +627,9 @@ async_receive_sample nb_data_bits@8 rx = sm where
           return [0, 0, state', half_bit]),
       (start, do
           -- skip start bit
-          [state', count'] <- ifs c [bits, all_bits] [state, count1]
+          [state', count'] <- ifs c [word, all_bits] [state, count1]
           return [0, 0, state', count']),
-      (bits,  do
+      (word,  do
           -- send out bit clock mid-bit
           [state', count'] <- ifs c [stop, one_bit] [state, count1]
           return [bitClock, 0, state', count']),
@@ -650,7 +661,7 @@ async_receive nb_bits i = do
 -- response to the done bit.
 
 async_transmit bitClock (wordClock, txData) = do
-  (SInt (Just n) _) <- stype txData
+  n <- sbits txData
   closeReg [SInt (Just $ n+1) (-1),
             SInt (Just $ nb_bits $ n+2) 0] $
     \[shiftReg, cnt] -> do
@@ -827,7 +838,7 @@ stackUpDown t_a up down wData = do
 index :: Seq m r => (r S) -> [r S] -> m (r S)
 index sel sigs = index' sel zeroExtend where
   index' sel sigs = do
-    (SInt mbits _) <- stype sel
+    mbits <- sbits' sel
     let bits = case mbits of
           (Just bits) -> bits
           Nothing -> error $ "index unrolls. needs fixed bit width"

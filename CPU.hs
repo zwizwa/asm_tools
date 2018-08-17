@@ -262,7 +262,7 @@ stack_machine ::
 stack_machine  nb_stack (BusRd bus_rdy bus_data) (Ins iw ip) = do
 
   -- Word size is determined by pointer size
-  (SInt (Just word_size) _) <- stype ip
+  word_size <- sbits ip
 
   -- Registers are organized in a stack
   let t_stack  = replicate nb_stack $ bits word_size

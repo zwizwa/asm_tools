@@ -13,7 +13,7 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module SeqTerm where
-import Seq(SType(..),Env,initEnv)
+import Seq(SType(..),Env,initEnv,S)
 import qualified Seq as Seq
 import Control.Monad.State
 import Control.Monad.Writer
@@ -365,7 +365,6 @@ newtype PrintTerm t = PrintTerm {
             MonadReader IndentLevel)
 type IndentLevel = Int
 
-
 sexp :: Show n => Term (Op n) -> String
 sexp e = str where
   ((), str) = runReader (runWriterT (runPrintTerm $ mSexp e)) 0
@@ -394,3 +393,93 @@ probeNames probes = probes' where
         (Node _ n) -> name ++ show n
         _ -> error "probeNames: constant"
   
+
+
+-- This contains two passes that are used for HDL output generation
+-- (MyHDL and Verilog).  FIXME: Clean up by separating rename and
+-- output type propagation.
+
+hdl_postproc ::
+  [String]
+  -> [SType]
+  -> ([Op NodeNum], [(NodeNum, Term (Op NodeNum))], [(Op NodeNum, String)])
+  -> ([(String, Seq.NbBits)], ([Op String], [(String, Term (Op String))]))
+
+hdl_postproc portNames portTypes (ports, bindings, probes) =
+  (portSpecs', (ports', bindings')) where
+
+  -- 1) Assign names
+  
+  ports'    = (map . fmap) rename ports
+  bindings' = mapBindings  rename bindings
+  rename :: NodeNum -> String
+  rename n = Map.findWithDefault ("s" ++ show n) n $ namedNodes
+
+  namedPorts = Map.fromList $ [(n, nm) | (Node _ n, nm) <- zip ports portNames]
+  namedNodes = Map.union namedPorts $ Map.fromList probeNames'  -- prefer port names
+
+  probeNames' = probeNames probes
+
+
+  -- 2) Propagate output types, following 'Connect'.
+
+  -- In general we don't know the output types until after
+  -- compileTerm', so portTypes needs to contain undefined bit sizes.
+  -- Once compiled, the type information can be restored from Connect
+  -- nodes.
+  conns = catMaybes $ map conn bindings where
+    conn (port, Connect typ node) = Just (rename port, typ)
+    conn _ = Nothing
+  portSpecs' = zipWith portSpec' portNames portTypes
+  portSpec' name origType =
+    (portSpec $ (name,
+                 Map.findWithDefault origType name $
+                 Map.fromList conns))
+
+
+-- Don't write a Functor class for bindings.  If an ad-hoc functor
+-- composition shows up, it is often easier to factor out just the
+-- specialized mapping function.  Write the type first, then
+-- implementation is straightforward.
+mapBindings :: (a -> b) -> [(a, Term (Op a))] -> [(b, Term (Op b))]
+mapBindings f l = map f' l where
+  f' (name, term) = (f name, (fmap . fmap) f term)
+  
+-- Convert the port specification to a more specific type.
+-- Note that reset value isn't necessary for I/O ports.
+portSpec (name, (SInt (Just bits) rst)) = (name,bits)
+-- portSpec (name, _) = (name,-1) -- FIXME
+portSpec spec = error $ "portSpec needs bit size: " ++ show spec
+
+
+
+
+-- These compilation passes are shared by MyHDL and Verilog modules.
+
+hdl_compile ::
+  String
+  -> [String]
+  -> [SType]
+  -> ([R S] -> M ())
+  -> ([(String, Seq.NbBits)], ([Op String], [(String, Term (Op String))]))
+
+
+hdl_compile name portNames portTypes mod = (portSpecs', (ports', bindings')) where
+
+  -- Compilation phases:
+  
+  -- 1) Convert HDL-style ports function to term with embedded inputs
+  txMod ::([R S] -> M ()) -> M [R S]
+  txMod mod = do
+    -- Ports default as input.
+    -- When assigned through 'update', type changes from in->out
+    io <- SeqTerm.inputs $ portTypes
+    mod io ; return io
+
+  -- 2) Convert to syntax
+  (ports, bindings, probes) =
+    SeqTerm.compileTerm' $ txMod mod
+
+  -- 3) + 4) Perform name substitution and output type reconstruction.
+  (portSpecs', (ports', bindings')) =
+    SeqTerm.hdl_postproc portNames portTypes (ports, bindings, probes)

@@ -322,43 +322,15 @@ type R = SeqTerm.R
 
 -- Alternative interface used for generating FPGA images.
 pyModule :: String -> [String] -> [SType] -> ([R S] -> M ()) -> MyHDL
-pyModule name portNames portTypes mod = MyHDL portSpecs (pyCode ++ dbg) where
+pyModule name portNames portTypes mod = MyHDL portSpecs' pyCode where
   
   pyCode = myhdl name ports' $ SeqExpr.inlined bindings'
 
-  mod' = do
-    -- Ports default as input.
-    -- When assigned through 'update', type changes from in->out
-    io <- SeqTerm.inputs $ portTypes
-    mod io ; return io
-    
-  (ports, bindings, probes) = SeqTerm.compileTerm' mod'
-  probeNames = SeqTerm.probeNames probes
-
-  -- Assign names
-  ports'    = (map . fmap) rename ports
-  bindings' = mapBindings  rename bindings
-  rename :: NodeNum -> String
-  rename n = Map.findWithDefault ("s" ++ show n) n $ namedNodes
-
-  namedPorts = Map.fromList $ [(n, nm) | (Node _ n, nm) <- zip ports portNames]
-  namedNodes = Map.union namedPorts $ Map.fromList probeNames  -- prefer port names
-
-
-  -- Note that in general we don't know the output types until after
-  -- compileTerm', so portTypes needs to contain undefined bit sizes.
-  -- Once compiled, the type information can be restored from Connect
-  -- nodes.
-  conns = catMaybes $ map conn bindings where
-    conn (port, Connect typ node) = Just (rename port, typ)
-    conn _ = Nothing
-  portSpecs = zipWith portSpec' portNames portTypes
-  portSpec' name origType =
-    (portSpec $ (name,
-                 Map.findWithDefault origType name $
-                 Map.fromList conns))
-  
-  dbg = ""
+  -- Seq SeqTerm for some post processing steps that are shared
+  -- between HDLs.
+  (portSpecs', (ports', bindings')) =
+    SeqTerm.hdl_compile name portNames portTypes mod
+ 
 
 -- For ice40 FPGA images, we use the convention that all ports are 1
 -- bit wide.  This makes it easier to relate to the circuit netlist.
