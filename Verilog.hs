@@ -1,12 +1,15 @@
 -- Since we're just generating RTL, there is a fairly direct mapping
 -- from SeqTerm to Verilog.
 
+-- TODO: memories
+
 module Verilog where
 
 import Seq
 import SeqTerm
 import Data.List hiding (partition)
-
+import Numeric (showHex, showIntAtBase)
+import Data.Char
 
 -- Some simplifications:
 -- . All signals are vectors.
@@ -46,7 +49,7 @@ vModule name portNames portTypes mod = Verilog portSpecs vCode where
 
   part = partition' bindings
 
-  --comment t = " // " ++ show t
+  -- comment t = " // " ++ show t
   comment _ = ""
 
   sigDecl kind (SInt (Just n) _) name =
@@ -64,19 +67,38 @@ vModule name portNames portTypes mod = Verilog portSpecs vCode where
   updates = concat $ map update $ part Delays
   resets  = concat $ map reset  $ part Delays
 
-  reset b@(name, (Delay (SInt _ rv) _)) =
-    tab ++ tab ++ name ++ " <= " ++ show rv ++ ";" ++
+  reset b@(name, (Delay t _)) =
+    tab ++ tab ++ name ++ " <= " ++ const t ++ ";" ++
     comment b ++ "\n"
   update b@(name, (Delay _ o)) =
     tab ++ tab ++ name ++ " <= " ++ op o ++ ";" ++
     comment b ++ "\n"
 
-  expr (Comb1 _ INV o) = "!" ++ op o
-  expr (Connect _ o) = op o
-  expr _ = "..."
-
   op (Node _ name) = name
-  op (Const (SInt _ val)) = show val
+  op (Const t) = const t
+
+  const (SInt Nothing v) = show v
+  const (SInt (Just sz) v) = show sz ++ "'b" ++ bits where
+    bits' = showIntAtBase 2 intToDigit v "" 
+    bits  = replicate (sz - length bits') '0' ++ bits'
+
+  expr (Comb1 _ INV o) = "!" ++ op o
+  expr (Comb2 _ ADD a b) = op2 "+" [a,b]
+  expr (Comb2 _ SUB a b) = op2 "-" [a,b]
+  expr (Comb2 _ MUL a b) = op2 "*" [a,b]
+  expr (Comb2 _ AND a b) = op2 "&" [a,b]
+  expr (Comb2 _ OR  a b) = op2 "|" [a,b]
+  expr (Comb2 _ XOR a b) = op2 "^" [a,b]
+  expr (Comb2 _ SLL a b) = op2 "<<" [a,b]
+  expr (Comb2 _ SLR a b) = op2 ">>" [a,b]
+  expr (Comb2 _ CONC a b) = "{" ++ op a ++ ", " ++ op b ++ "}"
+  expr (Comb2 _ EQU a b) = op2 "==" [a,b]
+  expr (Comb3 _ IF a b c) = op a ++ " ? " ++ op b ++ " : " ++ op c
+  expr (Connect _ o) = op o
+  expr (Slice _ o (Just u) l) = op o ++ "[" ++ show (u-1) ++ ":" ++ show l ++ "]"
+  expr e = "... /* " ++ show e ++ " */ "
+
+  op2 opc [a,b] = op a ++ " " ++ opc ++ " " ++ op b
 
   commas = intercalate ", "
   -- portNames = map (\(Node _ name) -> name) ports

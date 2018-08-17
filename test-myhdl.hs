@@ -136,10 +136,24 @@ x_testbench = do
 
 x_verilog = do
   putStrLn "-- x_verilog"
-  let mod [rx, tx] = do
-        tx' <- inv rx >>= delay
-        connect tx tx'
-      v = Verilog.vModule "mymod" ["rx", "tx"] [bit, bit] mod
+  let mod [i, o] = do
+        a <- inv i >>= delay
+        b <- i `add` a
+        c <- i `sub` a
+        d <- i `mul` a
+        e <- i `bxor` a
+        f <- i `bor` a
+        g <- i `band` a
+        h <- i `sll` a
+        x <- i `slr` a
+        j <- i `equ` a
+        k <- if' i a b
+        l <- reduce' conc [a,b,c,d,e,f,g,h,x,j,k]
+        m <- slice' l 4 2
+        n <- conc l m
+        -- should depend on all
+        connect o n
+      v = Verilog.vModule "mymod" ["IN", "OUT"] [bit, bit] mod
   print $ v
   writeFile "x_verilog.v" $ show v
   
