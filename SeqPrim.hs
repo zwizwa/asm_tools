@@ -13,6 +13,7 @@ module SeqPrim(
   ) where
 import Data.Bits
 import Control.Monad.ST
+import qualified Control.Monad.ST.Lazy as Lazy
 import Data.Array.Unboxed
 import Data.Array.ST
 import Data.Array.Unsafe
@@ -91,25 +92,14 @@ seqRun update memSpec (rd0, r0) probeNames memInits i = (probeNames, out) where
     u rd0 r0 i
 
 
--- To run lazily, chunk the ST runs.  This requires dumping out state.
--- Simplest to do that by splitting state init and run.
+-- Similar, but return the state of the memories.  The idea is to turn
+-- this into a chunked run such that it can be turned into a lazy
+-- operation again.
 
--- Here's the core routine: return the array.
-
--- seqRunInit ::
---   (forall s. ([Mem s], rd, r, [Int]) -> ST s (rd, r, [Int]))
---   -> [Int]
---   -> (rd, r)
---   -> [String]
---   -> [Int -> Int]
---   -> [[Int]] -> ([Mem'], rd, r)
--- seqRunInit update memSpec (rd0, r0) probeNames memInits i =
---   runST $ do
---     as  <- sequence $ zipWith seqMemInit memSpec memInits
---     as' <- sequence $ map runSTUArray as
---     return (as', rd0, r0)
-
-
+-- FIXME: This is not quite enough.  To return the final state, the
+-- output needs to be collected differently.  Maybe best to collect it
+-- in an array as well.  Also, output types are unknown.
+  
 
 seqRun' ::
   (forall s. ([Mem s], rd, r, [Int]) -> ST s (rd, r, [Int]))
@@ -119,13 +109,15 @@ seqRun' ::
   -> [Int -> Int]
   -> [[Int]] -> ([String], ([Mem'], [[Int]]))
 seqRun' update memSpec (rd0, r0) probeNames memInits i = (probeNames, out) where
+
   out = runST $ do
     as <- sequence $ zipWith seqMemInit memSpec memInits
     let u _ _ [] = return []
         u rd r (i:is) = do
           (rd',r',o) <- update (as, rd, r, i)
+          -- I want os and the : to be lazy.  The update above could be strict.
           os <- u rd' r' is
-          return (o:os)
+          return (o:os) 
     outs <- u rd0 r0 i
     as' <- sequence $ map unsafeFreeze as
     -- Do not mutate the as after unsafeFreeze
@@ -133,3 +125,9 @@ seqRun' update memSpec (rd0, r0) probeNames memInits i = (probeNames, out) where
 
 mem2memInit :: Mem' -> Int -> Int
 mem2memInit = (!)
+
+-- This hints at a better solution.  There is a way to have a lazy ST, and a way to wrap the arrays.
+-- See Lazy.strictToLazyST
+-- https://stackoverflow.com/questions/24072934/haskell-how-lazy-is-the-lazy-control-monad-st-lazy-monad
+-- https://groups.google.com/forum/#!topic/comp.lang.haskell/JhUCLePEuQg
+-- http://hackage.haskell.org/package/base-4.11.1.0/docs/Control-Monad-ST-Lazy.html#g:2

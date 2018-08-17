@@ -309,18 +309,6 @@ compileFun ts fm = compileTerm $ (inputs ts) >>= fm
 
 
 
-data Part = Delays | Inputs | MemRds | MemWrs | Exprs deriving Eq
-
--- Useful for postprocessing
-partition bindings t = map snd $ filter ((t ==) . fst) tagged where
-  tagged = map p' bindings
-  p' x = (p x, x)
-  p (_, Input _)   = Inputs
-  p (_, Delay _ _) = Delays
-  p (_, MemRd _ _) = MemRds
-  p (_, MemWr _)   = MemWrs
-  p _              = Exprs
-
 
 
 

@@ -34,6 +34,18 @@ test [en] = do
     return ([(en,a,b,c)], [o])
 
 
+-- Several targets need different partitioning, so copy paste and edit.
+data Part = Delays | Inputs | MemRds | MemWrs | Exprs deriving Eq
+partition' bindings t = map snd $ filter ((t ==) . fst) tagged where
+  tagged = map p' bindings
+  p' x = (p x, x)
+  p (_, Input _)   = Inputs
+  p (_, Delay _ _) = Delays
+  p (_, MemRd _ _) = MemRds
+  p (_, MemWr _)   = MemWrs
+  p _              = Exprs
+
+
 -- Convert compiled Term to TH expression
 toExp :: ([Op NodeNum], [(Int, Term (Op NodeNum))], [(Op NodeNum, String)]) -> Exp
 toExp  (outputs, bindings, probes) = exp where
@@ -59,7 +71,7 @@ toExp  (outputs, bindings, probes) = exp where
     memUpdate ++ 
     [NoBindS $ return' $ TupE [memRdOut, stateOut, outputs']]
 
-  partition = SeqTerm.partition bindings
+  partition = partition' bindings
     
   bindings' =
     [BindS (regP n) (termExp e)
