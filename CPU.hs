@@ -104,7 +104,8 @@ import Data.Binary.Get
 -- jump.
 
 data Ins r  = Ins {
-  insWord :: r S
+  insWord :: r S,
+  insPtr  :: r S
   }
 
 data Control r = Control {
@@ -144,9 +145,9 @@ closeIMem (IMemWrite wEn wAddr wData) run execute = do
   closeMem [t_wData] $ \[iw] -> do
     (ipNext, o) <- closeReg [t_wAddr] $ \[ip] -> do
       -- Execute instruction, which produces control flow information.
-      iw' <- if' run iw 0
-      (Control loop jump ipJump, o) <- execute (Ins iw')
-      ipCont   <- inc ip
+      iw'    <- if' run iw 0
+      ipCont <- inc ip
+      (Control loop jump ipJump, o) <- execute (Ins iw' ipCont)
       rst      <- inv run
       [ipNext] <- cond
                   [(rst,  [0]),
@@ -268,15 +269,18 @@ opcode IJMP = 0x80
 -- This needs to grow, but it seems simplest to keep the encoding
 -- abstract, so it can be optimized later on.  Do not rely on the
 -- numeric values of these.
-o_nb_bits  = 3
+o_nb_bits  = 4
 
 o_nop   = 0
 o_jmp   = 1
 o_push  = 2
+-- 3
 o_read  = 4
 o_write = 5
 o_swap  = 6
 o_loop  = 7
+o_call  = 8
+o_ret   = 9
 
 -- Use Forth for flow control structures.
 
@@ -308,6 +312,8 @@ write = i1 o_write
 swap  = i0 o_swap
 loop  = i1 o_loop
 drop  = write 0xff
+call  = i1 o_call
+ret   = i0 o_ret
 
 forever m = begin >> m >> again
 
@@ -377,57 +383,68 @@ cdec var = do
   var_dec <- slice' var_dec  n    0
   return (carry, var_dec)
 
+multi _  [a]    = return a
+multi op (a:as) = op a =<< multi op as
+multi _  _      = error $ "multi: need at least 1 operand"
 
-
-stack_machine  nb_stack (BusRd bus_rdy bus_data) (Ins iw) = do
+stack_machine  nb_stack (BusRd bus_rdy bus_data) (Ins iw ip) = do
   -- Register file is organized as a stack
-  let heads    = take (nb_stack - 1)
-      tail2    = tail . tail
-      t_stack  = replicate nb_stack $ bits 8
+  let t_stack  = replicate nb_stack $ bits 8
   
   closeReg t_stack $ \stack@(top:snd:_) -> do
+    
+    -- Decode instructions
     arg   <- slice' iw  8 0
     opc   <- slice' iw 16 (16 - o_nb_bits)
-    opc8  <- slice' iw 16 8
-    
     let opc' n = equ opc $ cbits o_nb_bits n
-
-    -- Simple instructions and control signal init.
-    -- It seems best to just rebind these below
+    
+    call  <- opc' o_call
     jmp   <- opc' o_jmp
+    ret   <- opc' o_ret
     write <- opc' o_write
     push  <- opc' o_push
     swap  <- opc' o_swap
-    let drop = write
+    loop  <- opc' o_loop
+    read  <- opc' o_read
 
-    -- ALU
+    -- ALU operations
     (carry, top_dec) <- cdec top
-    ncarry <- inv carry
+    ncarry           <- inv carry
 
-    -- loop instruction
-    loop      <- opc' o_loop
-    loop_jmp  <- loop .& ncarry
-    loop_cnt  <- loop .& carry
-    drop      <- drop .| loop_cnt
-    jmp       <- jmp  .| loop_jmp
+    -- control flow
+    loop_again <- loop .& ncarry
+    loop_done  <- loop .& carry
+    goto_en    <- multi (.|) [ jmp, loop_again, call, ret ]
+    goto_addr  <- if' ret top arg
 
     -- read instruction
-    read      <- opc' o_read
     bus_nrdy  <- inv bus_rdy
     wait      <- read .& bus_nrdy
     push_read <- read .& bus_rdy
-    push      <- push .| push_read
 
-    op_0_1    <- if' push arg bus_data
+    -- stack operation flags
+    pop  <- multi (.|) [ write, loop_done, ret ]
+    push <- multi (.|) [ push, push_read, call ]
+    
+    -- what to push
+    [push_data] <- cond
+                   [(call,      [ip]), 
+                    (push_read, [bus_data])]
+                   [arg]
 
-    let upd    = loop
-        op_1_1 = top_dec
+    let set      = loop
+        set_data = top_dec
+
+        stac_ = take (nb_stack - 1) stack
+        _tack = tail stack
+        __ack = tail _tack
+        
 
     stack'@(top':snd':_) <- cond
-      [(push,   op_0_1 : (heads stack)),
-       (drop,   tail stack ++ [0]),
-       (swap,   snd    : top : (tail2 stack)),
-       (upd,    op_1_1 : tail stack)]
+      [(push,   push_data : stac_),
+       (pop,    _tack ++ [0]),
+       (swap,   snd : top : __ack),
+       (set,    set_data : _tack)]
       stack
 
     -- reads can take multiple cycles.  it is assumed that rReady is
@@ -439,9 +456,9 @@ stack_machine  nb_stack (BusRd bus_rdy bus_data) (Ins iw) = do
     "snd" <-- snd'
     "c"   <-- carry
     
-    return (stack',                   -- internal reg feedback
-            (Control wait jmp arg,    -- instruction sequencer feedback
-             BusWr write arg top))   -- top level output is a bus
+    return (stack',                           -- internal reg feedback
+            (Control wait goto_en goto_addr,  -- instruction sequencer feedback
+             BusWr write arg top))            -- top level output is a bus
 
 
 
@@ -460,8 +477,8 @@ bus [rx] (BusWr wEn addr wData) = do
   -- Instantiate peripherals, routing i/o registers.
   addr' <- slice' addr 2 0
   let tx_bc = 1 -- FIXME
-      c = cbits 2
-      write n = (addr' .== c n) >>= band wEn
+      c = cbits 2  -- numeric case used in switch
+      write n = (addr' .== c n) >>= band wEn  -- register write clock
 
   -- Bus write operations
   tx_wc <- write uart_tx

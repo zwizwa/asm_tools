@@ -589,16 +589,12 @@ async_receive_sample ::
   Int -> r S -> m (r S, r S)
 async_receive_sample nb_data_bits@8 rx = sm where
 
-  -- FIXME: parameterize
-  -- data_count_bits = nb_bits nb_data_bits
-  -- oversample_count_bits = 3 :: Int --  8x oversampling
-  -- oversample = 2 ^ oversample_count_bits
-  
+  -- This could be parameterized, but really, I only need one kind.
   [idle, start, bits, stop] = [0,1,2,3] :: [r S]
 
-  half_bit =  3 :: r S
-  one_bit  =  7 :: r S
-  all_bits = 63 :: r S
+  half_bit =  4-1 :: r S
+  one_bit  =  8-1 :: r S
+  all_bits = 64-1 :: r S
 
   t_state = SInt (Just 2) 0  -- state
   t_count = SInt (Just 6) 0  -- sub-bit counter
@@ -609,10 +605,9 @@ async_receive_sample nb_data_bits@8 rx = sm where
   update :: [r S] -> m ([r S], (r S, r S))
   update [state, count] = do
     -- Subcircuits hoisted out of conditional.
-    count1   <- dec count
-    phase    <- slice count (Just 3) 0
-    countz   <- count `equ` 0
-    bitClock <- phase `equ` 0
+    (c,count1) <- carry dec count
+    phase      <- slice' count 3 0
+    bitClock   <- phase .== 0
     
     (bc:wc:regs') <- switch state [
       (idle,  do
@@ -621,16 +616,16 @@ async_receive_sample nb_data_bits@8 rx = sm where
           return [0, 0, state', half_bit]),
       (start, do
           -- skip start bit
-          [state', count'] <- ifs countz [bits, all_bits] [state, count1]
+          [state', count'] <- ifs c [bits, all_bits] [state, count1]
           return [0, 0, state', count']),
       (bits,  do
           -- send out bit clock mid-bit
-          [state', count'] <- ifs countz [stop, one_bit] [state, count1]
+          [state', count'] <- ifs c [stop, one_bit] [state, count1]
           return [bitClock, 0, state', count']),
       (stop,  do
           -- only send out the word clock if stop bit is 1
-          wordClock <- bitClock `band` rx
-          [state', count'] <- ifs countz [idle, 0] [state, count1]
+          wordClock <- bitClock .& rx
+          [state', count'] <- ifs c [idle, 0] [state, count1]
           return [0, wordClock, state', count'])]
       -- FIXME: not reached.  How to express mutex states?
       (return [0, 0, 0, 0])
@@ -641,11 +636,6 @@ async_receive_sample nb_data_bits@8 rx = sm where
     "rx_wc" <-- wc
       
     return (regs', (bc,wc))
---    return (regs', rx:bc:wc:regs')
-
--- async_receive_sample nb_bits rx = do
---   (_:bc:wc:_) <- d_async_receive_sample nb_bits rx
---   return (bc,wc)
 
 
 
