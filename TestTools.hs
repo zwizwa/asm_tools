@@ -232,3 +232,9 @@ selectSignals columns names signals = signals' where
     "showSelectSignals: " ++ show nm ++ " not found in " ++ show names
   
 
+-- Trace writes to the CPU bus.
+dbg_trace = bus_trace "bus_dbg"
+
+bus_trace write (names, signals) =
+  map head $ downSample' $
+  selectSignals [write, "bus_data"] names signals

@@ -308,24 +308,26 @@ x_stack = do
 
 -- CPU
 
+-- For testing, it seems simplest to embed the CPU inside a SOC.
+-- CPU.hs contains an example SOC.  (Typically, you would want to
+-- change the bus + peripheral part of the SOC for your application).
+
+-- Below contains some signal printouts for several programs, and
+-- quickcheck properties of programs producing dbg traces.
+
 memRef :: [Int] -> Int -> Int
 memRef mem n = v where
   v = case (n >= length mem) of
     True -> 0
     False -> mem !! n
 
+t_soc_idle = [1,1,0,0]
 t_soc prog = $(compile allProbe [1,1,1,1] soc_test) [memRef prog]
 
 printProbe :: [String] -> ([String],[[Int]]) -> IO ()
 printProbe columns (names, signals) = do
   let signals' = selectSignals columns names signals
   putStr $ showSignals' True columns signals'
-
--- For testing, it seems simplest to embed the CPU inside a SOC.  What
--- is important is the integration, not so much the CPU itself, which
--- is fairly straightforward.
-
--- Programs are factored out as quickcheck properties get built
 
 -- Subroutine abstractions.  Note that this is not a 2-stack
 -- machine, so the return address needs to be restored to the top
@@ -337,6 +339,10 @@ prog_fun v1 v2 = program $ do
     proc1 ; write dbg
     proc2 ; write dbg
 
+e_soc_fun v1 v2 = e_soc_dbg_trace clocks expect (prog_fun v1 v2) where
+  clocks = 40
+  expect = take 6 $ cycle [v1, v2]
+
 p_soc_fun = forAll vars prop where
   vars = do
     v1 <- word 8
@@ -345,18 +351,11 @@ p_soc_fun = forAll vars prop where
   prop (v1, v2) = fst $ e_soc_fun v1 v2
     
 
--- Most tests don't need inputs.  
-soc_idle = [1,1,0,0]
-
-e_soc_fun v1 v2 = (dbg == dbg', (dbg', out)) where -- FIXME!
-  -- Run time can be constant for now.
-  ins = replicate 40 soc_idle
-  out@(names, signals) = t_soc (prog_fun v1 v2) ins
-  dbg  = take 6 $ cycle [[v1],[v2]]
-  dbg' = take 6 $ downSample' $
-    selectSignals ["bus_dbg", "bus_data"] names signals
-
-  
+-- Generic program -> dbg trace test.
+e_soc_dbg_trace nb_cycles expect prog = (expect == dbg, (dbg, out)) where
+  ins = replicate nb_cycles t_soc_idle
+  out = t_soc prog ins
+  dbg = take (length expect) $ dbg_trace out
 
 x_soc = do
   let
@@ -396,7 +395,7 @@ x_soc = do
       ret
 
     
-    idle = soc_idle
+    idle = t_soc_idle
   
   putStrLn "-- x_soc"
   
