@@ -329,7 +329,7 @@ pyModule name portNames portTypes mod = MyHDL portSpecs' pyCode where
   -- Seq SeqTerm for some post processing steps that are shared
   -- between HDLs.
   (portSpecs', (ports', bindings')) =
-    SeqTerm.hdl_compile name portNames portTypes mod
+    SeqTerm.hdl_compile portNames portTypes mod
  
 
 -- For ice40 FPGA images, we use the convention that all ports are 1

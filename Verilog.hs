@@ -43,14 +43,14 @@ vModule mod_name portNames portTypes mod = Verilog portSpecs vCode where
   -- See SeqTerm for some post processing steps that are shared
   -- between HDLs.
   (portSpecs, (ports, bindings)) =
-    SeqTerm.hdl_compile mod_name portNames portTypes mod
+    SeqTerm.hdl_compile portNames portTypes mod
 
   -- Convert ports' bindings' to Verilog syntax
 
   part = partition' bindings
 
-  comment t = " // " ++ show t
-  -- comment _ = ""
+  comment t = " // " ++ SeqTerm.sexp' [t]
+  -- comment _ = "//\n"
 
   arrDecl (SInt (Just n) _) name sz =
     "reg [" ++ show (n-1) ++ ":0] " ++ name ++ "[0:" ++ show (sz-1) ++ "];"
@@ -59,8 +59,7 @@ vModule mod_name portNames portTypes mod = Verilog portSpecs vCode where
   -- sigDecl kind _ name = sigDecl kind (SInt (Just 123) 0) name -- FIXME
     
   decl typ b@(name, term) =
-    (sigDecl typ) (termType term) name ++
-    comment b ++ "\n"
+    (sigDecl typ) (termType term) name ++ comment b
   decls typ p = concat $ map (decl typ) $ part p
 
   mem_decls = concat $
@@ -69,22 +68,22 @@ vModule mod_name portNames portTypes mod = Verilog portSpecs vCode where
 
   memrd_decl b@(name, (MemRd t (MemNode mem_name))) =
     -- Note: the read data register has a separate register name.
-    sigDecl "reg" t name
-    ++ comment b ++ "\n"
+    sigDecl "reg" t name ++ comment b
     
   memwr_decl b@(mem_name, (MemWr (we,wa,wd,ra))) =
     let arrSize = 2 ^ n
         (SInt (Just n) _) = opType wa
     in
       -- Note: the _ra signal is derived from the memory name.
-      arrDecl (opType wd) mem_name arrSize ++ "\n" ++
+      arrDecl (opType wd) mem_name arrSize ++
+      comment b ++
       sigDecl "wire" (opType ra) (mem_name ++ "_ra") ++
-      comment b ++ "\n"
+      comment b
 
   assigns = concat $ map assign $ (part Exprs ++ part Connects)
   assign b@(name, term) =
     "assign " ++ name ++ " = " ++ expr term ++ ";" ++
-    comment b ++ "\n"
+    comment b
 
   updates = concat $ map update $ part Delays
   resets  = concat $ map reset  $ part Delays
@@ -95,28 +94,27 @@ vModule mod_name portNames portTypes mod = Verilog portSpecs vCode where
 
   memrd_update b@(reg_name, (MemRd _ (MemNode mem_name))) =
     "always @(posedge CLK) begin\n" ++
-    tab ++ reg_name ++ " <= " ++ mem_name ++ "[" ++ mem_name ++ "_ra];\n" ++
+    tab ++ reg_name ++ " <= " ++ mem_name ++ "[" ++ mem_name ++ "_ra];" ++ comment b ++
     "end\n"
 
   memwr_assign b@(mem_name, (MemWr (_,_,_,ra))) =
-    "assign " ++ mem_name ++ "_ra = " ++ op ra ++ ";\n" ++
-    comment b ++ "\n"
+    "assign " ++ mem_name ++ "_ra = " ++ op ra ++ ";" ++
+    comment b
   
   memwr_update b@(mem_name, (MemWr (we,wa,wd,_))) =
-    comment b ++ "\n" ++
     "always @(posedge CLK) begin\n" ++
     tab ++ "if (" ++ op we ++ ") begin\n" ++
-    tab ++ tab ++ mem_name ++ "[" ++ op wa ++ "] <= " ++ op wd ++ ";\n" ++
+    tab ++ tab ++ mem_name ++ "[" ++ op wa ++ "] <= " ++ op wd ++ ";" ++ comment b ++
     tab ++ "end\n" ++
     "end\n"
 
 
   reset b@(name, (Delay t _)) =
     tab ++ tab ++ name ++ " <= " ++ const t ++ ";" ++
-    comment b ++ "\n"
+    comment b
   update b@(name, (Delay _ o)) =
     tab ++ tab ++ name ++ " <= " ++ op o ++ ";" ++
-    comment b ++ "\n"
+    comment b
 
   op (Node _ name) = name
   op (Const t) = const t

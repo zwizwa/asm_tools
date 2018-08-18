@@ -314,7 +314,6 @@ compileFun ts fm = compileTerm $ (inputs ts) >>= fm
 
 -- S-expression formatting
 mTerm sub (Input _)         = tagged "INPUT"   []
-mTerm sub (Delay _ a)       = tagged "DELAY"   [mOp sub a]
 mTerm sub (Connect _ a)     = tagged "CONNECT" [mOp sub a]
 mTerm sub (Comb1 _ o a)     = tagged (show o)  [mOp sub a]
 mTerm sub (Comb2 _ o a b)   = tagged (show o)  [mOp sub a, mOp sub b]
@@ -322,6 +321,7 @@ mTerm sub (Comb3 _ o a b c) = tagged (show o)  [mOp sub a, mOp sub b, mOp sub c]
 mTerm sub (Slice _ a b c)   = tagged "SLICE"   [mOp sub a, tell $ showSize b, tell $ show c]
 mTerm sub (MemRd _ a)       = tagged "MEMRD"   [mOp sub a]
 mTerm sub (MemWr (a,b,c,d)) = tagged "MEMWR"   [mOp sub a, mOp sub b, mOp sub c, mOp sub d]
+mTerm sub (Delay t a)       = tagged "DELAY"   [mOp sub a, tell $ showType t]
 
 mOp _   (Const v)   = tagged "CONST" [ tell $ showType v ]
 mOp sub (Node _ n)  = sub n
@@ -359,8 +359,8 @@ sexp e = str where
 
 mSexp :: Show n => Term (Op n) -> PrintTerm ()
 mSexp e = mTerm sub e where
-  sub n = tagged "NODE" [tell $ show n]
-
+  sub n = tell $ show n --tagged "NODE" [tell $ show n]
+    
 
 -- Render probe names unique so they can be used as global circuit names.
 probeNames probes = probes' where
@@ -445,14 +445,13 @@ portSpec spec = error $ "portSpec needs bit size: " ++ show spec
 -- These compilation passes are shared by MyHDL and Verilog modules.
 
 hdl_compile ::
-  String
-  -> [String]
+  [String]
   -> [SType]
   -> ([R S] -> M ())
   -> ([(String, Seq.NbBits)], ([Op String], [(String, Term (Op String))]))
 
 
-hdl_compile name portNames portTypes mod = (portSpecs', (ports', bindings')) where
+hdl_compile portNames portTypes mod = (portSpecs', (ports', bindings')) where
 
   -- Compilation phases:
   
