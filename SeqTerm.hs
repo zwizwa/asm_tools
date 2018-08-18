@@ -469,6 +469,13 @@ hdl_compile portNames portTypes mod = (portSpecs', (ports', bindings')) where
 
 
 
+
+
+
+
+
+
+
 -- Bit size unification.  Local inference on individual bindings does
 -- not contain enough information.  Perform unification manually.
 
