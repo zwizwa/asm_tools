@@ -59,9 +59,27 @@ newtype M t = M { unM :: WriterT CompOut (State CompState) t } deriving
 convert :: [(NodeNum, SeqTerm.Term (SeqTerm.Op NodeNum))] -> [Binding NodeNum]
 convert bindings = bindings'  where
   init = maximum $ map fst bindings
-  (((), bindings'), _)  = runState (runWriterT mconv) init
+  (((), bindings'), _)  = runState (runWriterT $ unM mconv) init
+  mconv :: M ()
   mconv = sequence_ $ map conv bindings
 
+  conv :: (NodeNum, SeqTerm.Term (SeqTerm.Op NodeNum)) -> M ()
   conv (n, SeqTerm.Input t) = tell $ [(n, Input t)]
+  conv (n, SeqTerm.Delay t o)     = do [o'] <- ops [o] ; tell $ [(n, Delay t o')]
+  conv (n, SeqTerm.Connect t o)   = do [o'] <- ops [o] ; tell $ [(n, Connect t o')]
+  conv (n, SeqTerm.Comb1 t opc a) = do [a'] <- ops [a] ; tell $ [(n, Comb1 t opc a')]
   conv _ = return ()
-  
+
+  ops = mapM op
+
+  op (SeqTerm.MemNode n) = return n
+  op (SeqTerm.Node t n) = return n
+  op (SeqTerm.Const t) = do
+    n <- newNode
+    tell [(n, Const t)]
+    return n
+
+  newNode = do
+    n <- get
+    put $ n + 1
+    return n
