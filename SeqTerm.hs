@@ -266,16 +266,12 @@ input t = fmap R $ driven $ Input t
 -- more than once.  Note: using fix, this error is avoided.
 driveNode n c = do
   tell [Binding n c]
-  
--- Compile to list of I/O ports and network map.
-compileTerm :: M [R Seq.S] -> ([Op NodeNum], [(NodeNum, Term (Op NodeNum))])
-compileTerm m = (ports, bindings) where
-  (ports, bindings, _) = compileTerm' m
 
-compileTerm' :: M [R Seq.S] -> ([Op NodeNum],
-                                [(NodeNum, Term (Op NodeNum))],
-                                [(Op NodeNum, String)])
-compileTerm' m = (map unR ports, cleanPorts nodes, probes) where
+type CompileResult n =
+   ([Op n], [(n, Term (Op n))], [(Op n, String)])
+  
+compileTerm :: M [R Seq.S] -> CompileResult NodeNum
+compileTerm m = (map unR ports, cleanPorts nodes, probes) where
   
   nodes  = catMaybes $ map (fst . node) bindings
   probes = catMaybes $ map (snd . node) bindings
@@ -303,7 +299,7 @@ compileTerm' m = (map unR ports, cleanPorts nodes, probes) where
 compileFun ::
   [SType]
   -> ([R Seq.S] -> M [R Seq.S])
-  -> ([Op NodeNum], [(NodeNum, Term (Op NodeNum))])
+  -> CompileResult NodeNum
 compileFun ts fm = compileTerm $ (inputs ts) >>= fm
 
 
@@ -465,7 +461,7 @@ hdl_compile portNames portTypes mod = (portSpecs', (ports', bindings')) where
 
   -- 2) Convert to syntax
   (ports, bindings, probes) =
-    SeqTerm.compileTerm' $ txMod mod
+    SeqTerm.compileTerm $ txMod mod
 
   -- 3) + 4) Perform name substitution and output type reconstruction.
   (portSpecs', (ports', bindings')) =
@@ -478,3 +474,54 @@ hdl_compile portNames portTypes mod = (portSpecs', (ports', bindings')) where
 
 -- Howto express this properly?
 
+-- The structure of the code already contains enough information, we
+-- just need to walk the tree backwards, starting at known nodes.
+-- Delay is known (assumed specified in the code), and Connect likely
+-- is known as well.  The representation is not good though, but for
+-- now work with it.  Eventually I'd really like to solve this at the
+-- type level.
+
+-- unify bindings = _ where
+--   find n = (Map.fromList bindings) Map.! n
+--   foldr inspect Map.empty bindings
+
+
+
+
+--   -- Add the node if type is known.
+--   update n t@(SInt (Just n) _) dict =
+--     Map.insert n t dict
+--   update n _ dict = dict
+
+--   inspect (n, (Delay t op)) dict =
+--     update t dict
+    
+
+--     dict
+--   inspect (n, (Connect t op)) dict = dict
+--   inspect _ dict = dict  -- not a root node
+  
+
+-- not enough sleep for algebra ...
+
+-- I forgot.  Why are constants not bindings?  It's because it is too
+-- awkward to have them in the Seq language.  But in the
+-- representation it actually makes sense.
+
+-- Let's use that intermediate form.
+
+
+
+
+  
+-- data Term n
+--   = Comb1   SType Seq.Op1 n
+--   | Comb2   SType Seq.Op2 n n
+--   | Comb3   SType Seq.Op3 n n n
+--   | Slice   SType n Seq.SSize Seq.NbBits
+--   | Delay   SType n
+--   | MemRd   SType n
+--   | MemWr   (n,n,n,n)
+--   | Connect SType n
+--   | Input   SType -- Externally driven node
+--   deriving (Show, Functor, Foldable)

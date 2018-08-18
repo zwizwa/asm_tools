@@ -5,13 +5,25 @@ import Seq
 import SeqTerm
 import Data.List
 
-newtype C = C (String,([Op NodeNum], [(NodeNum, Term (Op NodeNum))]))
+newtype C = C (String, CompileResult NodeNum)
 
 showL :: Show a => [a] -> String
 showL = concat . (map ((++ "\n") . show))
 
-compile funName (outputs, bindings) = code where
-  part = SeqTerm.partition bindings
+-- Several targets need different partitioning, so copy paste and edit.
+data Part = Delays | Inputs | MemRds | MemWrs | Exprs deriving Eq
+partition' bindings t = map snd $ filter ((t ==) . fst) tagged where
+  tagged = map p' bindings
+  p' x = (p x, x)
+  p (_, Input _)   = Inputs
+  p (_, Delay _ _) = Delays
+  p (_, MemRd _ _) = MemRds
+  p (_, MemWr _)   = MemWrs
+  p _              = Exprs
+
+
+compile funName (outputs, bindings, _) = code where
+  part = partition' bindings
   inputs = part Inputs
   -- FIXME: Only combinatorial for now
   -- delays = part Delays

@@ -51,7 +51,7 @@ import TestTools
 
 x :: SeqTerm.M [SeqTerm.R S] -> IO ()
 x term = do
-  let (ports, bindings) = compileTerm term
+  let (ports, bindings, _) = compileTerm term
       --bindings' = inlined bindings
       --bindings' :: [(Int, Expr Int)]
   putStrLn "  term"
@@ -61,3 +61,6 @@ x term = do
   -- putStrLn "  expr"
   -- putStr $ sexp' bindings'
   
+
+-- FIXME: Look at Chalmers Lava paper, it has a "behavioral" language
+-- embedded that is then compiled to a "full tree" register update.

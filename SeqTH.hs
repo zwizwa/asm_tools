@@ -208,7 +208,7 @@ compile' selectProbe inSizes mf = exp where
     i <- input $ SInt (Just sz) 0
     slice i (Just sz) 0
 
-  (ports, bindings, probes) = SeqTerm.compileTerm' $ mf'
+  (ports, bindings, probes) = SeqTerm.compileTerm $ mf'
   probes' = filter (selectProbe . snd) probes
   exp = toExp (ports, bindings, probes')
 
@@ -221,3 +221,4 @@ noProbe = const False
 
 allProbe :: String -> Bool
 allProbe = const True
+

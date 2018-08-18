@@ -100,22 +100,23 @@ e_deser (sub, (nb_bits, words)) = (words == words', outs) where
     bits   = toBits nb_bits words
     ins    = reSample' (cycle [sub]) $ map (:[]) bits
     outs   = t_deser nb_bits ins
-    words' = map head $ downSample' outs
+    words' = downSampleCD outs
 
 
 t_deser :: Int -> [[Int]] -> [[Int]]
 t_deser nb_bits = trace [1,1] $ \[bc,bv] -> do
-  (wc, wv) <- deser ShiftLeft nb_bits 1 bc bv
+  (wc, wv) <- deser ShiftLeft nb_bits 0 bc bv
   return [wc, wv]
 
 x_deser = do
   putStrLn "-- x_deser"
-  let spec' = (2, (8, [1,2,3]))
-      spec = (4,(9,[0])) -- failing QC, also: (8,(11,[0]))
+  let spec1 = (2, (8, [1,2,3]))
+      spec  = (4,(10,[0,1023,1018,0,5,4]))  -- from QC fail
       (_, outs) = e_deser spec
+  print spec
+  print $ downSampleCD outs
   printL' outs
   
-  -- TODO
 
 -- async_receive_sample
 
@@ -236,7 +237,7 @@ e_spi (mode, bytes)  = (bytes == bytes', (bytes', table)) where
            [[1,cpol,0]]
 
   bits   = concat $ map (toBitList 8) bytes
-  bytes' = map head $ downSample' $ selectSignals ["s_wc","s_w"] probes outs
+  bytes' = downSampleCD $ selectSignals ["s_wc","s_w"] probes outs
   table@(probes, outs) = t_spi mode ins
 
 x_spi = do
@@ -278,7 +279,7 @@ x_mem = do
 t_fifo ins = snd $ $(compile noProbe [1,1,8] d_fifo) memZero ins
 
 e_fifo lst = (lst == lst', (lst',outs)) where
-  lst'   = map head $ downSample' outs
+  lst'   = downSampleCD outs
   -- Write data into the buffer, read it out.
   outs   = t_fifo $ writes ++ reads ++ idle
   writes = [[0,1,x] | x <- lst]

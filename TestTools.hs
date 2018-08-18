@@ -99,10 +99,14 @@ reSample' spaces = reSample en spaces where
   en True  a = (1:a)
   en False a = (0:a)
 
+-- Special case: downsample list with clock, data as first 2 elements.
 downSample' :: [[Int]] -> [[Int]]
 downSample' = downSample sel where
   sel (1:a) = Just a
   sel (0:a) = Nothing
+
+-- More convenient.  Get rid of downSample'
+downSampleCD bus = map head $ downSample' bus
 
 -- Isolate (enable,value)
 downSampleBus unpack = downSample sel where
@@ -236,5 +240,4 @@ selectSignals columns names signals = signals' where
 dbg_trace = bus_trace "bus_dbg"
 
 bus_trace write (names, signals) =
-  map head $ downSample' $
-  selectSignals [write, "bus_data"] names signals
+  downSampleCD $ selectSignals [write, "bus_data"] names signals

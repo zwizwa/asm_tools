@@ -107,7 +107,7 @@ x_blink_fpga = do
 -- to instantiate the module.  See MyHDL.pyModule
 print_hdl :: SeqTerm.M [SeqTerm.R S] -> IO ()
 print_hdl src = do
-  let (ports, bindings) = SeqTerm.compileTerm src
+  let (ports, bindings, _) = SeqTerm.compileTerm src
   putStrLn "-- ports: "
   print ports
   putStrLn "-- bindings: "

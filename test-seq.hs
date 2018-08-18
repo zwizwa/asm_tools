@@ -233,7 +233,7 @@ x_seqTH = m1 >> m2 where
   m1 = do
     -- Print syntax
     putStrLn "-- x_seqTH (syntax)"
-    let c@(outputs, bindings, probes) = SeqTerm.compileTerm' $ do
+    let c@(outputs, bindings, probes) = SeqTerm.compileTerm $ do
           en <- SeqTerm.input SeqLib.bit
           SeqTH.test [en]
     print outputs
@@ -272,7 +272,7 @@ x_netfun = do
 
 x_app_share = do
   putStrLn "--- x_app_share"
-  let c@(outputs, bindings) = SeqTerm.compileTerm m
+  let c@(outputs, bindings, _) = SeqTerm.compileTerm m
       m = do a <- SeqApp.square $ inc 1
              return [a]
   print outputs
@@ -284,7 +284,7 @@ x_app_share = do
 -- printSeqTerm :: Functor f => SeqTerm.M (f (SeqTerm.R S)) -> IO ()
 printSeqTerm :: SeqTerm.M [SeqTerm.R S] -> IO ()
 printSeqTerm src = do
-  let (output, bindings) = SeqTerm.compileTerm src
+  let (output, bindings, _) = SeqTerm.compileTerm src
   putStrLn "-- bindings: "
   printL $ bindings
   putStrLn "-- output: "
@@ -396,7 +396,7 @@ x_case = m where
     cond [(i,[1,2,3])] [4,5,6]
   
          
-  c@(outputs, bindings) = SeqTerm.compileTerm t
+  c@(outputs, bindings, _) = SeqTerm.compileTerm t
   m = do
     putStrLn "-- x_case"
     printL bindings

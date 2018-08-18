@@ -106,14 +106,15 @@ arrDecl _ name _ = error $ "arrDecl needs fixed bit size: " ++ name
 sigDecl kind (SInt (Just n) _) name =
   kind ++ " [" ++ show (n-1) ++ ":0] " ++ name ++ ";"
 
--- FIXME: Proper unification on SeqTerm data structure is needed to
--- determine all node types.  Example:
--- // "s144" <- (IF "rx_in" (CONST _:0) (CONST _:1))
--- As a workaround, default to a fixed size and leave it for yosys to optimize.
-sigDecl kind _ name = hackDecl ++ msg where 
-  hackDecl = sigDecl kind (SInt (Just 32) 0) name
-  msg = " // unknown size: " ++ name
--- sigDecl _ _ name = error $ "sigDecl needs fixed bit size: " ++ name
+---- FIXME: Proper unification on SeqTerm data structure is needed to
+---- determine all node types.  Example:
+---- // "s144" <- (IF "rx_in" (CONST _:0) (CONST _:1)) As a workaround,
+---- I thought about defaulting to a fixed size and leave it for yosys
+---- to optimize.  This doesn't work for concat.
+-- sigDecl kind _ name = hackDecl ++ msg where 
+--   hackDecl = sigDecl kind (SInt (Just 32) 0) name
+--   msg = " // unknown size: " ++ name
+sigDecl _ _ name = error $ "sigDecl needs fixed bit size: " ++ name
 
 
 proj_err b = error $ "projection error: " ++ show b
