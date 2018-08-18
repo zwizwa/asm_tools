@@ -29,20 +29,24 @@ import Data.Maybe
 -- inline constants.
 
 -- TODO:
+-- . Remove 'Input', 'Connect' and 'Delay' and expose them as different entitities.
 -- . Change postproc code to use this representation
 -- . Change SeqTerm to generate Form directly?  Possibly as Form . Op, then flatten.
 
-data Form n =
+data FormOp n =
   Const Int
-  | Input
   | Comb1   Op1 n
   | Comb2   Op2 n n
   | Comb3   Op3 n n n
   | Slice   n SSize NbBits
-  | Delay   n Int
   | Memory  n n n n
-  | Connect n
   deriving (Show, Functor, Foldable)
+
+data FormCon n =
+  Input | Delay n Int | Connect n
+
+
+data Form n = Op (FormOp n) | Con (FormCon n)
 
 -- Converting between the two makes sense only at the level of
 -- bindings.  New node names need to be introduced for the constants.
@@ -91,11 +95,11 @@ convert ports bindings = (ports', bindings')  where
 
   conv (rd, (SeqTerm.MemRd t mem)) = do
     mem' <- op mem
-    tell $ [(rd, (sz t, Delay mem' $ val t))]  -- FIXME: in practice this is undefined
+    tell $ [(rd, (sz t, Con $ Delay mem' $ val t))]  -- FIXME: in practice this is undefined
   conv  (mem, (SeqTerm.MemWr (a,b,c,d))) = do
     let t = mem_rd_type Map.! mem
     a' <- op a ; b' <- op b ; c' <- op c ; d' <- op d
-    tell $ [(mem, (sz t, Memory a' b' c' d'))]
+    tell $ [(mem, (sz t, Op $ Memory a' b' c' d'))]
 
   -- The rest is straightforward: lift out type while constants are extracted.
   conv (n, e) = do
@@ -103,14 +107,14 @@ convert ports bindings = (ports', bindings')  where
     te' <- conv' e
     tell $ [(n, (sz, te'))]
   
-  conv' (SeqTerm.Input t) = return $ Input
+  conv' (SeqTerm.Input t) = return $ Con $ Input
   
-  conv' (SeqTerm.Delay t o)         = do [o']       <- ops [o];     return $ Delay o' $ val t
-  conv' (SeqTerm.Connect _ o)       = do [o']       <- ops [o];     return $ Connect o'
-  conv' (SeqTerm.Comb1 _ opc a)     = do [a']       <- ops [a];     return $ Comb1 opc a'
-  conv' (SeqTerm.Comb2 _ opc a b)   = do [a',b']    <- ops [a,b];   return $ Comb2 opc a' b'
-  conv' (SeqTerm.Comb3 _ opc a b c) = do [a',b',c'] <- ops [a,b,c]; return $ Comb3 opc a' b' c'
-  conv' (SeqTerm.Slice _ o a b)     = do [o']       <- ops [o];     return $ Slice o' a b
+  conv' (SeqTerm.Delay t o)         = do [o']       <- ops [o];     return $ Con $ Delay o' $ val t
+  conv' (SeqTerm.Connect _ o)       = do [o']       <- ops [o];     return $ Con $ Connect o'
+  conv' (SeqTerm.Comb1 _ opc a)     = do [a']       <- ops [a];     return $ Op $ Comb1 opc a'
+  conv' (SeqTerm.Comb2 _ opc a b)   = do [a',b']    <- ops [a,b];   return $ Op $ Comb2 opc a' b'
+  conv' (SeqTerm.Comb3 _ opc a b c) = do [a',b',c'] <- ops [a,b,c]; return $ Op $ Comb3 opc a' b' c'
+  conv' (SeqTerm.Slice _ o a b)     = do [o']       <- ops [o];     return $ Op $ Slice o' a b
 
   conv' _ = error $ "inernal error: already matched in conv"
   
@@ -123,7 +127,7 @@ convert ports bindings = (ports', bindings')  where
   op (SeqTerm.Node t n) = return n
   op (SeqTerm.Const t) = do
     n <- newNode
-    tell [(n, (sz t, Const $ val t))]
+    tell [(n, (sz t, Op $ Const $ val t))]
     return n
 
   newNode = do
