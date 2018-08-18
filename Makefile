@@ -75,6 +75,7 @@ MYHDL:=$(shell readlink -f myhdl)
 # Logic synthesis.  Same for all ice40.
 %.blif: %.v
 	yosys -p "synth_ice40 -blif $@" $<  >$*.yosys.log
+	tail -n35 $*.yosys.log 
 
 # Place and route, one for each device,package type.
 %.qn84.asc: %.blif %.pcf

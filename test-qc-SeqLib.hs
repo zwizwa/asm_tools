@@ -110,7 +110,9 @@ t_deser nb_bits = trace [1,1] $ \[bc,bv] -> do
 
 x_deser = do
   putStrLn "-- x_deser"
-  let (_, outs) = e_deser (2, (8, [1,2,3]))
+  let spec' = (2, (8, [1,2,3]))
+      spec = (4,(9,[0])) -- failing QC, also: (8,(11,[0]))
+      (_, outs) = e_deser spec
   printL' outs
   
   -- TODO
@@ -321,8 +323,8 @@ memRef mem n = v where
     True -> 0
     False -> mem !! n
 
-t_soc_idle = [1,1,0,0]
-t_soc prog = $(compile allProbe [1,1,1,1] soc_test) [memRef prog]
+t_soc_idle = [1,1,1,0,0]
+t_soc prog = $(compile allProbe [1,1,1,1,1] soc_test) [memRef prog]
 
 printProbe :: [String] -> ([String],[[Int]]) -> IO ()
 printProbe columns (names, signals) = do
@@ -466,12 +468,12 @@ x_soc_boot = do
 
   putStrLn "-- reference: execute from ROM"
   printProbe ["iw","ip","tx_bc","tx_wc","tx_in","tx_done","tx_out"] $
-    t_soc prog $ replicate 30 [1,1,0,0]
+    t_soc prog $ replicate 30 $ t_soc_idle
   printL $ prog_bits prog'
 
   putStrLn "-- boot: execute from SPI booted RAM"
   printProbe ["run","iw","ip","tx_bc","tx_wc","tx_in","tx_done","tx_out"] $
-    t_soc [] $ map ([1] ++) $ spi ++ postamble ++ spi ++ postamble
+    t_soc [] $ map ([1, 1] ++) $ spi ++ postamble ++ spi ++ postamble
   printL $ prog_bits prog'
 
 

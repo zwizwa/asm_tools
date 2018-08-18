@@ -1,0 +1,12 @@
+# Convert .v to .blif with primitives that are easy to import into Seq
+# see http://www.clifford.at/yosys/files/yosys_appnote_010_verilog_to_blif.pdf
+read_verilog x_verilog.v
+hierarchy
+proc
+opt
+memory -nomap
+opt
+# techmap
+# opt
+write_blif x_verilog.blif
+

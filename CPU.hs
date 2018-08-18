@@ -356,12 +356,11 @@ uart_tx = 1 :: Int
 dbg     = 2 :: Int
 -- -1 is the void used for "drop"
 
-bus [rx] (BusWr rEn wEn addr wData) = do
+bus [rx, tx_bc] (BusWr rEn wEn addr wData) = do
   
   -- Instantiate peripherals, routing i/o registers.
   addr' <- slice' addr 2 0
-  let tx_bc = 1 -- FIXME
-      c = cbits 2  -- numeric case used in switch
+  let c = cbits 2  -- numeric case used in switch
       wEn' n = (addr' .== c n) >>= band wEn  -- register write clock
 
   -- Bus write operations
@@ -405,7 +404,11 @@ spi_boot nb_bits cs sck sda = do
 -- rom_boot = noIMemWrite 16 8
 
 soc :: Seq m r => [r S] -> m [r S]
-soc [rx,cs,sck,sda] = do
+soc [rx,tx_bc,cs,sck,sda] = do
+
+  -- FIXME: create a more permissive bus structure that allows
+  -- stubbing out some signals.
+  
 
   -- A soc is the bundling of a CPU, an instruction memory, sequencer,
   -- boot circuit, a peripheral bus, and a reset circuit.
@@ -435,7 +438,7 @@ soc [rx,cs,sck,sda] = do
   -- Couple bus master and slave through bus registers.
   closeReg [bit, bits imem_bits] $ \[rStrobe,rData] -> do
     bus_wr <- bus_master (BusRd rStrobe rData)
-    (BusRd rStrobe' rData', soc_output) <- bus [rx] bus_wr
+    (BusRd rStrobe' rData', soc_output) <- bus [rx, tx_bc] bus_wr
     return ([rStrobe', rData'], soc_output)
 
 

@@ -12,6 +12,7 @@ import Names
 import TestTools
 import qualified Forth
 import qualified MyHDL
+import qualified Verilog
 
 import qualified SeqTerm
 import qualified SeqExpr
@@ -43,6 +44,10 @@ f_soc =
       [rx, sda, sck, cs] <-
         sequence $ map sample [_RX, _SPI_SI, _SPI_SCK, _SPI_SS_B]
 
+
+      -- Baud rate generator.
+      -- Bit size is set here to work around a Verilog.hs bug
+      let tx_bc = 1
       -- Instantiate the SOC with dbg probe.  FIXME:
 
       -- FIXME: Probably ok for debug, but these are
@@ -53,7 +58,7 @@ f_soc =
       dbg      <- register bus_dbg bus_data
       [tx]     <- withProbe "bus_data" bus_data $
                   withProbe "bus_dbg"  bus_dbg  $
-                  soc [rx, cs, sck, sda]
+                  soc [rx, tx_bc, cs, sck, sda]
     
       -- Instantiate the SOC
       -- iw  <- signal $ bits 16
@@ -90,7 +95,10 @@ generate = do
         push 0x55 ; write dbg ; busywait
         push 0xAA ; write dbg ; busywait
 
-  MyHDL.fpgaWrite "f_soc" f_soc pin
+  -- MyHDL.fpgaWrite "f_soc" f_soc pin
+  -- Just overwrite it for now
+  Verilog.fpgaWrite "f_soc" f_soc 
+  
   writeProgram "f_soc.imem.bin" prog3
 
 
