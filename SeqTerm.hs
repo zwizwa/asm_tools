@@ -470,3 +470,11 @@ hdl_compile portNames portTypes mod = (portSpecs', (ports', bindings')) where
   -- 3) + 4) Perform name substitution and output type reconstruction.
   (portSpecs', (ports', bindings')) =
     SeqTerm.hdl_postproc portNames portTypes (ports, bindings, probes)
+
+
+
+-- Bit size unification.  Local inference on individual bindings does
+-- not contain enough information.  Perform unification manually.
+
+-- Howto express this properly?
+

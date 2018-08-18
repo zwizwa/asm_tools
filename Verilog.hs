@@ -105,12 +105,15 @@ arrDecl _ name _ = error $ "arrDecl needs fixed bit size: " ++ name
 
 sigDecl kind (SInt (Just n) _) name =
   kind ++ " [" ++ show (n-1) ++ ":0] " ++ name ++ ";"
--- Note: there is an issue with things like:
+
+-- FIXME: Proper unification on SeqTerm data structure is needed to
+-- determine all node types.  Example:
 -- // "s144" <- (IF "rx_in" (CONST _:0) (CONST _:1))
--- Defaulting to a fixed size is a crude workaround, leaving it for yosys to optimize.
--- sigDecl kind _ name = sigDecl kind (SInt (Just 32) 0) name -- FIXME
--- Instead we throw an error.
-sigDecl _ _ name = error $ "sigDecl needs fixed bit size: " ++ name
+-- As a workaround, default to a fixed size and leave it for yosys to optimize.
+sigDecl kind _ name = hackDecl ++ msg where 
+  hackDecl = sigDecl kind (SInt (Just 32) 0) name
+  msg = " // unknown size: " ++ name
+-- sigDecl _ _ name = error $ "sigDecl needs fixed bit size: " ++ name
 
 
 proj_err b = error $ "projection error: " ++ show b
@@ -207,8 +210,11 @@ commas = intercalate ", "
 fix_binding b@(name, (MemWr _)) = b
 fix_binding b@(name, term) =
   case termType term of
-    (SInt Nothing _) -> error $ "fix_binding: " ++ show b
-    _ -> b
+    (SInt Nothing _) ->
+      -- error $ "fix_binding: " ++ show b
+      b
+    _ ->
+      b
 
 --------------------------------------------------------------------------------------
 

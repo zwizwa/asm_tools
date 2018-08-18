@@ -95,9 +95,9 @@ generate = do
         push 0x55 ; write dbg ; busywait
         push 0xAA ; write dbg ; busywait
 
-  -- MyHDL.fpgaWrite "f_soc" f_soc pin
+  MyHDL.fpgaWrite "f_soc" f_soc pin
   -- Just overwrite it for now
-  Verilog.fpgaWrite "f_soc" f_soc 
+  -- Verilog.fpgaWrite "f_soc" f_soc 
   
   writeProgram "f_soc.imem.bin" prog3
 
