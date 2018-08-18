@@ -137,21 +137,23 @@ x_testbench = do
 x_verilog = do
   putStrLn "-- x_verilog"
   let mod [i, o] = do
-        a <- inv i >>= delay
-        b <- i `add` a
-        c <- i `sub` a
-        d <- i `mul` a
-        e <- i `bxor` a
-        f <- i `bor` a
-        g <- i `band` a
-        h <- i `sll` a
-        x <- i `slr` a
-        j <- i `equ` a
-        k <- if' i a b
-        l <- reduce' conc [a,b,c,d,e,f,g,h,x,j,k]
-        m <- slice' l 4 2
-        n <- conc l m
-        -- should depend on all
+        n <- closeMem [bits 16] $ \[rd] -> do
+          a <- inv i >>= delay
+          b <- i `add` a
+          c <- i `sub` a
+          d <- i `mul` a
+          e <- i `bxor` a
+          f <- i `bor` a
+          g <- i `band` a
+          h <- i `sll` a
+          x <- i `slr` a
+          j <- i `equ` a
+          k <- if' i a b
+          l <- reduce' conc [a,b,c,d,e,f,g,h,x,j,k]
+          m <- slice' l 4 2
+          n <- conc l m
+          -- n should depend on all
+          return ([(cbit 0, cbits 8 0, cbits 16 0, cbits 8 0)], n)
         connect o n
       v = Verilog.vModule "mymod" ["IN", "OUT"] [bit, bit] mod
   print $ v

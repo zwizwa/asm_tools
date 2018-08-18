@@ -38,12 +38,12 @@ partition' bindings t = map snd $ filter ((t ==) . fst) tagged where
 
   
 vModule :: String -> [String] -> [SType] -> ([R S] -> M ()) -> Verilog
-vModule name portNames portTypes mod = Verilog portSpecs vCode where
+vModule mod_name portNames portTypes mod = Verilog portSpecs vCode where
   
   -- See SeqTerm for some post processing steps that are shared
   -- between HDLs.
   (portSpecs, (ports, bindings)) =
-    SeqTerm.hdl_compile name portNames portTypes mod
+    SeqTerm.hdl_compile mod_name portNames portTypes mod
 
   -- Convert ports' bindings' to Verilog syntax
 
@@ -52,12 +52,38 @@ vModule name portNames portTypes mod = Verilog portSpecs vCode where
   -- comment t = " // " ++ show t
   comment _ = ""
 
+  arrDecl (SInt (Just n) _) name sz =
+    "reg [" ++ show (n-1) ++ ":0] " ++ name ++ "[0:" ++ show (sz-1) ++ "];"
   sigDecl kind (SInt (Just n) _) name =
     kind ++ " [" ++ show (n-1) ++ ":0] " ++ name ++ ";"
+  -- sigDecl kind _ name = sigDecl kind (SInt (Just 123) 0) name -- FIXME
+    
   decl typ b@(name, term) =
     (sigDecl typ) (termType term) name ++
     comment b ++ "\n"
   decls typ p = concat $ map (decl typ) $ part p
+
+  mem_decls = concat $
+    ((map memwr_decl $ part MemWrs) ++
+     (map memrd_decl $ part MemRds))
+
+  memrd_decl b@(name, (MemRd t (MemNode mem_name))) =
+    -- Note: the read data register has a separate register name.
+    sigDecl "reg" t name
+    ++ comment b ++ "\n"
+    
+  memwr_decl b@(name, (MemWr (we,wa,wd,ra))) =
+    let arrSize = 2 ^ n
+        (SInt (Just n) _) = opType wa
+    in
+      -- Note: all signals names going into the memory are derived
+      -- from the memory name.
+      arrDecl (opType wd) name arrSize ++ "\n" ++
+      (concat $ zipWith (memwire b) [we,wa,wd,ra] ["_we","_wa","_wd","_ra"])
+      
+  memwire b@(name,_) o suffix =
+    sigDecl "wire" (opType o) (name ++ suffix)
+    ++ comment b ++ "\n"
 
   assigns = concat $ map assign $ (part Exprs ++ part Connects)
   assign b@(name, term) =
@@ -66,6 +92,24 @@ vModule name portNames portTypes mod = Verilog portSpecs vCode where
 
   updates = concat $ map update $ part Delays
   resets  = concat $ map reset  $ part Delays
+
+  memrd_updates = concat $ map memrd_update $ part MemRds
+  memwr_updates = concat $ map memwr_update $ part MemWrs
+
+  memrd_update b@(reg_name, (MemRd _ (MemNode mem_name))) =
+    "always @(posedge CLK) begin\n" ++
+    tab ++ reg_name ++ " <= " ++ mem_name ++ "[" ++ mem_name ++ "_ra];\n" ++
+    "end\n"
+
+  -- memrd  _ra assign!
+  
+  memwr_update b@(mem_name, (MemWr (we,wa,wd,_ra))) =
+    "always @(posedge CLK) begin\n" ++
+    tab ++ "if (" ++ op we ++ ")\n" ++
+    tab ++ tab ++ mem_name ++ "[" ++ op wa ++ "] <= " ++ op wd ++ ";\n" ++
+    tab ++ "end\n" ++
+    "end\n"
+
 
   reset b@(name, (Delay t _)) =
     tab ++ tab ++ name ++ " <= " ++ const t ++ ";" ++
@@ -107,14 +151,17 @@ vModule name portNames portTypes mod = Verilog portSpecs vCode where
   
   vCode =
     -- "`timescale 1ns/10ps\n" ++  -- from MyHDL output
-    "module " ++ name ++ "(" ++ commas (["CLK","RST"] ++ portNames) ++ ");\n" ++
+    "module " ++ mod_name ++ "(" ++ commas (["CLK","RST"] ++ portNames) ++ ");\n" ++
     "input CLK;\n" ++
     "input RST;\n" ++
     decls "wire"   Exprs ++
     decls "input"  Inputs ++
     decls "output" Connects ++
     decls "reg"    Delays ++
+    mem_decls ++
     assigns ++
+    memrd_updates ++
+    memwr_updates ++
     "always @(posedge CLK, negedge RST) begin: SEQ\n" ++
     tab ++ "if (RST==0) begin\n" ++
     resets ++
@@ -124,5 +171,20 @@ vModule name portNames portTypes mod = Verilog portSpecs vCode where
     tab ++ "end\n" ++
     "end\n" ++
     "endmodule\n"
-    
 
+-- reg [15:0] inst1_memory [0:4096-1];
+-- wire [11:0] s55_wa;
+-- reg [15:0] s55_rd;
+-- wire [0:0] s55_we;
+-- wire [15:0] s55_wd;
+-- wire [11:0] s55_ra;
+--
+-- always @(posedge CLK) begin: F_SOC_INST1_RTLRD
+--     s55_rd <= inst1_memory[s55_ra];
+-- end
+--
+-- always @(posedge CLK) begin: F_SOC_INST1_RTLWR
+--     if (s55_we) begin
+--         inst1_memory[s55_wa] <= s55_wd;
+--     end
+-- end
