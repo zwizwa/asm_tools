@@ -49,8 +49,8 @@ vModule mod_name portNames portTypes mod = Verilog portSpecs vCode where
 
   part = partition' bindings
 
-  -- comment t = " // " ++ show t
-  comment _ = ""
+  comment t = " // " ++ show t
+  -- comment _ = ""
 
   arrDecl (SInt (Just n) _) name sz =
     "reg [" ++ show (n-1) ++ ":0] " ++ name ++ "[0:" ++ show (sz-1) ++ "];"
@@ -72,18 +72,14 @@ vModule mod_name portNames portTypes mod = Verilog portSpecs vCode where
     sigDecl "reg" t name
     ++ comment b ++ "\n"
     
-  memwr_decl b@(name, (MemWr (we,wa,wd,ra))) =
+  memwr_decl b@(mem_name, (MemWr (we,wa,wd,ra))) =
     let arrSize = 2 ^ n
         (SInt (Just n) _) = opType wa
     in
-      -- Note: all signals names going into the memory are derived
-      -- from the memory name.
-      arrDecl (opType wd) name arrSize ++ "\n" ++
-      (concat $ zipWith (memwire b) [we,wa,wd,ra] ["_we","_wa","_wd","_ra"])
-      
-  memwire b@(name,_) o suffix =
-    sigDecl "wire" (opType o) (name ++ suffix)
-    ++ comment b ++ "\n"
+      -- Note: the _ra signal is derived from the memory name.
+      arrDecl (opType wd) mem_name arrSize ++ "\n" ++
+      sigDecl "wire" (opType ra) (mem_name ++ "_ra") ++
+      comment b ++ "\n"
 
   assigns = concat $ map assign $ (part Exprs ++ part Connects)
   assign b@(name, term) =
@@ -93,6 +89,7 @@ vModule mod_name portNames portTypes mod = Verilog portSpecs vCode where
   updates = concat $ map update $ part Delays
   resets  = concat $ map reset  $ part Delays
 
+  memwr_assigns = concat $ map memwr_assign $ part MemWrs
   memrd_updates = concat $ map memrd_update $ part MemRds
   memwr_updates = concat $ map memwr_update $ part MemWrs
 
@@ -101,11 +98,14 @@ vModule mod_name portNames portTypes mod = Verilog portSpecs vCode where
     tab ++ reg_name ++ " <= " ++ mem_name ++ "[" ++ mem_name ++ "_ra];\n" ++
     "end\n"
 
-  -- memrd  _ra assign!
+  memwr_assign b@(mem_name, (MemWr (_,_,_,ra))) =
+    "assign " ++ mem_name ++ "_ra = " ++ op ra ++ ";\n" ++
+    comment b ++ "\n"
   
-  memwr_update b@(mem_name, (MemWr (we,wa,wd,_ra))) =
+  memwr_update b@(mem_name, (MemWr (we,wa,wd,_))) =
+    comment b ++ "\n" ++
     "always @(posedge CLK) begin\n" ++
-    tab ++ "if (" ++ op we ++ ")\n" ++
+    tab ++ "if (" ++ op we ++ ") begin\n" ++
     tab ++ tab ++ mem_name ++ "[" ++ op wa ++ "] <= " ++ op wd ++ ";\n" ++
     tab ++ "end\n" ++
     "end\n"
@@ -160,6 +160,7 @@ vModule mod_name portNames portTypes mod = Verilog portSpecs vCode where
     decls "reg"    Delays ++
     mem_decls ++
     assigns ++
+    memwr_assigns ++
     memrd_updates ++
     memwr_updates ++
     "always @(posedge CLK, negedge RST) begin: SEQ\n" ++

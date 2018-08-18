@@ -138,6 +138,7 @@ x_verilog = do
   putStrLn "-- x_verilog"
   let mod [i, o] = do
         n <- closeMem [bits 16] $ \[rd] -> do
+          ra <- counter $ bits 8
           a <- inv i >>= delay
           b <- i `add` a
           c <- i `sub` a
@@ -149,11 +150,11 @@ x_verilog = do
           x <- i `slr` a
           j <- i `equ` a
           k <- if' i a b
-          l <- reduce' conc [a,b,c,d,e,f,g,h,x,j,k]
+          l <- reduce' conc [a,b,c,d,e,f,g,h,x,j,k,rd]
           m <- slice' l 4 2
           n <- conc l m
           -- n should depend on all
-          return ([(cbit 0, cbits 8 0, cbits 16 0, cbits 8 0)], n)
+          return ([(cbit 0, cbits 8 0, cbits 16 0, ra)], n)
         connect o n
       v = Verilog.vModule "mymod" ["IN", "OUT"] [bit, bit] mod
   print $ v
