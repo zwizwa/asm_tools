@@ -53,30 +53,37 @@ import qualified SeqIfElse
 import qualified SeqEmu
 import qualified SeqTH
 import qualified SeqC
---import qualified MyHDL
+
 import qualified CPU
 import qualified VCD
 import qualified CSV
 import qualified NetFun
 import qualified SeqNetList
 
-import Data.Map.Lazy (empty, foldrWithKey, insert, Map)
+import qualified MyHDL
+import qualified MyHDLRun
+import qualified Verilog
+
+import Data.Map.Lazy (empty, foldrWithKey, insert, Map, assocs)
 import qualified Data.Map.Lazy as Map
 import qualified Data.IntMap.Strict as IntMap
 import qualified Control.Applicative as Applicative
+import qualified Data.Set as Set
 import Control.Applicative (ZipList(..))
 import Control.Category
 import Control.Arrow
 import Control.Monad
-import Prelude hiding (zipWith, (.), id)
+import Prelude hiding (zipWith, (.), id, zip)
 import Data.List hiding (zipWith, zip)
+import Data.Maybe
 import Data.Key(Zip(..),zipWith, zip)
 import Data.Typeable
 import Language.Haskell.TH as TH
 
 import Control.Monad.ST
-import Data.Array.Unboxed
+import Data.Array.Unboxed hiding (assocs)
 import Data.Array.ST
+
 
   
 -- t_: trace
@@ -105,6 +112,14 @@ main = do
   x_SeqC
   x_case
   x_SeqIfElse
+  -- hdl
+  x_ifs
+  x_hdl
+  x_hdl_sync
+  x_run_myhdl
+  x_testbench
+  x_verilog
+  x_seqnetlist
 
 x_counter = do
   putStrLn "--- x_counter"
@@ -412,3 +427,151 @@ x_SeqIfElse = do
     (wc,w) <- SeqLib.async_receive 8 i
     return [wc,w]
   
+
+
+    
+-- sequenced if' : does it need to be bundled?
+x_ifs = do
+  putStrLn "--- x_ifs"
+  print_hdl $ do
+    io@[c,i1,i2,o1,o2] <- SeqTerm.inputs $ replicate 5 bit
+    os' <- ifs c [i1,i2] [0,0]
+    sequence $ zipWith connect [o1,o2] os'
+    return io
+
+
+
+-- MyHDL export needs some wrapping to specify module I/O structure.
+-- SeqTerm has support for this.
+x_hdl = do
+  putStrLn "--- x_hdl"
+  print_hdl h_hdl
+  
+h_hdl :: SeqTerm.M [SeqTerm.R S]
+h_hdl = do
+  -- Define types and signals
+  let t    = SInt (Just 1) 0
+      t_sr = SInt (Just 8) 0
+  io@[i,o,sr_o] <- SeqTerm.inputs [t,t,t_sr]
+  -- Instantiate circuits
+  i1    <- delay i
+  i2    <- delay i1
+  sr_o' <- shiftReg ShiftLeft t_sr i
+  -- Bind outputs
+  connect o i2   
+  connect sr_o sr_o'
+  return io
+
+x_hdl_sync = do
+  putStrLn "--- x_hdl_sync"
+  print_hdl h_sync
+  
+h_sync :: SeqTerm.M [SeqTerm.R S]
+h_sync = do
+  io@[i,o] <- SeqTerm.inputs [SInt (Just 1) 0, SInt (Just 1) 0]
+  o' <- sync (SInt (Just 1) 0) i
+  connect o o'
+  return io
+
+
+
+-- Blink-a-LED example for HX8K breakout
+-- 12MHz
+f_blink_fpga :: ([String], [SeqTerm.R S] -> SeqTerm.M ())
+f_blink_fpga =
+  $(named
+   [|
+    \[ _LED0 ] -> do
+      c <- counter $ (bits 24)
+      led <- slice' c 23 22
+      connect _LED0 led
+    |])
+x_blink_fpga = do
+  putStrLn "-- x_blink_fpga"
+  board <- CSV.readTagged id "specs/hx8k_breakout.csv"
+  let pin = CSV.ff (\[k,_,v,_] -> (k,v)) board
+      (py,pcf) = MyHDL.fpgaGen "x_blink_fpga" f_blink_fpga pin
+  writeFile "x_blink_fpga.py" $ show py
+  writeFile "x_blink_fpga.pcf" $ show pcf
+
+
+
+
+
+-- Old test routine.  This is the only one that needs access to
+-- MyHDL.myhdl directly.  In practice a little more metadata is needed
+-- to instantiate the module.  See MyHDL.pyModule
+print_hdl :: SeqTerm.M [SeqTerm.R S] -> IO ()
+print_hdl src = do
+  let (ports, bindings, _) = SeqTerm.compileTerm src
+  putStrLn "-- ports: "
+  print ports
+  putStrLn "-- bindings: "
+  printL $ bindings
+  let inl = SeqExpr.inlined $ bindings
+      portNames = ["p" ++ show n | (_,n) <- zip ports [0..]]
+  putStr $ SeqExpr.sexp' inl
+  putStrLn "-- MyHDL: "
+  putStr $ MyHDL.myhdl "module" ports inl  -- low level interface
+  return ()
+  
+
+-- http://hackage.haskell.org/package/shelly
+x_run_myhdl = do
+  putStrLn "-- x_run_myhdl"
+  -- MyHDLRun.run_process "x_soc_fpga"
+  MyHDLRun.test
+
+
+x_testbench = do
+  putStrLn "-- x_testbench"
+  let mod [s, d] = do return $ [s, d]
+      tb = MyHDL.testbench "x_testbench" [1,8] mod [[1,0],[0,0]]
+  print tb
+
+
+x_verilog = do
+  putStrLn "-- x_verilog"
+  let mod [i, o] = do
+        n <- closeMem [bits 16] $ \[rd] -> do
+          ra <- counter $ bits 8
+          a <- inv i >>= delay
+          b <- i `add` a
+          c <- i `sub` a
+          d <- i `mul` a
+          e <- i `bxor` a
+          f <- i `bor` a
+          g <- i `band` a
+          h <- i `sll` a
+          x <- i `slr` a
+          j <- i `equ` a
+          k <- if' i a b
+          l <- reduce' conc [a,b,c,d,e,f,g,h,x,j,k,rd]
+          m <- slice' l 4 2
+          n <- conc l m
+          -- n should depend on all
+          return ([(cbit 0, cbits 8 0, cbits 16 0, ra)], n)
+        connect o n
+      v = Verilog.vModule "mymod" ["IN", "OUT"] [bit, bit] mod
+  print $ v
+  writeFile "x_verilog.v" $ show v
+  
+  
+x_seqnetlist = do
+  putStrLn "-- x_seqnetlist"
+  let (ports, bindings, _) = SeqTerm.compileFun (replicate 5 bit) CPU.soc_test
+      SeqNetList.NetList ports' bindings' = SeqNetList.convert ports bindings
+      graph = SeqNetList.toGraph bindings'
+      sorted = SeqNetList.sorted graph
+      nodes = sort $ Set.toList $ Map.keysSet bindings'
+  print ports'
+  --printL $ assocs'
+  printL $ [ (n, te, SeqNetList.dependencies bindings' n) | (n,te) <- sorted ]
+
+  -- Print out the individual dependencies
+  -- printL $ catMaybes $ do
+  --   a <- nodes
+  --   b <- nodes
+  --   return $ case (SeqNetList.depends bindings' a b) of
+  --     True -> Just (a,b)
+  --     False -> Nothing

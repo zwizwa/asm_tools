@@ -28,18 +28,10 @@ Test-Suite test-pru
     main-is:    test-pru.hs
     build-depends: base
 
-Test-Suite test-myhdl
-    build-depends: base, containers, mtl, free, keys, set-extra,
-                   template-haskell, parsec, QuickCheck, split, process,
-                   binary, bytestring
-    type:       exitcode-stdio-1.0
-    main-is:    test-myhdl.hs
-    build-depends: base
-
 Test-Suite test-seq
     build-depends: base, containers, mtl, free, keys, set-extra,
                    template-haskell, parsec, QuickCheck, array, mios, split,
-                   binary, bytestring
+                   binary, bytestring, process
     type:       exitcode-stdio-1.0
     main-is:    test-seq.hs
     build-depends: base
@@ -60,7 +52,8 @@ Test-Suite test-qc-SeqLib
 
 
 
--- FPGA projects are test suites
+-- FPGA projects are currently test suites.  FIXME: turn these into
+-- different projects?
 Test-Suite f_blink
     build-depends: base, containers, mtl, free, keys, set-extra,
                    template-haskell, parsec, QuickCheck, split, array,
