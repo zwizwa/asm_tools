@@ -22,8 +22,9 @@ import Data.Map.Lazy(Map)
 import Data.Set(Set)
 import Data.Maybe
 import Data.Foldable
-import Data.List
+import Data.List hiding (transpose)
 import Data.Graph
+import qualified Data.Array as Array
 
 
 -- This can serve as a decoupling type between SeqTerm conversiona and
@@ -147,62 +148,63 @@ convert ports bindings = NetList ports' $ Map.fromList bindings'  where
 -- Analysis.
 
 -- Convert to Data.Graph adjacency list representation.
--- Construct a DAG, so stop at Delay
--- FIXME: Or keep full cyclic graph but use Forest?
+-- To construct a DAG, cut off at Delay.
+-- Note: see 'sorted' about what Delay means in this setting.
 
-data DAG n = DAG Graph (Vertex -> (Node n, n, [n])) (n -> Maybe Vertex)
 
-toDAG :: Ord n => Bindings n -> DAG n
-toDAG bindings = DAG g v2n n2v where
-  (g, v2n, n2v) = graphFromEdges edges'
-  edges' = [(te,n, edges e) | (n,te@(t,e)) <- Map.assocs bindings]
+data DAG = DAG Graph (Bindings Vertex)
 
+vertex2node (DAG _ bindings) = (bindings Map.!)
+  
+
+toDAG :: Bindings Vertex -> DAG
+toDAG bindings = DAG graph bindings where
+  nodes = Set.toList $ Map.keysSet bindings
+  graph = Array.array (0, maximum nodes) init
+  init = [(n, edges $ snd $ bindings Map.! n) | n <- nodes]
   edges (Delay _ _) = []
   edges expr = toList expr
+
+
+transpose (DAG graph bindings) = DAG (transposeG graph) bindings
 
 
 -- Sort such that definition dominates use, which is needed for most
 -- output code structures.  This is a topological sort from Data.Graph
 
-sorted :: Ord n => DAG n -> Bindings' n
-sorted (DAG graph vertex2node _) = reverse topSort' where
+-- Because we've cut the connection made by Delay to obtain a DAG, the
+-- Delay node in a sorted output represents a register output, and
+-- should be thought of as input to the DAG only.  The argument node
+-- of a Delay binding the contains the input to the register, and
+-- needs to be considered as an output of the DAG.
+
+-- E.g. in the following example, mode 151 is the output of the
+-- register that will be used as an input in the following nodes,
+-- while node 154 will only be computed later on and represents an
+-- output of the DAG, input to the register.
+--
+-- (151,(Just 8,Delay 154 0),fromList [])
+
+sorted :: DAG -> Bindings' Vertex
+sorted (DAG graph bindings) = reverse topSort' where
   topSort' = map unpack $ topSort graph where
-  unpack v = (n, node) where (node, n, _) = vertex2node v
+  unpack v = (v, bindings Map.! v)
     
 
 
-dependencies :: Ord n => DAG n -> n -> Set n
-dependencies (DAG g v2n n2v) n = deps where
+-- Connectivity in both directions.
+-- FIXME: n2v is wrong here.
+fanout dag = deps (transpose dag)
+deps (DAG g bs) n = g Array.! n
+  
+-- Closure of the above.
+allFanout dag = allDeps (transpose dag)
+allDeps :: DAG -> Vertex -> Set Vertex
+allDeps (DAG g bs) v = deps where
   -- Note that reachable contains the node itself, so remove.
-  deps = Set.delete n reachable' 
-  reachable' = Set.fromList $ map v2n' $ reachable g v 
-  Just v = n2v n
-  v2n' v = n' where (_, n', _) = v2n v
+  deps = Set.delete v reachable' 
+  reachable' = Set.fromList $ reachable g v
   
 
 
-
--- -- More misc tools that are probably better expressed in terms of DAG
-
--- dependsOn :: Ord n => DAG n -> n -> n -> Bool
--- dependsOn dag a b = b `elem` dependencies dag a
-
--- type Fanout n = Map n (Set n)
-
--- -- FIXME: use transposeG
-
--- fanout :: forall n. Ord n => NetList n -> Fanout n
--- fanout (NetList ports bindings) = fo where
---   -- Traverse over all expression nodes, accumulating parent nodes.
---   fo = foldr acc_expr fo0 bindings'
---   acc_expr (n, (t, expr)) fo = foldr (acc_dep n) fo expr
---   acc_dep nout nin fo = Map.adjust (Set.insert nout) nin fo
---   fo0 = Map.fromList $ zip nodes $ cycle [Set.empty]
---   nodes = map fst bindings'
---   bindings' = Map.assocs bindings
-
--- -- Define a partition function to isolate Delay nodes
--- partition_delay = partition isDelay where
---   isDelay (_, Delay _ _) = True
---   isDelay _ = False
 

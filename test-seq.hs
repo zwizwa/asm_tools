@@ -566,7 +566,16 @@ x_seqnetlist = do
       nodes = sort $ Set.toList $ Map.keysSet bindings'
   print ports'
   --printL $ assocs'
-  printL $ [ (n, te, SeqNetList.dependencies dag n) | (n,te) <- sorted ]
+  putStrLn "--- sorted"
+  printL $ [ (n, te, SeqNetList.allDeps dag n) | (n,te) <- sorted ]
+
+  -- 
+  --putStrLn "--- fanout"
+  --printL $ [ (n, SeqNetList.allFanout dag n) | n <- nodes ]
+
+  putStrLn "--- fanout"
+  printL $ [ (n, SeqNetList.fanout dag n) | n <- nodes ]
+  
 
   -- Print out the individual dependencies
   -- printL $ catMaybes $ do
