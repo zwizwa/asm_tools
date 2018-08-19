@@ -176,27 +176,25 @@ partition_delay = partition isDelay where
 -- If all the dependencies of a node can be expressed as a Foldable,
 -- this is just:
 
-depends :: Eq n => Bindings n -> n -> n -> Bool
-depends bindings a b = or $ map (b ==) $ toList $ dependencies bindings a
+depends :: (Eq n, Ord n) => Bindings n -> n -> n -> Bool
+depends bindings a b = or $ map (b ==) $ dependencies bindings a
 
--- Dependencies can be computed by unfolding the expression.  This is
--- best done with a Free monad, but let's do it with a specialized
--- wrapper.
+-- Dependencies can be computed by unfolding the expression.  After
+-- attempting to do this using a wrapper type and a Foldable instance,
+-- it became clear that there is an Ord constraint on the node type
+-- due to the Map.  So just define an explicit foldr.
 
-data ExpandForm n = ExpandForm (Bindings n) (Form n)
 
--- This needs to be a specific instance, because we need to stop at
--- Delay to break the cycle.
-
-instance Foldable ExpandForm where
-  foldr f s (ExpandForm _ (Delay _ _)) = s
-  foldr f s (ExpandForm bindings expr) = foldr f' s expr where
+foldr_deps :: Ord n => Bindings n -> (n -> s -> s) -> s -> Form n -> s
+foldr_deps bindings = foldr' where
+  foldr' _ s (Delay _ _) = s
+  foldr' f s expr = foldr f' s expr where
     f' n s = foldr f' (f n s)  e where
       (t,e) = bindings Map.! n
-  
 
-dependencies :: Bindings n -> n -> ExpandForm n
-dependencies = undefined
+dependencies :: Ord n => Bindings n -> n -> [n]
+dependencies bindings n = foldr_deps bindings (:) [] e where
+  (t,e) = bindings Map.! n
   
 
 
