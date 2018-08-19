@@ -58,7 +58,7 @@ import qualified CPU
 import qualified VCD
 import qualified CSV
 import qualified NetFun
-import qualified SeqTermOp
+import qualified SeqNetList
 
 import Data.Map.Lazy (empty, foldrWithKey, insert, Map)
 import qualified Data.Map.Lazy as Map
