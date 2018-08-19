@@ -203,15 +203,23 @@ allDeps (DAG g bs) v = deps where
   -- Note that reachable contains the node itself, so remove.
   deps = Set.delete v reachable' 
   reachable' = Set.fromList $ reachable g v
-  
 
-io :: Bindings' Vertex -> ([Vertex],[Vertex],[Vertex])
-io bindings = (cm delays_in, cm delays_out, cm inputs) where
-  cm = catMaybes
-  [delays_in, delays_out, inputs, outputs] = List.transpose $ map select bindings
-  select b@(o, (_, Delay i _)) = [Just i,  Just o,  Nothing]
-  select b@(n, (_, Input))     = [Nothing, Nothing, Just n]
-  select _                     = [Nothing, Nothing, Nothing]
+
+-- This can accomodate two styles of modules:
+--
+-- . Component modules: ports contain inputs and outputs, Input nodes
+--   are input and Connect nodes set output nodes from internal nodes.
+--
+-- . Applicative I/O modules: ports are outputs, Input nodes are input
+
+io :: Bindings' Vertex -> ([Vertex],[Vertex],[Vertex],[Vertex],[Vertex])
+io bindings = (delays_in, delays_out, inputs, drives, rest) where
+  [delays_in, delays_out, inputs, drives, rest] =
+    map catMaybes $ List.transpose $ map select bindings
+  select (n, (_, Delay n' _)) = [Just n', Just n,  Nothing, Nothing, Nothing]
+  select (n, (_, Input))      = [Nothing, Nothing, Just n,  Nothing, Nothing]
+  select (n, (_, Connect _))  = [Nothing, Nothing, Nothing, Just n,  Nothing ]
+  select (n, _)               = [Nothing, Nothing, Nothing, Nothing, Just n]
   
 
 -- NEXT: Pluck code from SeqExpr to create an inlined representation.
