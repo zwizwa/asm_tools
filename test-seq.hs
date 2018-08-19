@@ -559,14 +559,14 @@ x_verilog = do
   
 x_seqnetlist = do
   putStrLn "-- x_seqnetlist"
-  let (ports, bindings, _) = SeqTerm.compileFun (replicate 5 bit) CPU.soc_test
+  let (ports, bindings, _) = SeqTerm.compileFun (replicate 5 bit) CPU.soc
       SeqNetList.NetList ports' bindings' = SeqNetList.convert ports bindings
-      graph = SeqNetList.toGraph bindings'
-      sorted = SeqNetList.sorted graph
+      dag = SeqNetList.toDAG bindings'
+      sorted = SeqNetList.sorted dag
       nodes = sort $ Set.toList $ Map.keysSet bindings'
   print ports'
   --printL $ assocs'
-  printL $ [ (n, te, SeqNetList.dependencies bindings' n) | (n,te) <- sorted ]
+  printL $ [ (n, te, SeqNetList.dependencies dag n) | (n,te) <- sorted ]
 
   -- Print out the individual dependencies
   -- printL $ catMaybes $ do

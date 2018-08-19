@@ -150,62 +150,57 @@ convert ports bindings = NetList ports' $ Map.fromList bindings'  where
 -- Sort such that definition dominates use, which is needed for most
 -- output code structures.  This is a topological sort from Data.Graph
 
-data BindingsGraph n =
-  BindingsGraph Graph (Vertex -> (Node n, n, [n])) (n -> Maybe Vertex)
+data DAG n = DAG Graph (Vertex -> (Node n, n, [n])) (n -> Maybe Vertex)
 
-sorted :: Ord n => BindingsGraph n -> Bindings' n
-sorted (BindingsGraph graph vertex2node _) = reverse topSort' where
+sorted :: Ord n => DAG n -> Bindings' n
+sorted (DAG graph vertex2node _) = reverse topSort' where
   topSort' = map unpack $ topSort graph where
   unpack v = (n, node) where (node, n, _) = vertex2node v
     
--- Convert to Data.Graph adjacency list representation representation.
-toGraph :: Ord n => Bindings n -> BindingsGraph n
-toGraph bindings = BindingsGraph g v2n n2v where
-  (g, v2n, n2v) = graphFromEdges edges
-  edges = [(te,n, Set.toList $ dependencies bindings n)
-          | (n,te) <- Map.assocs bindings]
+-- Convert to Data.Graph adjacency list representation.
+-- Construct a DAG, so stop at Delay
+-- FIXME: Or keep full cyclic graph but use Forest?
 
--- For that we need to create the dependency list.  Express this in
--- terms of a foldr.
-dependencies :: Ord n => Bindings n -> n -> Set n
-dependencies bindings n = foldr_deps bindings Set.insert Set.empty n
+toDAG :: Ord n => Bindings n -> DAG n
+toDAG bindings = DAG g v2n n2v where
+  (g, v2n, n2v) = graphFromEdges edges'
+  edges' = [(te,n, edges e) | (n,te@(t,e)) <- Map.assocs bindings]
 
--- We can't create a generic Foldable instance due to the Ord
--- constraint arising from the use of Map, so define an explicit
--- foldr.  The iteration unfolds the expression tree and explicitly
--- stops at Delay.
-foldr_deps :: Ord n => Bindings n -> (n -> s -> s) -> s -> n -> s
-foldr_deps bindings f = foldr' where
-  foldr' s parent =
-    case snd $ (bindings Map.! parent) of
-      (Delay _ _) -> s
-      expr -> foldr f' s expr where
-        f' child s = foldr' (f child s) child
-      
+  edges (Delay _ _) = []
+  edges expr = toList expr
 
 
 
+dependencies :: Ord n => DAG n -> n -> Set n
+dependencies (DAG g v2n n2v) n = deps where
+  -- Note that reachable contains the node itself, so remove.
+  deps = Set.delete n reachable' 
+  reachable' = Set.fromList $ map v2n' $ reachable g v 
+  Just v = n2v n
+  v2n' v = n' where (_, n', _) = v2n v
+  
 
--- More misc tools no longer used.
--- FIXME: Express in terms of BindingsGraph.
 
-dependsOn :: (Eq n, Ord n) => Bindings n -> n -> n -> Bool
-dependsOn bindings a b = b `elem` dependencies bindings a
 
-type Fanout n = Map n (Set n)
+-- -- More misc tools that are probably better expressed in terms of DAG
 
-fanout :: forall n. Ord n => NetList n -> Fanout n
-fanout (NetList ports bindings) = fo where
-  -- Traverse over all expression nodes, accumulating parent nodes.
-  fo = foldr acc_expr fo0 bindings'
-  acc_expr (n, (t, expr)) fo = foldr (acc_dep n) fo expr
-  acc_dep nout nin fo = Map.adjust (Set.insert nout) nin fo
-  fo0 = Map.fromList $ zip nodes $ cycle [Set.empty]
-  nodes = map fst bindings'
-  bindings' = Map.assocs bindings
+-- dependsOn :: Ord n => DAG n -> n -> n -> Bool
+-- dependsOn dag a b = b `elem` dependencies dag a
 
--- Define a partition function to isolate Delay nodes
-partition_delay = partition isDelay where
-  isDelay (_, Delay _ _) = True
-  isDelay _ = False
+-- type Fanout n = Map n (Set n)
+
+-- fanout :: forall n. Ord n => NetList n -> Fanout n
+-- fanout (NetList ports bindings) = fo where
+--   -- Traverse over all expression nodes, accumulating parent nodes.
+--   fo = foldr acc_expr fo0 bindings'
+--   acc_expr (n, (t, expr)) fo = foldr (acc_dep n) fo expr
+--   acc_dep nout nin fo = Map.adjust (Set.insert nout) nin fo
+--   fo0 = Map.fromList $ zip nodes $ cycle [Set.empty]
+--   nodes = map fst bindings'
+--   bindings' = Map.assocs bindings
+
+-- -- Define a partition function to isolate Delay nodes
+-- partition_delay = partition isDelay where
+--   isDelay (_, Delay _ _) = True
+--   isDelay _ = False
 
