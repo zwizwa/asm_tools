@@ -12,7 +12,6 @@ module SeqNetList where
 
 import Seq
 import Prelude hiding (foldr)
-import SeqTerm(NodeNum)
 import qualified SeqTerm
 import Control.Monad.State
 import Control.Monad.Writer
@@ -22,7 +21,7 @@ import Data.Map.Lazy(Map)
 import Data.Set(Set)
 import Data.Maybe
 import Data.Foldable
-import Data.List hiding (transpose)
+import qualified Data.List as List
 import Data.Graph
 import qualified Data.Array as Array
 
@@ -62,9 +61,9 @@ data Form n =
 -- of a complete netlist.
 
 convert ::
-  [SeqTerm.Op NodeNum]
-  -> [(NodeNum, SeqTerm.Term (SeqTerm.Op NodeNum))]
-  -> NetList NodeNum
+  [SeqTerm.Op Vertex]
+  -> [(Vertex, SeqTerm.Term (SeqTerm.Op Vertex))]
+  -> NetList Vertex
 
 -- Ports need to be ordered, but the bindings are treated as a graph,
 -- so we can pick an unordered representation.
@@ -72,7 +71,7 @@ data NetList n = NetList [n] (Bindings n)
 type Bindings n = Map n (SSize, Form n)
 
 type CompState = Int
-type CompOut = Bindings' NodeNum
+type CompOut = Bindings' Vertex
 type Node n = (SSize, Form n)
 type Bindings' n = [(n, Node n)]
 
@@ -91,14 +90,14 @@ convert ports bindings = NetList ports' $ Map.fromList bindings'  where
   -- Memory conversion: represent the memory as a combinatorial
   -- operation + a register at the output.  This requires a lookup for
   -- the type of the read data register.
-  mem_rd_type :: Map NodeNum SType
+  mem_rd_type :: Map Vertex SType
   mem_rd_type = Map.fromList $ catMaybes $ map f bindings where
     f (rd, (SeqTerm.MemRd t (SeqTerm.MemNode mem))) = Just (mem, t)
     f _ = Nothing
 
   -- FIXME: the order of the Mem and Delay operations no longer
   -- respect the invariant.
-  conv :: (NodeNum, SeqTerm.Term (SeqTerm.Op NodeNum)) -> M ()
+  conv :: (Vertex, SeqTerm.Term (SeqTerm.Op Vertex)) -> M ()
 
   conv (rd, (SeqTerm.MemRd t mem)) = do
     mem' <- op mem
@@ -153,14 +152,14 @@ convert ports bindings = NetList ports' $ Map.fromList bindings'  where
 
 
 data DAG = DAG Graph (Bindings Vertex)
-
-vertex2node (DAG _ bindings) = (bindings Map.!)
   
 
 toDAG :: Bindings Vertex -> DAG
 toDAG bindings = DAG graph bindings where
   nodes = Set.toList $ Map.keysSet bindings
-  graph = Array.array (0, maximum nodes) init
+  -- Impl: Vertex range should be reasonably dense for this to be
+  -- efficient.  This seems to be the case.  If not, repack.
+  graph = Array.array (minimum nodes, maximum nodes) init
   init = [(n, edges $ snd $ bindings Map.! n) | n <- nodes]
   edges (Delay _ _) = []
   edges expr = toList expr
@@ -206,5 +205,13 @@ allDeps (DAG g bs) v = deps where
   reachable' = Set.fromList $ reachable g v
   
 
+io :: Bindings' Vertex -> ([Vertex],[Vertex],[Vertex])
+io bindings = (cm delays_in, cm delays_out, cm inputs) where
+  cm = catMaybes
+  [delays_in, delays_out, inputs, outputs] = List.transpose $ map select bindings
+  select b@(o, (_, Delay i _)) = [Just i,  Just o,  Nothing]
+  select b@(n, (_, Input))     = [Nothing, Nothing, Just n]
+  select _                     = [Nothing, Nothing, Nothing]
+  
 
-
+-- NEXT: Pluck code from SeqExpr to create an inlined representation.
