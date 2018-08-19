@@ -146,20 +146,11 @@ convert ports bindings = NetList ports' $ Map.fromList bindings'  where
 
 -- Analysis.
 
-
--- Sort such that definition dominates use, which is needed for most
--- output code structures.  This is a topological sort from Data.Graph
-
-data DAG n = DAG Graph (Vertex -> (Node n, n, [n])) (n -> Maybe Vertex)
-
-sorted :: Ord n => DAG n -> Bindings' n
-sorted (DAG graph vertex2node _) = reverse topSort' where
-  topSort' = map unpack $ topSort graph where
-  unpack v = (n, node) where (node, n, _) = vertex2node v
-    
 -- Convert to Data.Graph adjacency list representation.
 -- Construct a DAG, so stop at Delay
 -- FIXME: Or keep full cyclic graph but use Forest?
+
+data DAG n = DAG Graph (Vertex -> (Node n, n, [n])) (n -> Maybe Vertex)
 
 toDAG :: Ord n => Bindings n -> DAG n
 toDAG bindings = DAG g v2n n2v where
@@ -169,6 +160,15 @@ toDAG bindings = DAG g v2n n2v where
   edges (Delay _ _) = []
   edges expr = toList expr
 
+
+-- Sort such that definition dominates use, which is needed for most
+-- output code structures.  This is a topological sort from Data.Graph
+
+sorted :: Ord n => DAG n -> Bindings' n
+sorted (DAG graph vertex2node _) = reverse topSort' where
+  topSort' = map unpack $ topSort graph where
+  unpack v = (n, node) where (node, n, _) = vertex2node v
+    
 
 
 dependencies :: Ord n => DAG n -> n -> Set n
@@ -188,6 +188,8 @@ dependencies (DAG g v2n n2v) n = deps where
 -- dependsOn dag a b = b `elem` dependencies dag a
 
 -- type Fanout n = Map n (Set n)
+
+-- -- FIXME: use transposeG
 
 -- fanout :: forall n. Ord n => NetList n -> Fanout n
 -- fanout (NetList ports bindings) = fo where
