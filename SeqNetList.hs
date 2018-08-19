@@ -70,7 +70,8 @@ data NetList n = NetList [n] (Bindings n)
 type Bindings n = Map n (SSize, Form n)
 
 type CompState = Int
-type CompOut = [(NodeNum, (SSize, Form NodeNum))]
+type CompOut = Bindings' NodeNum
+type Bindings' n = [(n, (SSize, Form n))]
 
 
 newtype M t = M { unM :: WriterT CompOut (State CompState) t } deriving
@@ -149,21 +150,21 @@ type Fanout n = Map n (Set n)
 
 fanout :: forall n. Ord n => NetList n -> Fanout n
 fanout (NetList ports bindings) = fo where
+  -- Traverse over all expression nodes, accumulating parent nodes.
   fo = foldr acc_expr fo0 bindings'
   acc_expr (n, (t, expr)) fo = foldr (acc_dep n) fo expr
   acc_dep nout nin fo = Map.adjust (Set.insert nout) nin fo
   fo0 = Map.fromList $ zip nodes $ cycle [Set.empty]
   nodes = map fst bindings'
-  bindings' = Map.toList bindings
+  bindings' = Map.assocs bindings
 
 
--- Sort such that definition dominates use.  This is possible when
--- Delay nodes are removed during the sort, and added to the end.
 
--- First, define a partition function to isolate Delay nodes
-partition_delay = partition isDelay where
-  isDelay (_, Delay _ _) = True
-  isDelay _ = False
+-- Sort such that definition dominates use, which is needed for most
+-- output code structures.
+
+-- When delay nodes are removed, there is a partial order between the
+-- nodes.
 
 -- Sorting can be done based on the order relation defined by
 -- dependencies, which can be determined.  We have this in two pieces:
@@ -173,33 +174,55 @@ partition_delay = partition isDelay where
 -- The dumb way is just to traverse the tree.  To see if a depends on
 -- b, iterate over all dependencies and determine if b is present.
 
--- If all the dependencies of a node can be expressed as a Foldable,
--- this is just:
+-- If all the dependencies of a node can be collected in a list, this
+-- is just:
 
 depends :: (Eq n, Ord n) => Bindings n -> n -> n -> Bool
-depends bindings a b = or $ map (b ==) $ dependencies bindings a
+depends bindings a b = b `elem` dependencies bindings a
 
--- Dependencies can be computed by unfolding the expression.  After
--- attempting to do this using a wrapper type and a Foldable instance,
--- it became clear that there is an Ord constraint on the node type
--- due to the Map.  So just define an explicit foldr.
+-- Dependencies can be computed by unfolding the expression tree and
+-- stoppnig at Delay (And at Input, Const, but those are already leaf
+-- nodes.
 
+-- After attempting to do this using a wrapper type and a Foldable
+-- instance, it became clear that there is an Ord constraint on the
+-- node type due to the Map.  So just define an explicit foldr.
 
-foldr_deps :: Ord n => Bindings n -> (n -> s -> s) -> s -> Form n -> s
-foldr_deps bindings = foldr' where
-  foldr' _ s (Delay _ _) = s
-  foldr' f s expr = foldr f' s expr where
-    f' n s = foldr f' (f n s)  e where
-      (t,e) = bindings Map.! n
+foldr_deps :: Ord n => Bindings n -> (n -> s -> s) -> s -> n -> s
+foldr_deps bindings f = foldr' where
+  foldr' s parent =
+    case snd $ (bindings Map.! parent) of
+      (Delay _ _) -> s
+      expr -> foldr f' s expr where
+        f' child s = foldr' (f child s) child
+      
 
 dependencies :: Ord n => Bindings n -> n -> [n]
-dependencies bindings n = foldr_deps bindings (:) [] e where
-  (t,e) = bindings Map.! n
+dependencies bindings n = foldr_deps bindings (:) [] n
+
+-- With this, the sort is
+sort_bindings :: (Eq n, Ord n) => Bindings n -> Bindings' n
+sort_bindings bindings = sortBy ord $ Map.assocs bindings where
+  ord (a,_) (b,_) =
+    case a == b of
+      True -> EQ
+      _ -> if depends bindings a b then GT else LT
+
+
+
+-- FIXME: test this
+-- Maybe not correct: needs topological sort
+-- https://en.wikipedia.org/wiki/Topological_sorting
+
+-- To create a full order, sort by number if nodes are mutually
+-- independent.
+
+-- Also, probably the order relation needs to be memoized?
+
   
 
-
--- Note that once we have a way to sort the graph, it's ok to
--- represent it as a Map instead.
-
-  
+-- -- Define a partition function to isolate Delay nodes
+-- partition_delay = partition isDelay where
+--   isDelay (_, Delay _ _) = True
+--   isDelay _ = False
 
