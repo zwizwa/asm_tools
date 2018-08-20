@@ -83,7 +83,7 @@ vModule mod_name portNames portTypes mod = Verilog portSpecs vCode where
 
   -- mem_decls = concat $ map memory_decl $ part Memories
 
-  -- assigns = concat $ map assign $ (part Exprs ++ part Connects)
+  assigns = concat $ map assign $ (part Exprs ++ part Connects)
 
   updates = concat $ map update $ part Delays
   resets  = concat $ map reset  $ part Delays
@@ -101,6 +101,7 @@ vModule mod_name portNames portTypes mod = Verilog portSpecs vCode where
     decls "output" Connects ++
     decls "wire"   Exprs ++
     decls "reg"    Delays ++
+    assigns ++
     "always @(posedge CLK, negedge RST) begin: SEQ\n" ++
     tab ++ "if (RST==0) begin\n" ++
     resets ++
@@ -113,7 +114,6 @@ vModule mod_name portNames portTypes mod = Verilog portSpecs vCode where
     
   -- vCode =
   --   mem_decls ++
-  --   assigns ++
   --   memwr_assigns ++
   --   memrd_updates ++
   --   memwr_updates ++
@@ -186,9 +186,9 @@ proj_err b = error $ "projection error: " ++ show b
 --   "end\n"
 -- memwr_update b = proj_err b
 
--- assign b@(name, term) =
---   "assign " ++ name ++ " = " ++ expr term ++ ";" ++
---   debug b
+assign b@(name, (_, term)) =
+  "assign " ++ name ++ " = " ++ op term ++ ";" ++
+  debug b
 
 reset b@(name, (t, (Free (Delay _ i)))) =
   tab ++ tab ++ name ++ " <= " ++ literal (t,i) ++ ";" ++
@@ -206,27 +206,29 @@ literal ((Just sz), v) = show sz ++ "'b" ++ bits where
   bits' = showIntAtBase 2 intToDigit v' "" 
   bits  = replicate (sz - length bits') '0' ++ bits'
 
--- op (Node _ name) = name
--- op (Const t) = literal t
--- op (MemNode name) = error $ "op: MemNode projection error: " ++ name
+op (Pure n) = n
+op (Free f) = expr f
 
--- expr (Comb1 _ INV o) = "!" ++ op o
--- expr (Comb2 _ ADD a b) = op2 "+" a b
--- expr (Comb2 _ SUB a b) = op2 "-" a b
--- expr (Comb2 _ MUL a b) = op2 "*" a b
--- expr (Comb2 _ AND a b) = op2 "&" a b
--- expr (Comb2 _ OR  a b) = op2 "|" a b
--- expr (Comb2 _ XOR a b) = op2 "^" a b
--- expr (Comb2 _ SLL a b) = op2 "<<" a b
--- expr (Comb2 _ SLR a b) = op2 ">>" a b
--- expr (Comb2 _ CONC a b) = "{" ++ op a ++ ", " ++ op b ++ "}"
--- expr (Comb2 _ EQU a b) = op2 "==" a b
--- expr (Comb3 _ IF a b c) = op a ++ " ? " ++ op b ++ " : " ++ op c
--- expr (Connect _ o) = op o
--- expr (Slice _ o (Just u) l) = op o ++ "[" ++ show (u-1) ++ ":" ++ show l ++ "]"
--- expr e = "... /* " ++ show e ++ " */ "
+parens str = "(" ++ str ++ ")"
 
--- op2 opc a b = op a ++ " " ++ opc ++ " " ++ op b
+expr (Const v) = show v
+expr (Comb1 INV o) = parens $ "!" ++ op o
+expr (Comb2 ADD a b) = op2 "+" a b
+expr (Comb2 SUB a b) = op2 "-" a b
+expr (Comb2 MUL a b) = op2 "*" a b
+expr (Comb2 AND a b) = op2 "&" a b
+expr (Comb2 OR  a b) = op2 "|" a b
+expr (Comb2 XOR a b) = op2 "^" a b
+expr (Comb2 SLL a b) = op2 "<<" a b
+expr (Comb2 SLR a b) = op2 ">>" a b
+expr (Comb2 CONC a b) = "{" ++ op a ++ ", " ++ op b ++ "}"
+expr (Comb2 EQU a b) = op2 "==" a b
+expr (Comb3 IF a b c) = op a ++ " ? " ++ op b ++ " : " ++ op c
+expr (Connect o) = op o
+expr (Slice o (Just u) l) = op o ++ "[" ++ show (u-1) ++ ":" ++ show l ++ "]"
+expr e = "... /* " ++ show e ++ " */ "
+
+op2 opc a b = parens (op a ++ " " ++ opc ++ " " ++ op b)
 
 commas = intercalate ", "
 
