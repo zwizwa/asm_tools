@@ -21,6 +21,7 @@ import Data.Map.Lazy(Map)
 import Data.Set(Set)
 import Data.Maybe
 import Data.Foldable
+import Control.Monad.Free
 import qualified Data.List as List
 import Data.Graph
 import qualified Data.Array as Array
@@ -56,10 +57,8 @@ data Form n =
   deriving (Show, Functor, Foldable)
 
 
-
 -- Converting between Term.Term and this makes sense only at the level
 -- of a complete netlist.
-
 convert ::
   [SeqTerm.Op Vertex]
   -> [(Vertex, SeqTerm.Term (SeqTerm.Op Vertex))]
@@ -67,13 +66,13 @@ convert ::
 
 -- Ports need to be ordered, but the bindings are treated as a graph,
 -- so we can pick an unordered representation.
-data NetList n = NetList [n] (Bindings n)
-type Bindings n = Map n (SSize, Form n)
+data NetList n = NetList [n] (BindMap n)
+type BindMap n = Map n (TForm n)
+type TForm n = (SSize, Form n)
 
 type CompState = Int
-type CompOut = Bindings' Vertex
-type Node n = (SSize, Form n)
-type Bindings' n = [(n, Node n)]
+type CompOut = BindList Vertex
+type BindList n = [(n, TForm n)]
 
 
 newtype M t = M { unM :: WriterT CompOut (State CompState) t } deriving
@@ -151,10 +150,10 @@ convert ports bindings = NetList ports' $ Map.fromList bindings'  where
 -- Note: see 'sorted' about what Delay means in this setting.
 
 
-data DAG = DAG Graph (Bindings Vertex)
+data DAG = DAG Graph (BindMap Vertex)
   
 
-toDAG :: Bindings Vertex -> DAG
+toDAG :: BindMap Vertex -> DAG
 toDAG bindings = DAG graph bindings where
   nodes = Set.toList $ Map.keysSet bindings
   -- Impl: Vertex range should be reasonably dense for this to be
@@ -184,7 +183,7 @@ transpose (DAG graph bindings) = DAG (transposeG graph) bindings
 --
 -- (151,(Just 8,Delay 154 0),fromList [])
 
-sorted :: DAG -> Bindings' Vertex
+sorted :: DAG -> BindList Vertex
 sorted (DAG graph bindings) = reverse topSort' where
   topSort' = map unpack $ topSort graph where
   unpack v = (v, bindings Map.! v)
@@ -195,6 +194,8 @@ sorted (DAG graph bindings) = reverse topSort' where
 -- FIXME: n2v is wrong here.
 fanout dag = deps (transpose dag)
 deps (DAG g bs) n = g Array.! n
+
+refcount dag = length . (fanout dag)
   
 -- Closure of the above.
 allFanout dag = allDeps (transpose dag)
@@ -212,7 +213,7 @@ allDeps (DAG g bs) v = deps where
 --
 -- . Applicative I/O modules: ports are outputs, Input nodes are input
 
-io :: Bindings' Vertex -> ([Vertex],[Vertex],[Vertex],[Vertex],[Vertex])
+io :: BindList Vertex -> ([Vertex],[Vertex],[Vertex],[Vertex],[Vertex])
 io bindings = (delays_in, delays_out, inputs, drives, rest) where
   [delays_in, delays_out, inputs, drives, rest] =
     map catMaybes $ List.transpose $ map select bindings
@@ -222,4 +223,40 @@ io bindings = (delays_in, delays_out, inputs, drives, rest) where
   select (n, _)               = [Nothing, Nothing, Nothing, Nothing, Just n]
   
 
--- NEXT: Pluck code from SeqExpr to create an inlined representation.
+-- Convert a flat dictionary to one that has expressions inlined where
+-- possible.  Note that we get rid of the types of the intermediate
+-- nodes.  This should be fine: the point of this is to generate
+-- target code that supports expressions, which will not have type
+-- annotations for intermediate nodes either.
+
+type Expr n = Free Form n
+
+inlined :: DAG -> [(Vertex, (SSize, Expr Vertex))]
+inlined dag@(DAG graph bindings) = [(n, (t, exprDef n)) | (n,(t,_)) <- keep] where
+
+  ref :: Vertex -> Form Vertex
+  ref = snd . (bindings Map.!)
+  
+  keep :: BindList Vertex
+  keep = filter (not . inlinable . fst) $ sorted dag
+  
+  exprDef n = (liftF $ ref n)    -- unpack at least root expression
+              >>= unfold inline  -- plus inline
+
+  -- The Pure/Free unfold decision is represented as Either
+  inline :: Vertex -> Either Vertex (Form Vertex)
+  inline n = case inlinable n of
+               False -> Left n
+               True  -> Right $ ref n
+
+  inlinable :: Vertex -> Bool
+  inlinable n = 
+    case ref n of
+      (Delay _ _) ->      False -- inlining Delay would create loops
+      (Memory _ _ _ _) -> False -- keep this separate for easy code gen
+      (Input)          -> False -- keep external refernces as nodes
+      _ -> 1 == refcount dag n  -- rc > 1 would lead to code duplication
+  
+  
+
+

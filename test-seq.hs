@@ -563,11 +563,15 @@ x_seqnetlist = do
       SeqNetList.NetList ports' bindings' = SeqNetList.convert ports bindings
       dag = SeqNetList.toDAG bindings'
       sorted = SeqNetList.sorted dag
+      inlined = SeqNetList.inlined dag
       nodes = sort $ Set.toList $ Map.keysSet bindings'
   print ports'
   --printL $ assocs'
   putStrLn "--- sorted"
   printL $ [ (n, te, SeqNetList.allDeps dag n) | (n,te) <- sorted ]
+
+  putStrLn "--- inlined"
+  printL $ inlined
 
   -- 
   --putStrLn "--- fanout"

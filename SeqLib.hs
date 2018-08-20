@@ -666,8 +666,6 @@ async_transmit bitClock (wordClock, txData) = do
             SInt (Just $ nb_bits $ n+2) 0] $
     \[shiftReg, cnt] -> do
 
-      -- $(names [| [shiftReg, cnt] |])  -- Reify variable names
-      
 
       -- Outputs are a function of previous state.
       out  <- slice' shiftReg 1 0
