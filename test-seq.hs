@@ -63,6 +63,7 @@ import qualified SeqNetList
 import qualified MyHDL
 import qualified MyHDLRun
 import qualified Verilog
+import qualified Verilog2
 
 import Data.Map.Lazy (empty, foldrWithKey, insert, Map, assocs)
 import qualified Data.Map.Lazy as Map
@@ -119,6 +120,7 @@ main = do
   x_run_myhdl
   x_testbench
   x_verilog
+  x_verilog2
   x_seqnetlist
 
 x_counter = do
@@ -530,36 +532,46 @@ x_testbench = do
   print tb
 
 
+all_ops [i, o] = do
+  n <- closeMem [bits 16] $ \[rd] -> do
+    ra <- counter $ bits 8
+    a <- inv i >>= delay
+    b <- i `add` a
+    c <- i `sub` a
+    d <- i `mul` a
+    e <- i `bxor` a
+    f <- i `bor` a
+    g <- i `band` a
+    h <- i `sll` a
+    x <- i `slr` a
+    j <- i `equ` a
+    k <- if' i a b
+    l <- reduce' conc [a,b,c,d,e,f,g,h,x,j,k,rd]
+    m <- slice' l 4 2
+    n <- conc l m
+    -- n should depend on all
+    return ([(cbit 0, cbits 8 0, cbits 16 0, ra)], n)
+  connect o n
+
 x_verilog = do
   putStrLn "-- x_verilog"
-  let mod [i, o] = do
-        n <- closeMem [bits 16] $ \[rd] -> do
-          ra <- counter $ bits 8
-          a <- inv i >>= delay
-          b <- i `add` a
-          c <- i `sub` a
-          d <- i `mul` a
-          e <- i `bxor` a
-          f <- i `bor` a
-          g <- i `band` a
-          h <- i `sll` a
-          x <- i `slr` a
-          j <- i `equ` a
-          k <- if' i a b
-          l <- reduce' conc [a,b,c,d,e,f,g,h,x,j,k,rd]
-          m <- slice' l 4 2
-          n <- conc l m
-          -- n should depend on all
-          return ([(cbit 0, cbits 8 0, cbits 16 0, ra)], n)
-        connect o n
+  let mod = all_ops
       v = Verilog.vModule "mymod" ["IN", "OUT"] [bit, bit] mod
   print $ v
   writeFile "x_verilog.v" $ show v
+
+x_verilog2 = do
+  putStrLn "-- x_verilog2"
+  let mod = all_ops
+      v = Verilog2.vModule "mymod" ["IN", "OUT"] [bit, bit] mod
+  print $ v
+  writeFile "x_verilog2.v" $ show v
   
   
 x_seqnetlist = do
   putStrLn "-- x_seqnetlist"
-  let (ports, bindings, _) = SeqTerm.compileFun (replicate 5 bit) CPU.soc
+  let mod = CPU.soc
+      (ports, bindings, _) = SeqTerm.compileFun (replicate 5 bit) CPU.soc
       SeqNetList.NetList ports' bindings' = SeqNetList.convert ports bindings
       dag = SeqNetList.toDAG bindings'
       sorted = SeqNetList.sorted dag

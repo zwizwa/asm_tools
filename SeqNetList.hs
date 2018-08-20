@@ -232,14 +232,15 @@ io bindings = (delays_in, delays_out, inputs, drives, rest) where
 type Expr n = Free Form n
 
 inlined :: DAG -> [(Vertex, (SSize, Expr Vertex))]
-inlined dag@(DAG graph bindings) = [(n, (t, exprDef n)) | (n,(t,_)) <- keep] where
+inlined dag@(DAG _ bindings) = [(n, (t, exprDef n)) | (n,(t,_)) <- keep] where
 
   ref :: Vertex -> Form Vertex
   ref = snd . (bindings Map.!)
   
   keep :: BindList Vertex
   keep = filter (not . inlinable . fst) $ sorted dag
-  
+
+  exprDef :: Vertex -> Expr Vertex
   exprDef n = (liftF $ ref n)    -- unpack at least root expression
               >>= unfold inline  -- plus inline
 
@@ -258,5 +259,11 @@ inlined dag@(DAG graph bindings) = [(n, (t, exprDef n)) | (n,(t,_)) <- keep] whe
       _ -> 1 == refcount dag n  -- rc > 1 would lead to code duplication
   
   
+-- For Verilog, but likely necessary for other HDLs.  In the Form
+-- language, memories are represented as a read data register (Delay)
+-- and a memory lookup combinatorial network (Memory).  Those need to
+-- be identified such that the memory storage can be declared properly.
+
+
 
 
