@@ -571,8 +571,8 @@ x_verilog2 = do
 x_seqnetlist = do
   putStrLn "-- x_seqnetlist"
   let mod = CPU.soc
-      (ports, bindings, _) = SeqTerm.compileFun (replicate 5 bit) CPU.soc
-      SeqNetList.NetList ports' bindings' = SeqNetList.convert ports bindings
+      pbp@(ports, bindings, probes) = SeqTerm.compileFun (replicate 5 bit) CPU.soc
+      SeqNetList.NetList ports' bindings' _ = SeqNetList.convert pbp
       dg = SeqNetList.toDG bindings'
       sorted = SeqNetList.sorted dg
       inlined = SeqNetList.inlined dg

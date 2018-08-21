@@ -87,9 +87,18 @@ termType (MemWr _) =
   -- (SInt (Just 123) 123)
   error $ "termType: MemWr"
 
-opType (Const t) = t
-opType (Node t _) = t
-opType (MemNode _) = error $ "opType: MemNode"
+opType o = case opType' o of
+  (Just t) -> t
+  Nothing -> error $ "opType: MemNode"
+
+opType' (Const t) = Just t
+opType' (Node t _) = Just t
+opType' (MemNode _) = Nothing
+
+opNode (Const _) = Nothing
+opNode (Node _ n) = Just n
+opNode (MemNode n) = Just n
+
 
 
 type NodeNum  = Int

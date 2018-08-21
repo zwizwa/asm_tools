@@ -64,13 +64,14 @@ data TypedForm n = TypedForm { typedFormType :: SSize, typedFormForm :: Form n }
 -- Converting between Term.Term and this makes sense only at the level
 -- of a complete netlist.
 convert ::
-  [SeqTerm.Op Vertex]
-  -> [(Vertex, SeqTerm.Term (SeqTerm.Op Vertex))]
+  ([SeqTerm.Op Vertex],
+   [(Vertex, SeqTerm.Term (SeqTerm.Op Vertex))],
+   [(SeqTerm.Op Vertex, String)])
   -> NetList Vertex
 
 -- Ports need to be ordered, but the bindings are treated as a graph,
 -- so we can pick an unordered representation.
-data NetList n = NetList [n] (BindMap n)
+data NetList n = NetList [n] (BindMap n) [(n,String)]
 type BindMap n = Map n (TypedForm n)
 
 type CompState = Int
@@ -81,9 +82,15 @@ type BindList n = [(n, TypedForm n)]
 newtype M t = M { unM :: WriterT CompOut (State CompState) t } deriving
     (Functor, Applicative, Monad, MonadState CompState, MonadWriter CompOut)
 
-convert ports bindings = NetList ports' $ Map.fromList bindings'  where
+convert (ports, bindings, probes) = NetList ports' (Map.fromList bindings') probes'  where
   init = maximum $ map fst bindings
   ((ports', bindings'), _)  = runState (runWriterT $ unM mconv) init
+
+  probes' :: [(Vertex, String)]
+  probes' = catMaybes $ map probeType probes
+  probeType (op, name) = do
+    n <- SeqTerm.opNode op
+    return (n, name)
 
   mconv = do
     mapM_ conv bindings
@@ -289,4 +296,8 @@ showTE (Free f) = show f
 
 showSZ Nothing = "?"
 showSZ (Just n) = show n
+
+
+
+compileTerm = convert . SeqTerm.compileTerm
 
