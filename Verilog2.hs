@@ -2,6 +2,10 @@
 -- [(Vertex, (SSize, Expr Vertex))]
 
 
+-- The 'error' cases are projection errors.  FIXME: is there a simple
+-- way to avoid these?  E.g. project partitions down to simpler data
+-- types.
+
 
 -- Since we're just generating RTL, there is a fairly direct mapping
 -- from SeqTerm to Verilog.
@@ -62,29 +66,39 @@ vModule mod_name portNames portTypes mod = Verilog portSpecs vCode where
 
   -- Graph algos only operate on Vertex
   (ports, bindings', probes) = SeqTerm.compileTerm mod'
-  netlist@(NetList _ bindmap) = convert ports bindings'
-  dg = toDG bindmap
+  netlist@(NetList _ formMap) = convert ports bindings'
+  dg = toDG formMap
 
-  bindings = map unpack $ inlined dg where
+  exprList = map unpack $ inlined dg where
     unpack (n, TypedExpr te) = (n, te)
+  exprMap = Map.fromList exprList
   
+  -- look up form and expression based on vertex
+  refForm :: Vertex -> TypedForm Vertex
+  refForm = (formMap Map.!)
+  refExpr :: Vertex -> TypedExpr' Vertex
+  refExpr = (exprMap Map.!)
   
   -- Convert node rep to String
   -- bindings = map nameBinding $ inlined dag where
   --   -- FIXME: use probe names
-  --   nameBinding (n, e) = (nameNode n, fmap nameNode e)
+  --   nameBinding (n, e) = (vertexName n, fmap vertexName e)
 
-  nameNode = ("s" ++) . show
+  vertexName = ("s" ++) . show
   
-  part = partition' bindings
+  part = partition' exprList
 
   portSpecs = undefined
 
   
-  
   sigDecl kind (Just sz) n =
-    kind ++ " [" ++ show (sz-1) ++ ":0] " ++ nameNode n ++ ";"
-  sigDecl _ _ n = error $ "sigDecl needs fixed bit size: " ++ nameNode n
+    kind ++ " [" ++ show (sz-1) ++ ":0] " ++ vertexName n ++ ";"
+  sigDecl _ _ n = error $ "sigDecl needs fixed bit size: " ++ vertexName n
+
+  arrDecl (Just d_sz) n a_sz =
+    "reg [" ++ show (d_sz-1) ++ ":0] " ++ vertexName n ++ "[0:" ++ show (a_sz-1) ++ "];"
+  arrDecl _ n _ = error $ "arrDecl needs fixed bit size: " ++ vertexName n
+  
   
   decl typ b@(n, (Free (TypedForm bits _))) =
     (sigDecl typ) bits n ++ debug b
@@ -92,16 +106,16 @@ vModule mod_name portNames portTypes mod = Verilog portSpecs vCode where
 
 
   assign b@(n, term) =
-    "assign " ++ nameNode n ++ " = " ++ op term ++ ";" ++
+    "assign " ++ vertexName n ++ " = " ++ op term ++ ";" ++
     debug b
 
   reset b@(n, Free (TypedForm t (Delay _ i))) =
-    tab ++ tab ++ nameNode n ++ " <= " ++ literal (t,i) ++ ";" ++
+    tab ++ tab ++ vertexName n ++ " <= " ++ literal (t,i) ++ ";" ++
     debug b
   reset b = proj_err b
 
   update b@(n, Free (TypedForm _ (Delay n' _))) =
-    tab ++ tab ++ nameNode n ++ " <= " ++ (op n') ++ ";" ++
+    tab ++ tab ++ vertexName n ++ " <= " ++ (op n') ++ ";" ++
     debug b
   update b = proj_err b
   
@@ -112,7 +126,7 @@ vModule mod_name portNames portTypes mod = Verilog portSpecs vCode where
     bits  = replicate (sz - length bits') '0' ++ bits'
 
   op :: Free SeqNetList.TypedForm Vertex -> String
-  op (Pure n) = nameNode n
+  op (Pure n) = vertexName n
   op (Free (TypedForm bits (Const v))) = literal (bits, v)
   op (Free (TypedForm bits f)) = expr f
 
@@ -156,33 +170,40 @@ vModule mod_name portNames portTypes mod = Verilog portSpecs vCode where
 
   decls typ p = concat $ map (decl typ) $ part p
 
-  
-  -- Bundle Delay and Memory nodes.  These are not inlined, so use the
-  -- original form, a little easier.
-  memnodes :: [((Vertex, TypedForm Vertex),
-                (Vertex, TypedForm Vertex))]
-  memnodes = take 0 $ map memnode $ part Memories where
-    memnode (n, e) = ((n, bindmap Map.! n), (n', e')) where
-      n' = case fanout dg n of
-        [n'] -> n'
-        -- Shows up as [] sometimes. bug?
+
+  -- Associate Memory nodes with the corresponding Delay node.
+  mem_nodes :: [(Vertex, Vertex)]
+  mem_nodes = map (memnode . fst) $ part Memories where
+    memnode memn = (memn, deln) where
+      deln = case fanout dg memn of
+        [n] -> n
         fo -> error $ "memnode: fanout: " ++ show fo 
-      e' = bindmap Map.! n'
   
-  mem_decls = concat $ map memory_decl memnodes
-  memory_decl :: ((Vertex, TypedForm Vertex), (Vertex, TypedForm Vertex)) -> String
-  memory_decl args@((memn, (TypedForm _ (Memory we wa wd ra))), (deln, (TypedForm _ (Delay _ _)))) =
-    "// " ++ show args ++ "\n"
-    -- FIXME
-    -- let arrSize = 2 ^ n
-    --     (SInt (Just n) _) = opType wa
-    -- in
-    --   -- Note: the _ra signal is derived from the memory name.
-    --   sigDecl "reg" t name ++ debug b
-    --   arrDecl (opType wd) mem_name arrSize ++
-    --   debug b ++
-    --   sigDecl "wire" (opType ra) (mem_name ++ "_ra") ++
-    --   debug b
+  mem_decls = concat $ map mem_decl mem_nodes
+  mem_decl :: (Vertex, Vertex) -> String
+  mem_decl (memn, deln) = str_del ++ str_arr where
+    TypedForm tr@(Just data_bits) (Memory we wa wd ra) = refForm memn
+    TypedForm (Just addr_bits) _ = refForm wa
+    arr_size :: Int
+    arr_size = 2 ^ addr_bits
+    str_del = sigDecl "reg" tr deln    ++ (debug $ refForm deln) -- Read Data register
+    str_arr = arrDecl tr memn arr_size ++ (debug $ refForm memn) -- Verilog Array
+
+  mem_updates = concat $ map mem_update mem_nodes
+  mem_update :: (Vertex, Vertex) -> String
+  mem_update (memn, deln) = str_wr ++ str_rd where
+    (Free (TypedForm _ (Memory we wa wd ra))) = refExpr memn
+    str_rd = "always @(posedge CLK) begin\n" ++
+             tab ++ vertexName deln ++ " <= " ++
+             vertexName memn ++ "[" ++ op ra ++ "];" ++ (debug $ refForm deln) ++
+             "end\n"
+    str_wr = "always @(posedge CLK) begin\n" ++
+             tab ++ "if (" ++ op we ++ ") begin\n" ++
+             tab ++ tab ++ vertexName memn ++ "[" ++ op wa ++ "] <= " ++
+             op wd ++ ";" ++ (debug $ refForm memn) ++
+             tab ++ "end\n" ++
+             "end\n"
+
 
 
   assigns = concat $ map assign $ (part Exprs ++ part Connects)
@@ -205,6 +226,7 @@ vModule mod_name portNames portTypes mod = Verilog portSpecs vCode where
     decls "reg"    Delays ++
     mem_decls ++
     assigns ++
+    mem_updates ++
     "always @(posedge CLK, negedge RST) begin: SEQ\n" ++
     tab ++ "if (RST==0) begin\n" ++
     resets ++
@@ -222,14 +244,9 @@ vModule mod_name portNames portTypes mod = Verilog portSpecs vCode where
 
 
 tab = "    "
-debug t = " // " ++ show t ++ "\n"
+-- debug t = " // " ++ show t ++ "\n"
+debug _ = "\n"
 
-
--- debug _ = "//\n"
-
--- arrDecl (SInt (Just n) _) name sz =
---   "reg [" ++ show (n-1) ++ ":0] " ++ name ++ "[0:" ++ show (sz-1) ++ "];"
--- arrDecl _ name _ = error $ "arrDecl needs fixed bit size: " ++ name
 
 
 
