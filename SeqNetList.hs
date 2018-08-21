@@ -21,6 +21,7 @@ import Data.Map.Lazy(Map)
 import Data.Set(Set)
 import Data.Maybe
 import Data.Foldable
+import Data.List
 import Control.Monad.Free
 import qualified Data.List as List
 import Data.Graph
@@ -56,6 +57,9 @@ data Form n =
   | Connect n
   deriving (Show, Functor, Foldable)
 
+data TypedForm n = TypedForm { typedFormType :: SSize, typedFormForm :: Form n }
+  deriving (Show, Functor, Foldable)
+
 
 -- Converting between Term.Term and this makes sense only at the level
 -- of a complete netlist.
@@ -67,12 +71,11 @@ convert ::
 -- Ports need to be ordered, but the bindings are treated as a graph,
 -- so we can pick an unordered representation.
 data NetList n = NetList [n] (BindMap n)
-type BindMap n = Map n (TForm n)
-type TForm n = (SSize, Form n)
+type BindMap n = Map n (TypedForm n)
 
 type CompState = Int
 type CompOut = BindList Vertex
-type BindList n = [(n, TForm n)]
+type BindList n = [(n, TypedForm n)]
 
 
 newtype M t = M { unM :: WriterT CompOut (State CompState) t } deriving
@@ -100,17 +103,17 @@ convert ports bindings = NetList ports' $ Map.fromList bindings'  where
 
   conv (rd, (SeqTerm.MemRd t mem)) = do
     mem' <- op mem
-    tell $ [(rd, (sz t, Delay mem' $ val t))]  -- FIXME: in practice this is undefined
+    tell $ [(rd, TypedForm (sz t) (Delay mem' $ val t))]  -- FIXME: in practice this is undefined
   conv  (mem, (SeqTerm.MemWr (a,b,c,d))) = do
     let t = mem_rd_type Map.! mem
     a' <- op a ; b' <- op b ; c' <- op c ; d' <- op d
-    tell $ [(mem, (sz t, Memory a' b' c' d'))]
+    tell $ [(mem, TypedForm (sz t) (Memory a' b' c' d'))]
 
   -- The rest is straightforward: lift out type while constants are extracted.
   conv (n, e) = do
     let (SInt sz _) = SeqTerm.termType e
-    te' <- conv' e
-    tell $ [(n, (sz, te'))]
+    e' <- conv' e
+    tell $ [(n, TypedForm sz e')]
   
   conv' (SeqTerm.Input t) = return $ Input
   
@@ -132,7 +135,7 @@ convert ports bindings = NetList ports' $ Map.fromList bindings'  where
   op (SeqTerm.Node t n) = return n
   op (SeqTerm.Const t) = do
     n <- newNode
-    tell [(n, (sz t, Const $ val t))]
+    tell [(n, TypedForm (sz t) (Const $ val t))]
     return n
 
   newNode = do
@@ -145,26 +148,28 @@ convert ports bindings = NetList ports' $ Map.fromList bindings'  where
 
 -- Analysis.
 
--- Convert to Data.Graph adjacency list representation.
--- To construct a DAG, cut off at Delay.
--- Note: see 'sorted' about what Delay means in this setting.
+-- Annotate bindings with a Data.Graph adjacency list representation.
+-- Keep two annotations:
+-- . full cyclic graph
+-- . combinatorial a-cyclic graph, cut off at Delay
 
+data DG = DG { dcg :: Graph, dag :: Graph, bindMap :: BindMap Vertex }
 
-data DAG = DAG Graph (BindMap Vertex)
-  
+toDG :: BindMap Vertex -> DG
+toDG bindings = DG (toGraph toList) (toGraph toList') bindings where
 
-toDAG :: BindMap Vertex -> DAG
-toDAG bindings = DAG graph bindings where
   nodes = Set.toList $ Map.keysSet bindings
-  -- Impl: Vertex range should be reasonably dense for this to be
-  -- efficient.  This seems to be the case.  If not, repack.
-  graph = Array.array (minimum nodes, maximum nodes) init
-  init = [(n, edges $ snd $ bindings Map.! n) | n <- nodes]
-  edges (Delay _ _) = []
-  edges expr = toList expr
 
+  toList' (Delay _ _) = []
+  toList' expr = toList expr
 
-transpose (DAG graph bindings) = DAG (transposeG graph) bindings
+  toGraph :: (Form Vertex -> [Vertex]) -> Graph
+  toGraph edges = graph where
+    -- Impl: Vertex range should be reasonably dense for this to be
+    -- efficient.  This seems to be the case.  If not, repack.
+    graph = Array.array (minimum nodes, maximum nodes) init
+    init = [(n, edges $ typedFormForm $ bindings Map.! n) | n <- nodes]
+
 
 
 -- Sort such that definition dominates use, which is needed for most
@@ -183,27 +188,27 @@ transpose (DAG graph bindings) = DAG (transposeG graph) bindings
 --
 -- (151,(Just 8,Delay 154 0),fromList [])
 
-sorted :: DAG -> BindList Vertex
-sorted (DAG graph bindings) = reverse topSort' where
-  topSort' = map unpack $ topSort graph where
+sorted :: DG -> BindList Vertex
+sorted (DG _ dag bindings) = reverse topSort' where
+  topSort' = map unpack $ topSort dag where
   unpack v = (v, bindings Map.! v)
     
 
-
 -- Connectivity in both directions.
--- FIXME: n2v is wrong here.
-fanout dag = deps (transpose dag)
-deps (DAG g bs) n = g Array.! n
+deps (DG dcg _ bs) n = dcg Array.! n
+fanout (DG dcg _ bs) n = (transposeG dcg) Array.! n
 
-refcount dag = length . (fanout dag)
-  
--- Closure of the above.
-allFanout dag = allDeps (transpose dag)
-allDeps :: DAG -> Vertex -> Set Vertex
-allDeps (DAG g bs) v = deps where
-  -- Note that reachable contains the node itself, so remove.
-  deps = Set.delete v reachable' 
-  reachable' = Set.fromList $ reachable g v
+refcount dg = length . (fanout dg)
+
+
+-- -- FIXME: these are not really necessary
+-- -- Closure of the above.
+-- allFanout (DG _ g bs) = allDeps (DAG (transposeG g) bs)
+-- allDeps :: DG -> Vertex -> Set Vertex
+-- allDeps (DG _ g bs) v = deps where
+--   -- Note that reachable contains the node itself, so remove.
+--   deps = Set.delete v reachable'
+--   reachable' = Set.fromList $ reachable g v
 
 
 -- This can accomodate two styles of modules:
@@ -217,10 +222,10 @@ io :: BindList Vertex -> ([Vertex],[Vertex],[Vertex],[Vertex],[Vertex])
 io bindings = (delays_in, delays_out, inputs, drives, rest) where
   [delays_in, delays_out, inputs, drives, rest] =
     map catMaybes $ List.transpose $ map select bindings
-  select (n, (_, Delay n' _)) = [Just n', Just n,  Nothing, Nothing, Nothing]
-  select (n, (_, Input))      = [Nothing, Nothing, Just n,  Nothing, Nothing]
-  select (n, (_, Connect _))  = [Nothing, Nothing, Nothing, Just n,  Nothing ]
-  select (n, _)               = [Nothing, Nothing, Nothing, Nothing, Just n]
+  select (n, (TypedForm _ (Delay n' _))) = [Just n', Just n,  Nothing, Nothing, Nothing]
+  select (n, (TypedForm _ Input))        = [Nothing, Nothing, Just n,  Nothing, Nothing]
+  select (n, (TypedForm _ (Connect _)))  = [Nothing, Nothing, Nothing, Just n,  Nothing ]
+  select (n, _)                          = [Nothing, Nothing, Nothing, Nothing, Just n]
   
 
 -- Convert a flat dictionary to one that has expressions inlined where
@@ -229,41 +234,59 @@ io bindings = (delays_in, delays_out, inputs, drives, rest) where
 -- target code that supports expressions, which will not have type
 -- annotations for intermediate nodes either.
 
-type Expr n = Free Form n
+type TypedExpr' n = Free TypedForm n
+newtype TypedExpr n = TypedExpr (TypedExpr' n) deriving Show
 
-inlined :: DAG -> [(Vertex, (SSize, Expr Vertex))]
-inlined dag@(DAG _ bindings) = [(n, (t, exprDef n)) | (n,(t,_)) <- keep] where
 
-  ref :: Vertex -> Form Vertex
-  ref = snd . (bindings Map.!)
-  
-  keep :: BindList Vertex
-  keep = filter (not . inlinable . fst) $ sorted dag
+inlined :: DG -> [(Vertex, TypedExpr Vertex)]
+inlined dg@(DG _ _ bindings) = [(n, TypedExpr $ exprDef n) | n <- keep] where
 
-  exprDef :: Vertex -> Expr Vertex
+  ref :: Vertex -> TypedForm Vertex
+  ref n = bindings Map.! n
+
+  keep :: [Vertex]
+  keep = filter (not . inlinable) $ map fst $ sorted dg
+
+  exprDef :: Vertex -> TypedExpr' Vertex
   exprDef n = (liftF $ ref n)    -- unpack at least root expression
               >>= unfold inline  -- plus inline
 
   -- The Pure/Free unfold decision is represented as Either
-  inline :: Vertex -> Either Vertex (Form Vertex)
+  inline :: Vertex -> Either Vertex (TypedForm Vertex)
   inline n = case inlinable n of
                False -> Left n
                True  -> Right $ ref n
 
   inlinable :: Vertex -> Bool
   inlinable n = 
-    case ref n of
+    case form of
       (Delay _ _) ->      False -- inlining Delay would create loops
       (Memory _ _ _ _) -> False -- keep this separate for easy code gen
       (Input)          -> False -- keep external refernces as nodes
-      _ -> 1 == refcount dag n  -- rc > 1 would lead to code duplication
+      _ -> 1 == refcount dg n   -- rc > 1 would lead to code duplication
+    where (TypedForm _ form) = ref n
   
+
+
+-- S-expression printer
+
+se lst = "(" ++ intercalate " " lst ++ ")"
+
+showF Input = "INPUT"
+showF (Const n) = show n
+showF (Comb1 o a) = se [show o, show a]
+showF (Comb2 o a b) = se $ [show o] ++ map show [a,b]
+showF (Comb3 o a b c) = se $ [show o] ++ map show [a,b,c]
+showF (Slice n a b) = se $ ["SLICE", show n, showSZ a, show b]
+showF (Memory a b c d) = se $ ["MEMORY"] ++ map show [a,b,c,d]
+showF (Delay n i) = se $ ["DELAY", show n, show i]
+showF (Connect n) = se $ ["CONNECT", show n]
   
--- For Verilog, but likely necessary for other HDLs.  In the Form
--- language, memories are represented as a read data register (Delay)
--- and a memory lookup combinatorial network (Memory).  Those need to
--- be identified such that the memory storage can be declared properly.
+showTF (TypedForm sz f) = show f ++ "::" ++ showSZ sz where
 
+showTE (Pure n) = show n
+showTE (Free f) = show f
 
-
+showSZ Nothing = "?"
+showSZ (Just n) = show n
 

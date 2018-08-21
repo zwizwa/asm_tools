@@ -48,8 +48,6 @@ test: default.nix
 # Inidividual tests
 test-qc-SeqLib: default.nix
 	$(NIX_SHELL) --run "cabal test test-qc-SeqLib --log=/dev/stdout"
-test-myhdl: default.nix
-	$(NIX_SHELL) --run "cabal test test-myhdl --log=/dev/stdout"
 test-seq: default.nix
 	$(NIX_SHELL) --run "cabal test test-seq --log=/dev/stdout"
 

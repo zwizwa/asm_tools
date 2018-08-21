@@ -546,7 +546,7 @@ all_ops [i, o] = do
     x <- i `slr` a
     j <- i `equ` a
     k <- if' i a b
-    l <- reduce' conc [a,b,c,d,e,f,g,h,x,j,k,rd]
+    l <- reduce' conc [a,b,c,d,e,f,g,h,x,j,k,rd,cbits 3 7]
     m <- slice' l 4 2
     n <- conc l m
     -- n should depend on all
@@ -573,14 +573,14 @@ x_seqnetlist = do
   let mod = CPU.soc
       (ports, bindings, _) = SeqTerm.compileFun (replicate 5 bit) CPU.soc
       SeqNetList.NetList ports' bindings' = SeqNetList.convert ports bindings
-      dag = SeqNetList.toDAG bindings'
-      sorted = SeqNetList.sorted dag
-      inlined = SeqNetList.inlined dag
+      dg = SeqNetList.toDG bindings'
+      sorted = SeqNetList.sorted dg
+      inlined = SeqNetList.inlined dg
       nodes = sort $ Set.toList $ Map.keysSet bindings'
   print ports'
   --printL $ assocs'
   putStrLn "--- sorted"
-  printL $ [ (n, te, SeqNetList.allDeps dag n) | (n,te) <- sorted ]
+  printL $ [ (n, te, SeqNetList.deps dg n) | (n,te) <- sorted ]
 
   putStrLn "--- inlined"
   printL $ inlined
@@ -590,7 +590,7 @@ x_seqnetlist = do
   --printL $ [ (n, SeqNetList.allFanout dag n) | n <- nodes ]
 
   putStrLn "--- fanout"
-  printL $ [ (n, SeqNetList.fanout dag n) | n <- nodes ]
+  printL $ [ (n, bindings' Map.! n, SeqNetList.fanout dg n) | n <- nodes ]
   
 
   -- Print out the individual dependencies

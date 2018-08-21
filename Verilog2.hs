@@ -16,6 +16,7 @@ import Data.List hiding (partition)
 import Numeric (showHex, showIntAtBase)
 import Data.Char
 import qualified SeqLib
+import qualified Data.Map.Lazy as Map
 import Data.Bits
 import Control.Monad.Free
 import Data.Graph
@@ -38,7 +39,7 @@ data Part = Connects | Delays | Inputs | Memories | Exprs deriving Eq
 
 partition' bindings t = map snd $ filter ((t ==) . fst) tagged where
   tagged = map p' bindings
-  p' x@(n, (t, (Free form))) = (p form, x)
+  p' x@(n, (Free (TypedForm _ form))) = (p form, x)
   p' x = error $ "partition': improper inlined form"
   p (Input)          = Inputs
   p (Connect _)      = Connects
@@ -62,16 +63,90 @@ vModule mod_name portNames portTypes mod = Verilog portSpecs vCode where
   -- Graph algos only operate on Vertex
   (ports, bindings', probes) = SeqTerm.compileTerm mod'
   netlist@(NetList _ bindmap) = convert ports bindings'
-  dag = toDAG bindmap
+  dg = toDG bindmap
+
+  bindings = map unpack $ inlined dg where
+    unpack (n, TypedExpr te) = (n, te)
+  
+  
   -- Convert node rep to String
-  bindings = map nameBinding $ inlined dag where
-    -- FIXME: use probe names
-    nameBinding (n,(t,e)) = (nameNode n,(t,fmap nameNode e))
-    nameNode = ("s" ++) . show
+  -- bindings = map nameBinding $ inlined dag where
+  --   -- FIXME: use probe names
+  --   nameBinding (n, e) = (nameNode n, fmap nameNode e)
+
+  nameNode = ("s" ++) . show
   
   part = partition' bindings
 
   portSpecs = undefined
+
+  
+  
+  sigDecl kind (Just sz) n =
+    kind ++ " [" ++ show (sz-1) ++ ":0] " ++ nameNode n ++ ";"
+  sigDecl _ _ n = error $ "sigDecl needs fixed bit size: " ++ nameNode n
+  
+  decl typ b@(n, (Free (TypedForm bits _))) =
+    (sigDecl typ) bits n ++ debug b
+  -- decl typ b = error $ "decl: " ++ show (typ,b)
+
+
+  assign b@(n, term) =
+    "assign " ++ nameNode n ++ " = " ++ op term ++ ";" ++
+    debug b
+
+  reset b@(n, Free (TypedForm t (Delay _ i))) =
+    tab ++ tab ++ nameNode n ++ " <= " ++ literal (t,i) ++ ";" ++
+    debug b
+  reset b = proj_err b
+
+  update b@(n, Free (TypedForm _ (Delay n' _))) =
+    tab ++ tab ++ nameNode n ++ " <= " ++ (op n') ++ ";" ++
+    debug b
+  update b = proj_err b
+  
+  literal (Nothing, v) = show v
+  literal ((Just sz), v) = show sz ++ "'b" ++ bits where
+    v' = v .&. ((1 `shiftL` sz)-1)
+    bits' = showIntAtBase 2 intToDigit v' "" 
+    bits  = replicate (sz - length bits') '0' ++ bits'
+
+  op :: Free SeqNetList.TypedForm Vertex -> String
+  op (Pure n) = nameNode n
+  op (Free (TypedForm bits (Const v))) = literal (bits, v)
+  op (Free (TypedForm bits f)) = expr f
+
+  parens str = "(" ++ str ++ ")"
+
+  expr (Comb1 INV o) = parens $ "!" ++ op o
+  expr (Comb2 ADD a b) = op2 "+" a b
+  expr (Comb2 SUB a b) = op2 "-" a b
+  expr (Comb2 MUL a b) = op2 "*" a b
+  expr (Comb2 AND a b) = op2 "&" a b
+  expr (Comb2 OR  a b) = op2 "|" a b
+  expr (Comb2 XOR a b) = op2 "^" a b
+  expr (Comb2 SLL a b) = op2 "<<" a b
+  expr (Comb2 SLR a b) = op2 ">>" a b
+  expr (Comb2 CONC a b) = "{" ++ op a ++ ", " ++ op b ++ "}"
+  expr (Comb2 EQU a b) = op2 "==" a b
+  expr (Comb3 IF a b c) = op a ++ " ? " ++ op b ++ " : " ++ op c
+  expr (Connect o) = op o
+  expr (Slice o (Just u) l) = op o ++ "[" ++ show (u-1) ++ ":" ++ show l ++ "]"
+  expr e = "... /* " ++ show e ++ " */ "
+  
+  op2 opc a b = parens (op a ++ " " ++ opc ++ " " ++ op b)
+
+
+
+
+
+  -- For Verilog, but likely necessary for other HDLs.  In the Form
+  -- language, memories are represented as a read data register (Delay)
+  -- and a memory lookup combinatorial network (Memory).  Those need to
+  -- be identified such that the memory storage can be declared properly.
+
+
+
   
   --(portSpecs, (ports, bindings')) =
   --  SeqTerm.hdl_compile' portNames portTypes mod
@@ -81,7 +156,34 @@ vModule mod_name portNames portTypes mod = Verilog portSpecs vCode where
 
   decls typ p = concat $ map (decl typ) $ part p
 
-  -- mem_decls = concat $ map memory_decl $ part Memories
+  
+  -- Bundle Delay and Memory nodes.  These are not inlined, so use the
+  -- original form, a little easier.
+  memnodes :: [((Vertex, TypedForm Vertex),
+                (Vertex, TypedForm Vertex))]
+  memnodes = take 0 $ map memnode $ part Memories where
+    memnode (n, e) = ((n, bindmap Map.! n), (n', e')) where
+      n' = case fanout dg n of
+        [n'] -> n'
+        -- Shows up as [] sometimes. bug?
+        fo -> error $ "memnode: fanout: " ++ show fo 
+      e' = bindmap Map.! n'
+  
+  mem_decls = concat $ map memory_decl memnodes
+  memory_decl :: ((Vertex, TypedForm Vertex), (Vertex, TypedForm Vertex)) -> String
+  memory_decl args@((memn, (TypedForm _ (Memory we wa wd ra))), (deln, (TypedForm _ (Delay _ _)))) =
+    "// " ++ show args ++ "\n"
+    -- FIXME
+    -- let arrSize = 2 ^ n
+    --     (SInt (Just n) _) = opType wa
+    -- in
+    --   -- Note: the _ra signal is derived from the memory name.
+    --   sigDecl "reg" t name ++ debug b
+    --   arrDecl (opType wd) mem_name arrSize ++
+    --   debug b ++
+    --   sigDecl "wire" (opType ra) (mem_name ++ "_ra") ++
+    --   debug b
+
 
   assigns = concat $ map assign $ (part Exprs ++ part Connects)
 
@@ -101,6 +203,7 @@ vModule mod_name portNames portTypes mod = Verilog portSpecs vCode where
     decls "output" Connects ++
     decls "wire"   Exprs ++
     decls "reg"    Delays ++
+    mem_decls ++
     assigns ++
     "always @(posedge CLK, negedge RST) begin: SEQ\n" ++
     tab ++ "if (RST==0) begin\n" ++
@@ -113,7 +216,6 @@ vModule mod_name portNames portTypes mod = Verilog portSpecs vCode where
     "endmodule\n"
     
   -- vCode =
-  --   mem_decls ++
   --   memwr_assigns ++
   --   memrd_updates ++
   --   memwr_updates ++
@@ -121,27 +223,14 @@ vModule mod_name portNames portTypes mod = Verilog portSpecs vCode where
 
 tab = "    "
 debug t = " // " ++ show t ++ "\n"
+
+
 -- debug _ = "//\n"
 
 -- arrDecl (SInt (Just n) _) name sz =
 --   "reg [" ++ show (n-1) ++ ":0] " ++ name ++ "[0:" ++ show (sz-1) ++ "];"
 -- arrDecl _ name _ = error $ "arrDecl needs fixed bit size: " ++ name
 
-sigDecl kind (Just n) name =
-  kind ++ " [" ++ show (n-1) ++ ":0] " ++ name ++ ";"
-
-decl typ b@(name, (bits, term)) =
-  (sigDecl typ) bits name ++ debug b
-
--- ---- FIXME: Proper unification on SeqTerm data structure is needed to
--- ---- determine all node types.  Example:
--- ---- // "s144" <- (IF "rx_in" (CONST _:0) (CONST _:1)) As a workaround,
--- ---- I thought about defaulting to a fixed size and leave it for yosys
--- ---- to optimize.  This doesn't work for concat.
--- -- sigDecl kind _ name = hackDecl ++ msg where 
--- --   hackDecl = sigDecl kind (SInt (Just 32) 0) name
--- --   msg = " // unknown size: " ++ name
--- sigDecl _ _ name = error $ "sigDecl needs fixed bit size: " ++ name
 
 
 proj_err b = error $ "projection error: " ++ show b
@@ -186,69 +275,6 @@ proj_err b = error $ "projection error: " ++ show b
 --   "end\n"
 -- memwr_update b = proj_err b
 
-assign b@(name, (_, term)) =
-  "assign " ++ name ++ " = " ++ op term ++ ";" ++
-  debug b
-
-reset b@(name, (t, (Free (Delay _ i)))) =
-  tab ++ tab ++ name ++ " <= " ++ literal (t,i) ++ ";" ++
-  debug b
-reset b = proj_err b
-
-update b@(name, (_, (Free (Delay (Pure n) _)))) =
-  tab ++ tab ++ name ++ " <= " ++ n ++ ";" ++
-  debug b
-update b = proj_err b
-  
-literal (Nothing, v) = show v
-literal ((Just sz), v) = show sz ++ "'b" ++ bits where
-  v' = v .&. ((1 `shiftL` sz)-1)
-  bits' = showIntAtBase 2 intToDigit v' "" 
-  bits  = replicate (sz - length bits') '0' ++ bits'
-
-op (Pure n) = n
-op (Free f) = expr f
-
-parens str = "(" ++ str ++ ")"
-
-expr (Const v) = show v
-expr (Comb1 INV o) = parens $ "!" ++ op o
-expr (Comb2 ADD a b) = op2 "+" a b
-expr (Comb2 SUB a b) = op2 "-" a b
-expr (Comb2 MUL a b) = op2 "*" a b
-expr (Comb2 AND a b) = op2 "&" a b
-expr (Comb2 OR  a b) = op2 "|" a b
-expr (Comb2 XOR a b) = op2 "^" a b
-expr (Comb2 SLL a b) = op2 "<<" a b
-expr (Comb2 SLR a b) = op2 ">>" a b
-expr (Comb2 CONC a b) = "{" ++ op a ++ ", " ++ op b ++ "}"
-expr (Comb2 EQU a b) = op2 "==" a b
-expr (Comb3 IF a b c) = op a ++ " ? " ++ op b ++ " : " ++ op c
-expr (Connect o) = op o
-expr (Slice o (Just u) l) = op o ++ "[" ++ show (u-1) ++ ":" ++ show l ++ "]"
-expr e = "... /* " ++ show e ++ " */ "
-
-op2 opc a b = parens (op a ++ " " ++ opc ++ " " ++ op b)
 
 commas = intercalate ", "
 
--- -- Catch some degenerate cases.
--- fix_binding b@(name, (MemWr _)) = b
--- fix_binding b@(name, term) =
---   case termType term of
---     (SInt Nothing _) ->
---       -- error $ "fix_binding: " ++ show b
---       b
---     _ ->
---       b
-
---------------------------------------------------------------------------------------
-
-
--- fpgaWrite :: String -> ([String], [SeqTerm.R S] -> SeqTerm.M ()) -> IO ()
--- fpgaWrite name (portNames, mod) = writeFile (name ++ ".v") $ show $ v where
---   -- FIXME: see MyHDL.fpgaWrite
---   portNames' = map (\('_':nm) -> nm) portNames
---   portTypes = [SeqLib.bit | _ <- portNames]
---   v = Verilog.vModule name portNames' portTypes mod
-  
