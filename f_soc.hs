@@ -13,6 +13,7 @@ import TestTools
 import qualified Forth
 import qualified MyHDL
 import qualified Verilog
+import qualified Verilog2
 
 import qualified SeqTerm
 import qualified SeqExpr
@@ -95,9 +96,8 @@ generate = do
         push 0x55 ; write dbg ; busywait
         push 0xAA ; write dbg ; busywait
 
-  MyHDL.fpgaWrite "f_soc" f_soc pin
-  -- Just overwrite it for now
-  -- Verilog.fpgaWrite "f_soc" f_soc 
+  -- MyHDL.fpgaWrite "f_soc" f_soc pin
+  Verilog2.fpgaWrite "f_soc" f_soc pin
   
   writeProgram "f_soc.imem.bin" prog3
 

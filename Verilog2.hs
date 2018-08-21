@@ -24,12 +24,11 @@ import qualified Data.Map.Lazy as Map
 import Data.Bits
 import Control.Monad.Free
 import Data.Graph
+import PCF
 
 -- Some simplifications:
 -- . All signals are vectors.
--- . Keep operations in ANF
 -- . One block for registers, CLK, RST
--- . One block for memories, CLK only
 
 
 data Verilog = Verilog String
@@ -75,8 +74,7 @@ vModule mod_name portNames portTypes mod = Verilog vCode where
   refForm = (formMap Map.!)
   refExpr = (exprMap Map.!)
 
-  -- FIXME: use probes.  This requires (Op n) -> n translation.
-  vertexName = ("s" ++) . show
+  vertexName n = (Map.findWithDefault "s" n $ Map.fromList probes) ++ show n
   
   part = partition' exprList
 
@@ -88,11 +86,9 @@ vModule mod_name portNames portTypes mod = Verilog vCode where
     "reg [" ++ show (d_sz-1) ++ ":0] " ++ vertexName n ++ "[0:" ++ show (a_sz-1) ++ "];"
   arrDecl _ n _ = error $ "arrDecl needs fixed bit size: " ++ vertexName n
   
-  
   decl typ b@(n, (Free (TypedForm bits _))) =
     (sigDecl typ) bits n ++ debug b
   decl typ b = error $ "decl: " ++ show (typ,b)
-
 
   assign b@(n, term) =
     "assign " ++ vertexName n ++ " = " ++ op term ++ ";" ++
@@ -101,12 +97,12 @@ vModule mod_name portNames portTypes mod = Verilog vCode where
   reset b@(n, Free (TypedForm t (Delay _ i))) =
     tab ++ tab ++ vertexName n ++ " <= " ++ literal (t,i) ++ ";" ++
     debug b
-  reset b = proj_err b
+  reset b = error $ "reset: " ++ show b
 
   update b@(n, Free (TypedForm _ (Delay n' _))) =
     tab ++ tab ++ vertexName n ++ " <= " ++ (op n') ++ ";" ++
     debug b
-  update b = proj_err b
+  update b = error $ "update: " ++ show b
   
   literal (Nothing, v) = show v
   literal ((Just sz), v) = show sz ++ "'b" ++ bits where
@@ -139,10 +135,7 @@ vModule mod_name portNames portTypes mod = Verilog vCode where
   
   op2 opc a b = parens (op a ++ " " ++ opc ++ " " ++ op b)
 
-
-
   decls typ p = concat $ map (decl typ) $ part p
-
 
   -- Associate Memory nodes with the corresponding Delay node.
   mem_nodes :: [(Vertex, Vertex)]
@@ -155,7 +148,7 @@ vModule mod_name portNames portTypes mod = Verilog vCode where
   mem_decls = concat $ map mem_decl mem_nodes
   mem_decl :: (Vertex, Vertex) -> String
   mem_decl (memn, deln) = str_del ++ str_arr where
-    TypedForm tr@(Just data_bits) (Memory we wa wd ra) = refForm memn
+    TypedForm tr@(Just data_bits) (Memory _ wa _ _) = refForm memn
     TypedForm (Just addr_bits) _ = refForm wa
     arr_size :: Int
     arr_size = 2 ^ addr_bits
@@ -209,7 +202,20 @@ tab = "    "
 -- debug t = " // " ++ show t ++ "\n"
 debug _ = "\n"
 
-proj_err b = error $ "projection error: " ++ show b
 
 commas = intercalate ", "
 
+
+
+
+
+fpgaGen name (names, fun) pins = (v, pcf') where 
+  names' = map (\('_':nm) -> nm) names
+  v = vModule name names types fun
+  types = [SInt (Just 1) 0 | _ <- names]
+  pcf' = PCF ("CLK":"RST":names') pins
+
+fpgaWrite name mod pins = do
+  let (v,pcf) = fpgaGen name mod pins
+  writeFile (name ++ ".v")   $ show v
+  writeFile (name ++ ".pcf") $ show pcf

@@ -15,7 +15,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
-module MyHDL(myhdl,MyHDL,testbench,fpgaGen,fpgaWrite,PCF(..),pcf,noOutputCheck) where
+module MyHDL(myhdl,MyHDL,testbench,fpgaGen,fpgaWrite,noOutputCheck) where
 import Seq
 import SeqLib
 import CSV
@@ -37,6 +37,7 @@ import Data.Char (intToDigit)
 import Data.Maybe
 import Data.Bits hiding (bit)
 
+import PCF
 
 newtype PrintMyHDL t = PrintExpr {
   runPrintMyHDL :: StateT BlockState (WriterT String (Reader IndentLevel)) t
@@ -354,18 +355,6 @@ fpgaWrite name mod pins = do
 
 
 
---- ice40 PCF pin configuration files
-pcf :: [String] -> (String -> String) -> String
-pcf names pin = pcf' where
-  pcf' = concat $ map set_io names
-  set_io name =
-    "set_io " ++
-    name ++ " " ++
-    (pin name) ++ "\n"
-
-data PCF = PCF [String] (String->String)
-instance Show PCF where
-  show (PCF names pin) = pcf names pin
 
 
 
