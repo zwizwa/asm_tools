@@ -11,6 +11,7 @@ import CPU
 import Names
 import TestTools
 import qualified MyHDL
+import qualified Verilog
 
 import qualified SeqTerm
 import qualified SeqExpr
@@ -43,6 +44,7 @@ generate = do
   putStrLn "-- f_blink"
   board <- CSV.readTagged id "specs/hx8k_breakout.csv"
   let pin = CSV.ff (\[k,_,v,_] -> (k,v)) board
-  MyHDL.fpgaWrite "f_blink" f_blink pin
+  -- MyHDL.fpgaWrite "f_blink" f_blink pin
+  Verilog.fpgaWrite "f_blink" f_blink pin
 
 

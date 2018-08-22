@@ -63,7 +63,6 @@ import qualified SeqNetList
 import qualified MyHDL
 import qualified MyHDLRun
 import qualified Verilog
-import qualified Verilog2
 
 import Data.Map.Lazy (empty, foldrWithKey, insert, Map, assocs)
 import qualified Data.Map.Lazy as Map
@@ -120,7 +119,6 @@ main = do
   x_run_myhdl
   x_testbench
   x_verilog
-  x_verilog2
   x_seqnetlist
 
 x_counter = do
@@ -560,12 +558,6 @@ x_verilog = do
   print $ v
   writeFile "x_verilog.v" $ show v
 
-x_verilog2 = do
-  putStrLn "-- x_verilog2"
-  let mod = all_ops
-      v = Verilog2.vModule "mymod" ["IN", "OUT"] [bit, bit] mod
-  print $ v
-  writeFile "x_verilog2.v" $ show v
   
   
 x_seqnetlist = do

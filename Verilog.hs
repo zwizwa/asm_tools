@@ -1,5 +1,7 @@
--- FIXME: Can't compile f_soc.hs yet.  Can't find any more obvious
--- errors.  Where to start debugging?
+-- FIXME: Can't compile f_soc.hs yet, but f_blink.hs works.  Can't
+-- find any more obvious errors.  Where to start debugging?  It's
+-- likely the memory.
+
 
 
 
