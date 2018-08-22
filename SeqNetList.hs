@@ -300,3 +300,5 @@ showSZ (Just n) = show n
 
 
 compileTerm = convert . SeqTerm.compileTerm
+
+

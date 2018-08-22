@@ -24,6 +24,8 @@ import qualified Data.Map.Lazy as Map
 import Data.Bits
 import Control.Monad.Free
 import Data.Graph
+import Data.Tuple
+import Data.List
 import PCF
 
 -- Some simplifications:
@@ -62,7 +64,7 @@ vModule mod_name portNames portTypes mod = Verilog vCode where
     mod io ; return io
 
   -- Graph algos only operate on Vertex
-  netlist@(NetList _ formMap probes) = SeqNetList.compileTerm mod'
+  netlist@(NetList ports formMap probes) = SeqNetList.compileTerm mod'
   dg = toDG formMap
 
   exprList = map unpack $ inlined dg where unpack (n, TypedExpr te) = (n, te)
@@ -74,7 +76,12 @@ vModule mod_name portNames portTypes mod = Verilog vCode where
   refForm = (formMap Map.!)
   refExpr = (exprMap Map.!)
 
-  vertexName n = (Map.findWithDefault "s" n $ Map.fromList probes) ++ show n
+  -- Keep port names.
+  -- Annotate debug names with unique index.
+  nameProbe (n, nm) = (n, nm ++ "_s" ++ show n)
+  vertexNames = Map.fromList $ map swap $ (map nameProbe probes) ++ zip ports portNames
+  vertexNames' = Map.fromList $ map swap $ Map.toList vertexNames
+  vertexName n = Map.findWithDefault ("s" ++ show n) n vertexNames'
   
   part = partition' exprList
 
@@ -135,15 +142,19 @@ vModule mod_name portNames portTypes mod = Verilog vCode where
   
   op2 opc a b = parens (op a ++ " " ++ opc ++ " " ++ op b)
 
-  decls typ p = concat $ map (decl typ) $ part p
+  decls typ p = concat $ map (decl typ) $ p
 
   -- Associate Memory nodes with the corresponding Delay node.
+  -- FIXME: Remove the delay nodes from register.
   mem_nodes :: [(Vertex, Vertex)]
   mem_nodes = map (memnode . fst) $ part Memories where
     memnode memn = (memn, deln) where
       deln = case fanout dg memn of
         [n] -> n
         fo -> error $ "memnode: fanout: " ++ show fo 
+
+  noMemDelays = filter (\(n, _) -> notElem n $ map snd mem_nodes)
+
   
   mem_decls = concat $ map mem_decl mem_nodes
   mem_decl :: (Vertex, Vertex) -> String
@@ -172,18 +183,20 @@ vModule mod_name portNames portTypes mod = Verilog vCode where
 
   assigns = concat $ map assign $ (part Exprs ++ part Connects)
 
-  updates = concat $ map update $ part Delays
-  resets  = concat $ map reset  $ part Delays
+  delays = noMemDelays $ part Delays
+
+  updates = concat $ map update delays
+  resets  = concat $ map reset  delays
 
   vCode =
     -- "`timescale 1ns/10ps\n" ++  -- from MyHDL output
     "module " ++ mod_name ++ "(" ++ commas (["CLK","RST"] ++ portNames) ++ ");\n" ++
     "input CLK;\n" ++
     "input RST;\n" ++
-    decls "input"  Inputs ++
-    decls "output" Connects ++
-    decls "wire"   Exprs ++
-    decls "reg"    Delays ++
+    decls "input"  (part Inputs) ++
+    decls "output" (part Connects) ++
+    decls "wire"   (part Exprs) ++
+    decls "reg"    delays ++
     mem_decls ++
     assigns ++
     mem_updates ++
@@ -211,7 +224,7 @@ commas = intercalate ", "
 
 fpgaGen name (names, fun) pins = (v, pcf') where 
   names' = map (\('_':nm) -> nm) names
-  v = vModule name names types fun
+  v = vModule name names' types fun
   types = [SInt (Just 1) 0 | _ <- names]
   pcf' = PCF ("CLK":"RST":names') pins
 

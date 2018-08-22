@@ -27,6 +27,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Functor.Compose
 import Data.Functor.Classes
+import Data.Tuple
 
 -- Seq does not provide a way to create modules with abstract I/O.
 -- Specific constructs in this module are used to compose basic Seq
