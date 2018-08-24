@@ -4,8 +4,8 @@
 
 [ -z "$1" ] && echo "usage: $0 <host>" && exit 1
 
-#PRJ=f_soc
-PRJ=f_blink
+PRJ=f_soc
+#PRJ=f_blink
 
 ssh $1 <<EOF
 set -x

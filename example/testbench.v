@@ -3,9 +3,9 @@
 module counter(clk, rst, count);
    input clk;
    input rst;
-   output [3:0] count;
+   output [7:0] count;
    assign count = count_reg;
-   reg [3:0] count_reg;
+   reg [7:0] count_reg;
    
    always @(posedge clk, negedge rst) begin
       if (rst == 0) begin
@@ -21,25 +21,20 @@ module counter_tb;
 
    reg clk;
    reg rst;
-   wire [3:0] count; 
+   wire [7:0] count; 
    
-   counter U0 (.clk    (clk),
-               .rst    (rst), 
-               .count  (count) 
-               );
+   counter U0 (clk, rst, count);
 
    initial begin
       clk <= 0;
       rst <= 0;
-      #100 rst <= 1;
-      $display("start");
+      #1 rst <= 1;
       repeat (20) @(posedge clk);
-      $display("finish");
       $finish;
    end
    
    always @(posedge clk) begin
-      $display("%h", count);
+      $display("%d", count);
    end
    
    always 

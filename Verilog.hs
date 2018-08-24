@@ -1,9 +1,15 @@
+
+
 -- FIXME: Can't compile f_soc.hs yet, but f_blink.hs works.  Can't
 -- find any more obvious errors.  Where to start debugging?  It's
 -- likely the memory.
 
+-- TODO:
 
+-- . Create two generators: one for CLK,RST and one for just CLK.
+--   This allows the iCE40 reset generator to be generated as well.
 
+-- . Verilator has a C api.
 
 -- The 'error' cases are projection errors.  FIXME: is there a simple
 -- way to avoid these?  E.g. project partitions down to simpler data
