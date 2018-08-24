@@ -1,7 +1,12 @@
+{-# LANGUAGE Rank2Types #-}
+
 -- Misc collection of sequence testing tools.
 module TestTools where
 
+import qualified Seq
+import qualified SeqTerm
 import qualified SeqLib
+import qualified SeqEmu
 import Data.Char
 import Data.Bits
 import Data.List
@@ -241,3 +246,39 @@ dbg_trace = bus_trace "bus_dbg"
 
 bus_trace write (names, signals) =
   downSampleCD $ selectSignals [write, "bus_data"] names signals
+
+
+-- Common staged cosimulation test bench:
+-- 1. Create input/output pair in Seq
+-- 2. Use it to properly instantiate a "port" module
+
+testbench ::
+  String
+  -> [Int]
+  -- Rank 2, because we instantiate it twice.
+  -> (forall m r. Seq.Seq m r => [r Seq.S] -> m [r Seq.S])
+  -> [[Int]]
+  -> ([String], [Seq.SType], [SeqTerm.R Seq.S] -> SeqTerm.M (), [[Int]])
+
+testbench name inSizes mod input = rv where
+  rv = (portNames, portTypes, mod', take nb_ticks output)
+
+  nb_ticks = length input
+  nb_in    = length inSizes
+  inTypes  = map SeqLib.bits inSizes
+  
+  -- Emulation.  This also gives us the output size.
+  output = SeqEmu.iticks (SeqEmu.onInts inSizes mod) input
+  nb_out = length $ head output
+
+  -- Module code gen.  Adapt to pyModule interface.
+  outTypes  = [Seq.SInt Nothing 0 | _ <- [1..nb_out]]
+  portTypes = inTypes ++ outTypes
+  portNames = ["p" ++ show n | n <- [0..(length portTypes)-1]]
+  mod' ports = do
+    let (ins,outs) = splitAt nb_in ports
+    outs' <- mod ins
+    sequence_ $ zipWith Seq.connect outs outs'
+
+
+

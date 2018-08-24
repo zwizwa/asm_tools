@@ -63,6 +63,7 @@ import qualified SeqNetList
 import qualified MyHDL
 import qualified MyHDLRun
 import qualified Verilog
+import qualified VerilogRun
 
 import Data.Map.Lazy (empty, foldrWithKey, insert, Map, assocs)
 import qualified Data.Map.Lazy as Map
@@ -117,6 +118,7 @@ main = do
   x_hdl
   x_hdl_sync
   x_run_myhdl
+  x_run_verilog
   x_testbench
   x_verilog
   x_seqnetlist
@@ -516,11 +518,14 @@ print_hdl src = do
   return ()
   
 
--- http://hackage.haskell.org/package/shelly
 x_run_myhdl = do
   putStrLn "-- x_run_myhdl"
   -- MyHDLRun.run_process "x_soc_fpga"
   MyHDLRun.test
+
+x_run_verilog = do
+  putStrLn "-- x_run_verilog"
+  VerilogRun.test
 
 
 x_testbench = do

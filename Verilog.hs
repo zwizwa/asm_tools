@@ -1,4 +1,4 @@
-
+{-# LANGUAGE Rank2Types #-}
 
 -- FIXME: Can't compile f_soc.hs yet, but f_blink.hs works.  Can't
 -- find any more obvious errors.  Where to start debugging?  It's
@@ -22,7 +22,7 @@
 
 module Verilog where
 
-import Seq(S,SType(..),Op1(..),Op2(..),Op3(..))
+import Seq(S,SType(..),Op1(..),Op2(..),Op3(..),Seq(..))
 import qualified SeqTerm
 import SeqNetList
 import Data.List hiding (partition)
@@ -36,6 +36,7 @@ import Data.Graph
 import Data.Tuple
 import Data.List
 import PCF
+import qualified TestTools
 
 -- Some simplifications:
 -- . All signals are vectors.
@@ -250,3 +251,19 @@ fpgaWrite name mod pins = do
   let (v,pcf) = fpgaGen name mod pins
   writeFile (name ++ ".v")   $ show v
   writeFile (name ++ ".pcf") $ show pcf
+
+testbench ::
+  String
+  -> [Int]
+  -- Rank 2, because we instantiate it twice.
+  -> (forall m r. Seq m r => [r S] -> m [r S])
+  -> [[Int]]
+  -> Verilog
+
+
+testbench mod_name inSizes mod inputs = hdl where
+  -- tb = TestBench hdl input $ Just $ output
+  (portNames, portTypes, mod', outputs) =
+    TestTools.testbench mod_name inSizes mod inputs
+  hdl = vModule mod_name portNames portTypes mod'
+

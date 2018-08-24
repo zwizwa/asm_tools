@@ -36,8 +36,8 @@ import Numeric (showHex, showIntAtBase)
 import Data.Char (intToDigit)
 import Data.Maybe
 import Data.Bits hiding (bit)
-
 import PCF
+import qualified TestTools
 
 newtype PrintMyHDL t = PrintExpr {
   runPrintMyHDL :: StateT BlockState (WriterT String (Reader IndentLevel)) t
@@ -407,24 +407,7 @@ instance (Show TestBench) where
 noOutputCheck (TestBench hdl ins _) = TestBench hdl ins Nothing
 
 testbench name inSizes mod input = tb where
-  tb = TestBench hdl input $ Just $ take nb_ticks output
-
-  nb_ticks = length input
-  nb_in    = length inSizes
-  inTypes  = map bits inSizes
-  
-  -- Emulation.  This also gives us the output size.
-  output = SeqEmu.iticks (SeqEmu.onInts inSizes mod) input
-  nb_out = length $ head output
-
-  -- Module code gen.  Adapt to pyModule interface.
-  outTypes  = [SInt Nothing 0 | _ <- [1..nb_out]]
-  portTypes = inTypes ++ outTypes
-  portNames = ["p" ++ show n | n <- [0..(length portTypes)-1]]
+  tb = TestBench hdl input $ Just $ output
+  (portNames, portTypes, mod', output) = TestTools.testbench name inSizes mod input
   hdl = pyModule name portNames portTypes mod'
-  mod' ports = do
-    let (ins,outs) = splitAt nb_in ports
-    outs' <- mod ins
-    sequence_ $ zipWith connect outs outs'
-
 
