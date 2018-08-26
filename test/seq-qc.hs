@@ -24,17 +24,17 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE QuasiQuotes #-}
 
-import Seq
-import SeqLib
-import CPU
-import SeqEmu
-import SeqPrim
-import TestSeqLib
-import TestTools
+import Language.Seq
+import Language.Seq.Lib
+import Language.Seq.CPU
+import Language.Seq.Emu
+import Language.Seq.Prim
+import Language.Seq.Test.Lib  -- for staging
+import Language.Seq.Test.Tools
 
-import qualified Forth
+import qualified Language.Seq.Forth as Forth
 
-import SeqTH(compile,compile',noProbe,allProbe)
+import Language.Seq.TH(compile,compile',noProbe,allProbe)
 
 import Prelude hiding (read, drop)
 import Data.Char

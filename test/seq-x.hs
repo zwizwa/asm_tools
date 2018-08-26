@@ -1,3 +1,6 @@
+-- Ad-hoc "example tests" for Seq code.
+-- TODO: clean up and move to seq-qc.hs
+
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -5,65 +8,34 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE RankNTypes #-}
 
+import Language.Seq
+import Language.Seq.Lib
+import Language.Seq.Syntax
+import Language.Seq.Names
+import Language.Seq.Prim
+import Language.Seq.Test.Tools
+import qualified Language.Seq.Lib as SeqLib
+import qualified Language.Seq.Forth as Forth
+import qualified Language.Seq.Arr as SeqArr
+import qualified Language.Seq.App as SeqApp
+import qualified Language.Seq.Static as Static
+import qualified Language.Seq.Term as SeqTerm
+import qualified Language.Seq.Expr as SeqExpr
+import qualified Language.Seq.IfElse as SeqIfElse
+import qualified Language.Seq.Emu as SeqEmu
+import qualified Language.Seq.TH as SeqTH
+import qualified Language.Seq.C as SeqC
+import qualified Language.Seq.CPU as CPU
+import qualified Language.Seq.NetList as SeqNetList
 
--- Is it possible to capture enough of a synchronous state machine to
--- be able to do the same thing as with Pru.hs?  In general, a HDL
--- represents a discrete event simulator.  For clocked circuits, the
--- simulation becomes a lot simpler.
+import qualified Data.AsmTools.VCD as VCD
+import qualified Data.AsmTools.CSV as CSV
+import qualified Data.AsmTools.NetFun as NetFun
 
--- At every tick, register inputs are read, and an update function is
--- computed for each register.  So the basic unit to work with is the
--- register.
-
--- For now, assume MyHDL as a target.  The idea is to produce blocks
--- that look like:
-
---    @always_seq(CLK.posedge, reset=None)
---    def counter():
---        count.next = count + 1
-
--- Abstract the CLK and reset completely.
-
--- How to construct an embedded language around this idea?  There are
--- essentially two elements:
--- 1) combinatorial functions
--- 2) registers
-
--- A register is directly tied to the function that computes its next
--- state, so it makes sense to use a Map for this.
-
--- MyHDL doesn't use registers per se, but uses signals.  If a
--- signal's .next is written to, it behaves as a register.  In other
--- cases it is possible that a signal is just a wire.  I find this
--- very confusing.
-
-import Seq
-import SeqLib
-import SeqSyntax
-import Names
-import SeqPrim
-import TestTools
-import qualified Forth
-import qualified SeqArr
-import qualified SeqApp
-import qualified SeqStatic
-import qualified SeqTerm
-import qualified SeqExpr
-import qualified SeqIfElse
-import qualified SeqEmu
-import qualified SeqTH
-import qualified SeqC
-
-import qualified CPU
-import qualified VCD
-import qualified CSV
-import qualified NetFun
-import qualified SeqNetList
-
-import qualified MyHDL
-import qualified MyHDLRun
-import qualified Verilog
-import qualified VerilogRun
+import qualified Language.Seq.MyHDL as MyHDL
+import qualified Language.Seq.MyHDLRun as MyHDLRun
+import qualified Language.Seq.Verilog as Verilog
+import qualified Language.Seq.VerilogRun as VerilogRun
 
 import Data.Map.Lazy (empty, foldrWithKey, insert, Map, assocs)
 import qualified Data.Map.Lazy as Map
@@ -80,11 +52,9 @@ import Data.Maybe
 import Data.Key(Zip(..),zipWith, zip)
 import Data.Typeable
 import Language.Haskell.TH as TH
-
 import Control.Monad.ST
 import Data.Array.Unboxed hiding (assocs)
 import Data.Array.ST
-
 
   
 -- t_: trace

@@ -1,13 +1,13 @@
--- see test-qc-SeqLib.hs
--- Separate module for SeqTH staging
+-- Separate module for Seq.TH staging
 
 {-# LANGUAGE FlexibleContexts #-}
 
-module TestSeqLib where
+module Language.Seq.Test.Lib where
 
-import Seq
-import SeqLib
-import CPU
+import Language.Seq
+import Language.Seq.Lib
+import Language.Seq.CPU
+
 import Control.Monad
 import Data.Bits
 import Data.List

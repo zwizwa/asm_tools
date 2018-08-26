@@ -4,13 +4,6 @@ cabal-version: >= 1.18
 build-type: Simple
 license: BSD3
 
--- No longer needed. Data.Keys.Zip was what I was looking for.
--- adjunctions:   Data.Functor.Rep
--- semigroupoids: Data.Functor.Apply
-
--- pretty-simple, text, 
-
-
 Library
     default-language: Haskell2010
     build-depends:   base, containers, mtl, free, keys, set-extra,
@@ -35,6 +28,7 @@ Library
                      Language.Seq.Syntax
                      Language.Seq.Term
                      Language.Seq.Test.Tools
+                     Language.Seq.Test.Lib
                      Language.Seq.TH
                      Language.Seq.Verilog
                      Language.Seq.VerilogRun
@@ -49,20 +43,36 @@ Library
                      Data.AsmTools.SetMap
                      Data.AsmTools.VCD
 
---    hs-source-dirs:  Language
---    ghc-options: -fwarn-incomplete-patterns -Werror
 
+-- Example FPGA HDL applications: these generate .pcf and .py and/or .v code
 
 executable f_blink
-  build-depends:  base, asm-tools
-  main-is:        f_blink.hs
-  hs-source-dirs: Examples/Seq
+    build-depends:  base, asm-tools
+    main-is:        f_blink.hs
+    hs-source-dirs: examples
 
 executable f_soc
-  build-depends:  base, asm-tools
-  main-is:        f_soc.hs
-  hs-source-dirs: Examples/Seq
+    build-depends:  base, asm-tools
+    main-is:        f_soc.hs
+    hs-source-dirs: examples
 
+
+
+-- Tests
+
+Test-Suite seq-qc
+    default-language: Haskell2010
+    build-depends: base, asm-tools, split, QuickCheck, template-haskell
+    type:       exitcode-stdio-1.0
+    main-is:    seq-qc.hs
+    hs-source-dirs: test
+
+Test-Suite seq-x
+    default-language: Haskell2010
+    build-depends: base, containers, keys, array, asm-tools, split, template-haskell
+    type:       exitcode-stdio-1.0
+    main-is:    seq-x.hs
+    hs-source-dirs: test
 
 
 -- Test-Suite test-pru
@@ -72,14 +82,6 @@ executable f_soc
 --     main-is:    test-pru.hs
 --     build-depends: base
 
--- Test-Suite test-seq
---     default-language: Haskell2010
---     build-depends: base, containers, mtl, free, keys, set-extra,
---                    template-haskell, parsec, QuickCheck, array, mios, split,
---                    binary, bytestring, process
---     type:       exitcode-stdio-1.0
---     main-is:    test-seq.hs
---     build-depends: base
 
 -- Test-Suite test-sat
 --     default-language: Haskell2010
