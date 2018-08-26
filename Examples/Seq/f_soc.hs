@@ -9,14 +9,14 @@ import Language.Seq
 import Language.Seq.Lib
 import Language.Seq.CPU
 import Language.Seq.Names
-import Lanuagee.Seq.TestTools
-import qualified Language.Seq.Forth
-import qualified Language.Seq.MyHDL
-import qualified Language.Seq.Verilog
+import Language.Seq.Test.Tools
+import qualified Language.Seq.Forth as Forth
+import qualified Language.Seq.MyHDL as MyHDL
+import qualified Language.Seq.Verilog as Verilog
 
-import qualified Language.Seq.Term
-import qualified Language.Seq.Expr
-import qualified Data.AsmTools.CSV
+import qualified Language.Seq.Term as SeqTerm
+import qualified Language.Seq.Expr as SeqExpr 
+import qualified Data.AsmTools.CSV as CSV
 
 import Control.Monad hiding (forever)
   

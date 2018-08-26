@@ -19,13 +19,14 @@ module Language.Seq.MyHDL(myhdl,MyHDL,testbench,fpgaGen,fpgaWrite,noOutputCheck)
 import Language.Seq
 import Language.Seq.Lib
 import Data.AsmTools.CSV
-import qualified Laguage.Seq.Expr as SeqExpr
+import qualified Language.Seq as Seq
+import qualified Language.Seq.Expr as SeqExpr
 import qualified Language.Seq.Term as SeqTerm
 import qualified Language.Seq.Emu as SeqEmu
 import Language.Seq.Term(Op(..),Term(..),NodeNum,Bindings)
 import Language.Seq.Expr(Expr,Term')
-import Language.Seq.PCF
-import qualified Language.Seq.TestTools as TestTools
+import Data.AsmTools.PCF
+import qualified Language.Seq.Test.Tools as TestTools
 
 import Control.Monad.State
 import Control.Monad.Writer

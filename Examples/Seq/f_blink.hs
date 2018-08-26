@@ -5,17 +5,17 @@
 
 {-# LANGUAGE TemplateHaskell #-}
 
-import Seq
-import SeqLib
-import CPU
-import Names
-import TestTools
-import qualified MyHDL
-import qualified Verilog
+import Language.Seq
+import Language.Seq.Lib
+import Language.Seq.CPU
+import Language.Seq.Names
+import Language.Seq.Test.Tools
+import qualified Language.Seq.MyHDL as MyHDL
+import qualified Language.Seq.Verilog as Verilog
 
-import qualified SeqTerm
-import qualified SeqExpr
-import qualified CSV
+import qualified Language.Seq.Term as SeqTerm
+import qualified Language.Seq.Expr as SeqExpr
+import qualified Data.AsmTools.CSV as CSV
 
   
 main = do

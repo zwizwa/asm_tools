@@ -24,6 +24,7 @@ module Language.Seq.Verilog where
 
 import Language.Seq(S,SType(..),Op1(..),Op2(..),Op3(..),Seq(..))
 import Language.Seq.NetList
+import qualified Language.Seq.NetList as SeqNetList
 import qualified Language.Seq.Term as SeqTerm
 import qualified Language.Seq.Lib as SeqLib
 import Data.AsmTools.PCF

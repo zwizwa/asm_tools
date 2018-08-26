@@ -34,6 +34,7 @@ Library
                      Language.Seq.Static
                      Language.Seq.Syntax
                      Language.Seq.Term
+                     Language.Seq.Test.Tools
                      Language.Seq.TH
                      Language.Seq.Verilog
                      Language.Seq.VerilogRun
@@ -52,10 +53,17 @@ Library
 --    ghc-options: -fwarn-incomplete-patterns -Werror
 
 
+executable f_blink
+  build-depends:  base, asm-tools
+  main-is:        f_blink.hs
+  hs-source-dirs: Examples/Seq
+
 executable f_soc
-  build-depends:  asm-tools
+  build-depends:  base, asm-tools
   main-is:        f_soc.hs
   hs-source-dirs: Examples/Seq
+
+
 
 -- Test-Suite test-pru
 --     default-language: Haskell2010

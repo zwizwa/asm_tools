@@ -21,6 +21,7 @@ module Language.Seq.IfElse where
 import Language.Seq.Term
 import Language.Seq(Seq,S)
 import qualified Language.Seq as Seq
+import qualified Language.Seq.Term as SeqTerm
 import Language.Seq.Test.Tools
 
 import Control.Monad.Writer
