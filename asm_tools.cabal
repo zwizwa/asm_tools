@@ -11,65 +11,105 @@ license: BSD3
 -- pretty-simple, text, 
 
 
-
 Library
+    default-language: Haskell2010
     build-depends:   base, containers, mtl, free, keys, set-extra,
                      template-haskell, parsec, QuickCheck, array, mios, split,
                      binary, bytestring, process
-    exposed-modules: Seq
-                     SeqLib
-                     SeqEmu
-    hs-source-dirs:  .
+    exposed-modules: Language.Seq
+                     Language.Seq.App
+                     Language.Seq.Arr
+                     Language.Seq.C
+                     Language.Seq.CPU
+                     Language.Seq.Emu
+                     Language.Seq.Expr
+                     Language.Seq.Forth
+                     Language.Seq.IfElse
+                     Language.Seq.Lib
+                     Language.Seq.MyHDL
+                     Language.Seq.MyHDLRun
+                     Language.Seq.Names
+                     Language.Seq.NetList
+                     Language.Seq.Prim
+                     Language.Seq.Static
+                     Language.Seq.Syntax
+                     Language.Seq.Term
+                     Language.Seq.TH
+                     Language.Seq.Verilog
+                     Language.Seq.VerilogRun
+
+                     Data.AsmTools.CSV
+                     Data.AsmTools.EDIF
+                     Data.AsmTools.NetFun
+                     Data.AsmTools.Partition
+                     Data.AsmTools.PCF
+                     Data.AsmTools.Protel
+                     Data.AsmTools.SE
+                     Data.AsmTools.SetMap
+                     Data.AsmTools.VCD
+
+--    hs-source-dirs:  Language
 --    ghc-options: -fwarn-incomplete-patterns -Werror
 
 
-Test-Suite test-pru
-    build-depends: base, containers, mtl, free, keys
-    type:       exitcode-stdio-1.0
-    main-is:    test-pru.hs
-    build-depends: base
+executable f_soc
+  build-depends:  asm-tools
+  main-is:        f_soc.hs
+  hs-source-dirs: Examples/Seq
 
-Test-Suite test-seq
-    build-depends: base, containers, mtl, free, keys, set-extra,
-                   template-haskell, parsec, QuickCheck, array, mios, split,
-                   binary, bytestring, process
-    type:       exitcode-stdio-1.0
-    main-is:    test-seq.hs
-    build-depends: base
+-- Test-Suite test-pru
+--     default-language: Haskell2010
+--     build-depends: base, containers, mtl, free, keys
+--     type:       exitcode-stdio-1.0
+--     main-is:    test-pru.hs
+--     build-depends: base
 
-Test-Suite test-sat
-    build-depends: base, containers, mtl, mios, z3
-    type:       exitcode-stdio-1.0
-    main-is:    test-sat.hs
-    build-depends: base
+-- Test-Suite test-seq
+--     default-language: Haskell2010
+--     build-depends: base, containers, mtl, free, keys, set-extra,
+--                    template-haskell, parsec, QuickCheck, array, mios, split,
+--                    binary, bytestring, process
+--     type:       exitcode-stdio-1.0
+--     main-is:    test-seq.hs
+--     build-depends: base
 
-Test-Suite test-qc-SeqLib
-    build-depends: base, containers, mtl, free, keys, set-extra,
-                   template-haskell, parsec, QuickCheck, split, array,
-                   binary, bytestring
-    type:       exitcode-stdio-1.0
-    main-is:    test-qc-SeqLib.hs
-    build-depends: base
+-- Test-Suite test-sat
+--     default-language: Haskell2010
+--     build-depends: base, containers, mtl, mios, z3
+--     type:       exitcode-stdio-1.0
+--     main-is:    test-sat.hs
+--     build-depends: base
+
+-- Test-Suite test-qc-SeqLib
+--     default-language: Haskell2010
+--     build-depends: base, containers, mtl, free, keys, set-extra,
+--                    template-haskell, parsec, QuickCheck, split, array,
+--                    binary, bytestring
+--     type:       exitcode-stdio-1.0
+--     main-is:    test-qc-SeqLib.hs
+--     build-depends: base
 
 
 
--- FPGA projects are currently test suites.  FIXME: turn these into
--- different projects?
-Test-Suite f_blink
-    build-depends: base, containers, mtl, free, keys, set-extra,
-                   template-haskell, parsec, QuickCheck, split, array,
-                   binary, bytestring
-    type:       exitcode-stdio-1.0
-    main-is:    f_blink.hs
-    build-depends: base
+-- -- FPGA projects are currently test suites.  FIXME: turn these into
+-- -- different projects?
+-- Test-Suite f_blink
+--     default-language: Haskell2010
+--     build-depends: base, containers, mtl, free, keys, set-extra,
+--                    template-haskell, parsec, QuickCheck, split, array,
+--                    binary, bytestring
+--     type:       exitcode-stdio-1.0
+--     main-is:    f_blink.hs
+--     build-depends: base
 
-Test-Suite f_soc
-    build-depends: base, containers, mtl, free, keys, set-extra,
-                   template-haskell, parsec, QuickCheck, split, array,
-                   binary, bytestring
-    type:       exitcode-stdio-1.0
-    main-is:    f_soc.hs
-    build-depends: base
+-- Test-Suite f_soc
+--     default-language: Haskell2010
+--     build-depends: base, containers, mtl, free, keys, set-extra,
+--                    template-haskell, parsec, QuickCheck, split, array,
+--                    binary, bytestring
+--     type:       exitcode-stdio-1.0
+--     main-is:    f_soc.hs
+--     build-depends: base
 
 
 
