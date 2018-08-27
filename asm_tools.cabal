@@ -90,54 +90,25 @@ Test-Suite pru
     hs-source-dirs: test
 
 
--- Test-Suite test-sat
+-- Just a stub for now.  Leave it commented out.
+-- Test-Suite sat
 --     default-language: Haskell2010
 --     build-depends: base, containers, mtl, mios, z3
 --     type:       exitcode-stdio-1.0
---     main-is:    test-sat.hs
+--     main-is:    sat.hs
 --     build-depends: base
+--     hs-source-dirs: test
 
--- Test-Suite test-qc-SeqLib
---     default-language: Haskell2010
---     build-depends: base, containers, mtl, free, keys, set-extra,
---                    template-haskell, parsec, QuickCheck, split, array,
---                    binary, bytestring
+
+-- For this I only have proprietary test files, so leave commented out.
+-- Test-Suite edif
+--     build-depends: base, mtl, parsec, sqlite-simple, free, containers, asm-tools
 --     type:       exitcode-stdio-1.0
---     main-is:    test-qc-SeqLib.hs
---     build-depends: base
-
-
-
--- -- FPGA projects are currently test suites.  FIXME: turn these into
--- -- different projects?
--- Test-Suite f_blink
---     default-language: Haskell2010
---     build-depends: base, containers, mtl, free, keys, set-extra,
---                    template-haskell, parsec, QuickCheck, split, array,
---                    binary, bytestring
---     type:       exitcode-stdio-1.0
---     main-is:    f_blink.hs
---     build-depends: base
-
--- Test-Suite f_soc
---     default-language: Haskell2010
---     build-depends: base, containers, mtl, free, keys, set-extra,
---                    template-haskell, parsec, QuickCheck, split, array,
---                    binary, bytestring
---     type:       exitcode-stdio-1.0
---     main-is:    f_soc.hs
---     build-depends: base
+--     main-is:    edif.hs
+--     hs-source-dirs: test
 
 
 
 
-
-
--- For this I only have proprietary test files.
--- Test-Suite test-edif
---     build-depends: base, mtl, parsec, sqlite-simple, free, containers
---     type:       exitcode-stdio-1.0
---     main-is:    test-edif.hs
---     build-depends: base
 
 

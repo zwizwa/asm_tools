@@ -3,10 +3,11 @@
 {-# LANGUAGE FlexibleContexts #-}
 
 
-import EDIF
-import SE
-import CSV
-import Protel
+import Data.AsmTools.EDIF
+import Data.AsmTools.SE
+import Data.AsmTools.CSV
+import Data.AsmTools.Protel
+
 import System.Environment
 import Data.Foldable
 import Control.Monad.Free
@@ -19,7 +20,7 @@ main = getArgs >>= main'
 main' [] = do
   main' ["/tmp/test.edif"]
 main' [fileName] = do
-  contents <- EDIF.readEdifFile fileName
+  contents <- readEdifFile fileName
   case readSE fileName contents of
     Left errorMsg ->
       putStrLn errorMsg
