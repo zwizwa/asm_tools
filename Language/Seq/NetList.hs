@@ -5,6 +5,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
@@ -27,6 +28,7 @@ import Control.Monad.Free
 import qualified Data.List as List
 import Data.Graph
 import qualified Data.Array as Array
+import Data.Functor.Classes
 
 
 -- This can serve as a decoupling type between SeqTerm conversiona and
@@ -56,10 +58,10 @@ data Form n =
   | Memory  n n n n
   | Delay   n Int
   | Connect n
-  deriving (Show, Functor, Foldable)
+  deriving (Show, Show1, Functor, Foldable)
 
 data TypedForm n = TypedForm { typedFormType :: SSize, typedFormForm :: Form n }
-  deriving (Show, Functor, Foldable)
+  deriving (Show, Show1, Functor, Foldable)
 
 
 -- Converting between Term.Term and this makes sense only at the level
@@ -243,9 +245,7 @@ io bindings = (delays_in, delays_out, inputs, drives, rest) where
 -- annotations for intermediate nodes either.
 
 type TypedExpr' n = Free TypedForm n
-newtype TypedExpr n = TypedExpr (TypedExpr' n)
--- 'deriving Show' doesn't work on 8.4.3. due to missing Show1 instance.
--- I have no time to figure this out, so see the explicit Show instance below.
+newtype TypedExpr n = TypedExpr (TypedExpr' n) deriving Show
 
 
 inlined :: DG -> [(Vertex, TypedExpr Vertex)]
@@ -305,8 +305,6 @@ showSZ :: Maybe Int -> String
 showSZ Nothing = "?"
 showSZ (Just n) = show n
 
-instance Show n => Show (TypedExpr n) where
-  show (TypedExpr te) = showTE te
 
 
 compileTerm = convert . SeqTerm.compileTerm
