@@ -294,7 +294,7 @@ showF (Delay n i) = se $ ["DELAY", show n, show i]
 showF (Connect n) = se $ ["CONNECT", show n]
 
 showTF :: Show n => TypedForm n -> String
-showTF (TypedForm sz f) = show f ++ "::" ++ showSZ sz where
+showTF (TypedForm sz f) = showF f ++ "::" ++ showSZ sz where
 
 showTE :: Show n => TypedExpr' n -> String
 showTE (Pure n) = show n
@@ -307,7 +307,8 @@ showSZ (Just n) = show n
 instance Show n => Show (Form n) where show _ = "Show Form"
 instance Show n => Show (TypedForm n) where show _ = "Show TypedForm"
 instance Show n => Show (TypedExpr n) where show _ = "Show TypedExpr"
-  
+
+                                            
 
 compileTerm = convert . SeqTerm.compileTerm
 
