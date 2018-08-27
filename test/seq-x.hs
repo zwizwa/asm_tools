@@ -90,7 +90,7 @@ main = do
   x_run_myhdl
   x_run_verilog
   x_testbench
-  x_verilog
+  --x_verilog
   x_seqnetlist
 
 x_counter = do
@@ -526,12 +526,12 @@ all_ops [i, o] = do
     return ([(cbit 0, cbits 8 0, cbits 16 0, ra)], n)
   connect o n
 
-x_verilog = do
-  putStrLn "-- x_verilog"
-  let mod = all_ops
-      v = Verilog.vModule "mymod" ["IN", "OUT"] [bit, bit] mod
-  print $ v
-  writeFile "x_verilog.v" $ show v
+-- x_verilog = do
+--   putStrLn "-- x_verilog"
+--   let mod = all_ops
+--       v = Verilog.vModule "mymod" ["IN", "OUT"] [bit, bit] mod
+--   print $ v
+--   writeFile "x_verilog.v" $ show v
 
   
   

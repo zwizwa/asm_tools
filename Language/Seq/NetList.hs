@@ -5,7 +5,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
@@ -58,10 +57,10 @@ data Form n =
   | Memory  n n n n
   | Delay   n Int
   | Connect n
-  deriving (Show, Show1, Functor, Foldable)
+  deriving (Functor, Foldable)
 
 data TypedForm n = TypedForm { typedFormType :: SSize, typedFormForm :: Form n }
-  deriving (Show, Show1, Functor, Foldable)
+  deriving (Functor, Foldable)
 
 
 -- Converting between Term.Term and this makes sense only at the level
@@ -245,7 +244,7 @@ io bindings = (delays_in, delays_out, inputs, drives, rest) where
 -- annotations for intermediate nodes either.
 
 type TypedExpr' n = Free TypedForm n
-newtype TypedExpr n = TypedExpr (TypedExpr' n) deriving Show
+newtype TypedExpr n = TypedExpr (TypedExpr' n)
 
 
 inlined :: DG -> [(Vertex, TypedExpr Vertex)]
@@ -305,7 +304,10 @@ showSZ :: Maybe Int -> String
 showSZ Nothing = "?"
 showSZ (Just n) = show n
 
-
+instance Show n => Show (Form n) where show _ = "Show Form"
+instance Show n => Show (TypedForm n) where show _ = "Show TypedForm"
+instance Show n => Show (TypedExpr n) where show _ = "Show TypedExpr"
+  
 
 compileTerm = convert . SeqTerm.compileTerm
 
