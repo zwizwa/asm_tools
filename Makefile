@@ -13,7 +13,7 @@ all: compile
 
 clean:
 	rm -f result *~ x_* *.v *.vhd *.bin *.blif *.asc f_*.py x_*.py *.compile *.tmp *.vcd
-	rm -rf __pycache__
+	rm -rf __pycache__ dist
 
 .PHONY: myhdl_test
 myhdl_test:  f_blink.ct256.bin f_soc.ct256.bin

@@ -5,7 +5,7 @@ build-type: Simple
 license: BSD3
 
 Library
-    default-language: Haskell2010
+    default-language: Haskell98
     build-depends:   base, containers, mtl, free, keys, set-extra,
                      template-haskell, parsec, QuickCheck, array, mios, split,
                      binary, bytestring, process
@@ -67,14 +67,14 @@ executable f_soc
 -- Tests
 
 Test-Suite seq-qc
-    default-language: Haskell2010
+    default-language: Haskell98
     build-depends: base, asm-tools, split, QuickCheck, template-haskell
     type:       exitcode-stdio-1.0
     main-is:    seq-qc.hs
     hs-source-dirs: test
 
 Test-Suite seq-x
-    default-language: Haskell2010
+    default-language: Haskell98
     build-depends: base, containers, keys, array, asm-tools, split, template-haskell
     type:       exitcode-stdio-1.0
     main-is:    seq-x.hs
@@ -82,7 +82,7 @@ Test-Suite seq-x
 
 
 Test-Suite pru
-    default-language: Haskell2010
+    default-language: Haskell98
     build-depends: base, containers, mtl, free, keys, asm-tools
     type:       exitcode-stdio-1.0
     main-is:    pru.hs
@@ -92,7 +92,7 @@ Test-Suite pru
 
 -- Just a stub for now.  Leave it commented out.
 -- Test-Suite sat
---     default-language: Haskell2010
+--     default-language: Haskell98
 --     build-depends: base, containers, mtl, mios, z3
 --     type:       exitcode-stdio-1.0
 --     main-is:    sat.hs
