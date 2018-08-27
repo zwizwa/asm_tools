@@ -243,7 +243,9 @@ io bindings = (delays_in, delays_out, inputs, drives, rest) where
 -- annotations for intermediate nodes either.
 
 type TypedExpr' n = Free TypedForm n
-newtype TypedExpr n = TypedExpr (TypedExpr' n) deriving Show
+newtype TypedExpr n = TypedExpr (TypedExpr' n)
+-- 'deriving Show' doesn't work on 8.4.3. due to missing Show1 instance.
+-- I have no time to figure this out, so see the explicit Show instance below.
 
 
 inlined :: DG -> [(Vertex, TypedExpr Vertex)]
@@ -298,6 +300,8 @@ showTE (Free f) = show f
 showSZ Nothing = "?"
 showSZ (Just n) = show n
 
+instance Show n => Show (TypedExpr n) where
+  show (TypedExpr te) = showTE te
 
 
 compileTerm = convert . SeqTerm.compileTerm
