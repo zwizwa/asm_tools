@@ -5,16 +5,18 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module PruEmu(compile,compile'
-             ,Src,Comp,Emu
-             ,EmuState(..),EmuVar(..)
-             ,runEmu,stateTrace,tickTrace
-             ,pseudo, loadm
-             ,machineInit,machineInit0,machineInit'
-             ,rle
-             ) where
+module Language.Pru.Emu(
+  compile,compile'
+  ,Src,Comp,Emu
+  ,EmuState(..),EmuVar(..)
+  ,runEmu,stateTrace,tickTrace
+  ,pseudo, loadm
+  ,machineInit,machineInit0,machineInit'
+  ,rle
+  ) where
 
-import Pru
+import Language.Pru
+
 import Data.Map.Strict (Map, (!), lookup, empty, insert, fromList, adjust)
 import qualified Data.Map as Map
 import Control.Monad.State

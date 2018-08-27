@@ -1,9 +1,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module BeagleLogic where
+module Language.Pru.BeagleLogic where
+import Language.Pru
+import Language.Pru.Weave
+
 import Data.List
-import Pru
-import Weave
 
 -- A weaver for the PRU1 data acquisition loop used in the
 -- BeagleLogic.  It interleaves two loops:

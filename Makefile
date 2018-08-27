@@ -50,6 +50,8 @@ test-seq-qc: default.nix
 	$(NIX_SHELL) --run "cabal test seq-qc --log=/dev/stdout"
 test-seq-x: default.nix
 	$(NIX_SHELL) --run "cabal test seq-x --log=/dev/stdout"
+test-pru: default.nix
+	$(NIX_SHELL) --run "cabal test pru --log=/dev/stdout"
 
 # These need corresponding entries in the .cabal file
 f_%.py f_%.pcf f_%.imem.bin: f_%.hs *.hs

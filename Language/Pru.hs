@@ -5,7 +5,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Pru where
+module Language.Pru where
 
 -- FIXME: Instructions are implemented as needed by the driving application.
 class Monad m => Pru m where

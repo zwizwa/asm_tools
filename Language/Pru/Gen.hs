@@ -4,11 +4,14 @@
 {-# LANGUAGE FlexibleContexts #-}
 
 
-module PruGen(asm) where
+module Language.Pru.Gen(asm) where
+
+import Language.Pru
+
 import Control.Monad.State
 import Control.Monad.Writer
 import Data.List
-import Pru
+
 
 -- Compile to intermediate Ins language using Writer+State monad.
 

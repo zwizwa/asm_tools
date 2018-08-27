@@ -43,6 +43,12 @@ Library
                      Data.AsmTools.SetMap
                      Data.AsmTools.VCD
 
+                     Language.Pru
+                     Language.Pru.Gen
+                     Language.Pru.Emu
+                     Language.Pru.BeagleLogic
+                     Language.Pru.Lib
+                     Language.Pru.Weave
 
 -- Example FPGA HDL applications: these generate .pcf and .py and/or .v code
 
@@ -75,12 +81,13 @@ Test-Suite seq-x
     hs-source-dirs: test
 
 
--- Test-Suite test-pru
---     default-language: Haskell2010
---     build-depends: base, containers, mtl, free, keys
---     type:       exitcode-stdio-1.0
---     main-is:    test-pru.hs
---     build-depends: base
+Test-Suite pru
+    default-language: Haskell2010
+    build-depends: base, containers, mtl, free, keys, asm-tools
+    type:       exitcode-stdio-1.0
+    main-is:    pru.hs
+    build-depends: base
+    hs-source-dirs: test
 
 
 -- Test-Suite test-sat

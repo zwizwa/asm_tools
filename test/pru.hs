@@ -30,11 +30,11 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 
-import Pru           -- Abstract language
-import PruGen        -- Concrete assembly text generator
-import PruEmu        -- Compile to emulator functions
-import BeagleLogic   -- Example code to interface with BeagleLogic firmware
-import PruLib
+import Language.Pru               -- Abstract language
+import Language.Pru.Gen           -- Concrete assembly text generator
+import Language.Pru.Emu           -- Compile to emulator functions
+import Language.Pru.BeagleLogic   -- Example code to interface with BeagleLogic firmware
+import Language.Pru.Lib
 
 import Data.List
 import Data.Map.Strict (Map, (!), lookup, empty, insert, fromList, adjust)

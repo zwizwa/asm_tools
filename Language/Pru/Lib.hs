@@ -1,8 +1,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module PruLib where
+module Language.Pru.Lib where
 
-import Pru
+import Language.Pru
 
 retR = (Rw 30 0) -- FIXME
 

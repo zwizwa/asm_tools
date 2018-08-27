@@ -1,8 +1,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Weave where
+module Language.Pru.Weave where
+import Language.Pru
 import Data.List
-import Pru
 
 shift_loops nb_pre pad loop_start loop1 loop2 = code where
   -- pull out nb_pre instructions into the preroll, rotating loop body.
