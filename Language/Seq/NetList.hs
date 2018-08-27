@@ -280,8 +280,10 @@ inlined dg@(DG _ _ bindings) = [(n, TypedExpr $ exprDef n) | n <- keep] where
 
 -- S-expression printer
 
+se :: [String] -> String
 se lst = "(" ++ intercalate " " lst ++ ")"
 
+showF :: Show n => Form n -> String
 showF Input = "INPUT"
 showF (Const n) = show n
 showF (Comb1 o a) = se [show o, show a]
@@ -291,12 +293,15 @@ showF (Slice n a b) = se $ ["SLICE", show n, showSZ a, show b]
 showF (Memory a b c d) = se $ ["MEMORY"] ++ map show [a,b,c,d]
 showF (Delay n i) = se $ ["DELAY", show n, show i]
 showF (Connect n) = se $ ["CONNECT", show n]
-  
+
+showTF :: Show n => TypedForm n -> String
 showTF (TypedForm sz f) = show f ++ "::" ++ showSZ sz where
 
+showTE :: Show n => TypedExpr' n -> String
 showTE (Pure n) = show n
 showTE (Free f) = show f
 
+showSZ :: Maybe Int -> String
 showSZ Nothing = "?"
 showSZ (Just n) = show n
 
