@@ -299,7 +299,7 @@ showTF (TypedForm sz f) = show f ++ "::" ++ showSZ sz where
 
 showTE :: Show n => TypedExpr' n -> String
 showTE (Pure n) = show n
-showTE (Free f) = show f
+showTE (Free f) = showTF f
 
 showSZ :: Maybe Int -> String
 showSZ Nothing = "?"
