@@ -57,10 +57,10 @@ data Form n =
   | Memory  n n n n
   | Delay   n Int
   | Connect n
-  deriving (Functor, Foldable)
+  deriving (Show, Functor, Foldable)
 
 data TypedForm n = TypedForm { typedFormType :: SSize, typedFormForm :: Form n }
-  deriving (Functor, Foldable)
+  deriving (Show, Functor, Foldable)
 
 
 -- Converting between Term.Term and this makes sense only at the level
@@ -244,7 +244,7 @@ io bindings = (delays_in, delays_out, inputs, drives, rest) where
 -- annotations for intermediate nodes either.
 
 type TypedExpr' n = Free TypedForm n
-newtype TypedExpr n = TypedExpr (TypedExpr' n)
+newtype TypedExpr n = TypedExpr (TypedExpr' n) deriving Show
 
 
 inlined :: DG -> [(Vertex, TypedExpr Vertex)]
@@ -304,9 +304,9 @@ showSZ :: Maybe Int -> String
 showSZ Nothing = "?"
 showSZ (Just n) = show n
 
-instance Show n => Show (Form n) where show _ = "Show Form"
-instance Show n => Show (TypedForm n) where show _ = "Show TypedForm"
-instance Show n => Show (TypedExpr n) where show _ = "Show TypedExpr"
+-- instance Show n => Show (Form n) where show _ = "Show Form"
+-- instance Show n => Show (TypedForm n) where show _ = "Show TypedForm"
+-- instance Show n => Show (TypedExpr n) where show _ = "Show TypedExpr"
 
                                             
 
