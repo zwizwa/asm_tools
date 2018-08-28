@@ -45,6 +45,13 @@ configure: default.nix
 test: default.nix
 	$(NIX_SHELL) --run "cabal test --log=/dev/stdout"
 
+# Target applications
+f_soc: default.nix
+	$(NIX_SHELL) --run "cabal build f_soc"
+f_blink: default.nix
+	$(NIX_SHELL) --run "cabal build f_blink"
+
+
 # Inidividual tests
 test-seq-qc: default.nix
 	$(NIX_SHELL) --run "cabal test seq-qc --log=/dev/stdout"
