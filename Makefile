@@ -52,6 +52,10 @@ f_blink: default.nix
 	$(NIX_SHELL) --run "cabal build f_blink"
 
 
+t_cosim: default.nix
+	$(NIX_SHELL) --run "cabal build t_cosim"
+	./dist/build/t_cosim/t_cosim
+
 # Inidividual tests
 test-seq-qc: default.nix
 	$(NIX_SHELL) --run "cabal test seq-qc --log=/dev/stdout"

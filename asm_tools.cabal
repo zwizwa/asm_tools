@@ -8,7 +8,7 @@ Library
     default-language: Haskell98
     build-depends:   base, containers, mtl, free, keys, set-extra,
                      template-haskell, parsec, QuickCheck, array, mios, split,
-                     binary, bytestring, process, unix
+                     binary, bytestring, process, unix, network
     exposed-modules: Language.Seq
                      Language.Seq.App
                      Language.Seq.Arr
@@ -61,6 +61,11 @@ executable f_blink
 executable f_soc
     build-depends:  base, asm-tools
     main-is:        f_soc.hs
+    hs-source-dirs: examples
+
+executable t_cosim
+    build-depends:  base, asm-tools
+    main-is:        t_cosim.hs
     hs-source-dirs: examples
 
 

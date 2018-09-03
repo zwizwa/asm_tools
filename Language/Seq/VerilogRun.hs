@@ -10,12 +10,21 @@ import qualified Language.Seq.Verilog as Verilog
 import System.IO
 import System.IO.Error
 import System.Process
+-- import System.Socket
+-- import System.Socket.Type.Stream
+-- import System.Socket.Family.Unix
 
 import System.Posix.Files
-import Control.Concurrent
+-- import Control.Concurrent
 import Control.Exception
 
-import Data.Bits
+-- import Data.Bits
+
+import Network.Socket hiding (send, sendTo, recv, recvFrom)
+import Network.Socket.ByteString
+import qualified Data.ByteString.Char8 as Char8
+import Control.Monad
+
 
 
 -- Running MyHDL
@@ -62,43 +71,49 @@ testStdout = m where
         putStr stderr
 
 
-
--- Using binary pipe interface.
--- createNamedPipe
-
--- We can only open for writing ince the other end has opened the pipe
--- for reading, so loop until it's ready.
-
-openPipeAppend p = again 3 where
-  again 0 = error $ "openPipeAppend: " ++ p
-  again n = do
-    openFile p AppendMode `catch` handle where
-      handle e
-        | isDoesNotExistError e = do
-            print e
-            threadDelay 500000
-            again $ n - 1
+removeLink' p = do
+  let handle e
+        | isDoesNotExistError e = return ()
         | otherwise = throwIO e
-
-      
+  removeLink p `catch` handle
 
 
 testPipe = do
-  let mode = ownerReadMode .|. ownerWriteMode .|. namedPipeMode
-      p_to = "/tmp/seq_to"
-      p_from = "/tmp/seq_from"
-      cmd = "cat /dev/urandom"
+  let sock_path = "/tmp/seq_sock"
+      cmd = "make -C ~/asm_tools/examples/verilog cosim"
 
-  
-  createNamedPipe p_to mode
-  createNamedPipe p_from mode
-  to <- openFile p_to ReadMode
-  
+
+  -- Set up socket.  Module will connect here.
+  removeLink' sock_path
+  sock <- socket AF_UNIX Stream 0
+  bind sock (SockAddrUnix sock_path)
+  listen sock maxListenQueue
+
+  -- Start process
   (_, Just stdout, Just stderr, _) <-
     createProcess (shell cmd) { std_out = CreatePipe, std_err = CreatePipe }
 
-  from <- openPipeAppend p_from
+  -- Expecting only one connection from the module.
+  (conn, _) <- accept sock
 
-  removeLink p_to
-  removeLink p_from
+  msg <- recv conn 1024
+  putStrLn $ "msg: " ++ show msg
+
+  send conn msg
+
+  msg <- recv conn 1024
+  putStrLn $ "msg: " ++ show msg
+  
+  close conn
+  close sock
+
+  out <- hGetContents stdout
+  err <- hGetContents stderr
+
+  putStrLn "stderr:"
+  putStr err
+  putStrLn "output:"
+  putStr out
+
+  removeLink sock_path
 

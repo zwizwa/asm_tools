@@ -1,6 +1,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+
 #include "vpi_user.h"
 
 // Keep this simple for now: only sequential interface implemented in
@@ -33,7 +36,8 @@
 struct seq {
     int nb_to, nb_from;
     vpiHandle r_to[MAX_REGS], r_from[MAX_REGS];
-    FILE *f_to, *f_from;
+    int fd;
+    FILE *f;
 };
 
 // Implements the increment system task
@@ -48,21 +52,24 @@ static int seq_tick(char *ctx) {
             to_vals[i] = val.value.integer;
             //vpi_printf("to : %d=%d\n", i, val.value.integer);
         }
-        fwrite(to_vals, sizeof(to_vals), 1, seq->f_to);
+        fwrite(to_vals, sizeof(to_vals), 1, seq->f);
+        fflush(seq->f); // FIXME: when to flush?
     }
 
     if (seq->nb_from) {
         uint32_t from_vals[seq->nb_from];
-        if (1 != fread(from_vals, sizeof(from_vals), 1, seq->f_from)) {
+        if (1 != fread(from_vals, sizeof(from_vals), 1, seq->f)) {
             //vpi_printf("end of input\n"); // doesn't print
             vpi_control(vpiFinish, 0);
         }
-        for (int i=0; i<seq->nb_from; i++) {
-            struct t_vpi_value val = {.format = vpiIntVal };
-            //vpi_get_value(seq->r_from[i], &val);
-            //vpi_printf("from : %d=%d\n", i, val.value.integer);
-            val.value.integer = from_vals[i];
-            vpi_put_value(seq->r_from[i], &val, NULL, vpiNoDelay);
+        else {
+            for (int i=0; i<seq->nb_from; i++) {
+                struct t_vpi_value val = {.format = vpiIntVal };
+                //vpi_get_value(seq->r_from[i], &val);
+                //vpi_printf("from : %d=%d\n", i, val.value.integer);
+                val.value.integer = from_vals[i];
+                vpi_put_value(seq->r_from[i], &val, NULL, vpiNoDelay);
+            }
         }
     }
     return 0;
@@ -115,11 +122,23 @@ char *check_getenv(char *var, char *dflt) {
     return val;
 }
 
+#define ERROR(msg, ...) { fprintf(stderr, msg, __VA_ARGS__); exit(1); }
+#define ASSERT(x) if (!(x)) { ERROR("%s\n", #x) }
+
 void setup_seq(void) {
     struct seq *seq = calloc(1,sizeof(*seq));
     vpi_printf("Setting up Seq cosim.\n");
-    seq->f_to   = fopen(check_getenv("SEQ_TO",""), "a");
-    seq->f_from = fopen(check_getenv("SEQ_FROM",""), "r");
+
+    /* Connect to Unix Domain Socket. */
+    char *sock_path;
+    socklen_t addrlen = 0;
+    ASSERT(NULL != (sock_path = getenv("SEQ_SOCK")));
+    ASSERT(-1 != (seq->fd = socket(PF_UNIX, SOCK_STREAM,0)));
+    struct sockaddr_un addr = {.sun_family = AF_UNIX};
+    strcpy(addr.sun_path, sock_path);
+    addrlen = sizeof(addr.sun_family) + strlen(addr.sun_path) + 1;
+    ASSERT(0 == connect(seq->fd, (struct sockaddr *)&addr, addrlen));
+    ASSERT(NULL != (seq->f = fdopen(seq->fd, "a+")));
 
     TASK(vpiSysTask, 0, "$seq_tick",  seq_tick,  0, 0, (char*)seq);
     TASK(vpiSysTask, 0, "$seq_from",  seq_from,  0, 0, (char*)seq);

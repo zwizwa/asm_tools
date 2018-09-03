@@ -1,16 +1,18 @@
 VPI := cosim.vpi
 
-test: testbench.run
+DEPS := Makefile
+
+cosim: testbench.run
 clean:
 	rm -rf *.vvp *.vpi *.o
-%.vvp: %.v
+%.vvp: %.v $(DEPS)
 	iverilog $< -o $@
-%.run: %.vvp $(VPI)
-	. ./vars.sh ; rm -f $$SEQ_TO ; vvp -m./cosim $<
+%.run: %.vvp $(VPI) $(DEPS)
+	. ./vars.sh ; vvp -m./cosim $<
 
-%.o: %.c
-	gcc -I/usr/include/iverilog -fpic -c $< -o $@
-%.vpi: %.o
+%.o: %.c $(DEPS)
+	gcc -Wall -Werror -I/usr/include/iverilog -fpic -c $< -o $@
+%.vpi: %.o $(DEPS)
 	gcc -shared -o $@ $< -lvpi
 
 .SECONDARY:
