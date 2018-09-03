@@ -164,6 +164,7 @@ vModule mod_name portNames portTypes mod = Verilog vCode where
     memnode memn = (memn, deln) where
       deln = case fanout dg memn of
         [n] -> n
+        [] -> error $ "memnode: no reads from data register. FIXME"
         fo -> error $ "memnode: fanout: " ++ show fo 
 
   noMemDelays = filter (\(n, _) -> notElem n $ map snd mem_nodes)
@@ -200,6 +201,11 @@ vModule mod_name portNames portTypes mod = Verilog vCode where
 
   updates = concat $ map update delays
   resets  = concat $ map reset  delays
+
+  -- block tab0 header lines =
+  --   tab0 ++ header ++ " begin\n" ++
+  --   concat $ [tab0 ++ tab ++ ++ line ++ "\n" | line <- lines] ++
+  --   tab0 ++ "end\n"
 
   vCode =
     -- "`timescale 1ns/10ps\n" ++  -- from MyHDL output

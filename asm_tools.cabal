@@ -42,6 +42,7 @@ Library
                      Data.AsmTools.SE
                      Data.AsmTools.SetMap
                      Data.AsmTools.VCD
+                     Data.AsmTools.MT
 
                      Language.Pru
                      Language.Pru.Gen

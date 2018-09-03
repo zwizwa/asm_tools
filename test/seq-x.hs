@@ -28,6 +28,7 @@ import qualified Language.Seq.C as SeqC
 import qualified Language.Seq.CPU as CPU
 import qualified Language.Seq.NetList as SeqNetList
 
+import qualified Data.AsmTools.MT as MT
 import qualified Data.AsmTools.VCD as VCD
 import qualified Data.AsmTools.CSV as CSV
 import qualified Data.AsmTools.NetFun as NetFun
@@ -90,8 +91,10 @@ main = do
   x_run_myhdl
   x_run_verilog
   x_testbench
-  --x_verilog
+  x_verilog
   x_seqnetlist
+
+  x_mt
 
 x_counter = do
   putStrLn "--- x_counter"
@@ -505,7 +508,7 @@ x_testbench = do
   print tb
 
 
-all_ops [i, o] = do
+verilog_ops [i, o] = do
   n <- closeMem [bits 16] $ \[rd] -> do
     ra <- counter $ bits 8
     a <- inv i >>= delay
@@ -526,13 +529,30 @@ all_ops [i, o] = do
     return ([(cbit 0, cbits 8 0, cbits 16 0, ra)], n)
   connect o n
 
--- x_verilog = do
---   putStrLn "-- x_verilog"
---   let mod = all_ops
---       v = Verilog.vModule "mymod" ["IN", "OUT"] [bit, bit] mod
---   print $ v
---   writeFile "x_verilog.v" $ show v
+x_verilog_ops = do
+  putStrLn "-- x_verilog_ops"
+  let mod = verilog_ops
+      v = Verilog.vModule "mymod" ["IN", "OUT"] [bit, bit] mod
+  print $ v
+  writeFile "x_verilog_ops.v" $ show v
 
+verilog_tb [] = do
+  closeMem [bits 16] $ \[rd] -> do
+    let we = cbits 1 1
+        wa = cbits 8 0
+        ra = cbits 8 0
+    wd <- add rd 0
+    return ([(we, wa, wd, ra)], [rd, wd])
+
+x_verilog_tb = do
+  putStrLn "-- x_verilog_tb"
+  let v = Verilog.testbench "mymod" [] verilog_tb (replicate 10 [])
+  print $ v
+  writeFile "x_verilog_tb.v" $ show v
+
+x_verilog = do
+  x_verilog_ops
+  x_verilog_tb
   
   
 x_seqnetlist = do
@@ -567,3 +587,9 @@ x_seqnetlist = do
   --   return $ case (SeqNetList.depends bindings' a b) of
   --     True -> Just (a,b)
   --     False -> Nothing
+
+
+x_mt = do
+  putStrLn "-- x_mt"
+  MT.test
+  

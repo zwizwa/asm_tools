@@ -1,8 +1,14 @@
+VPI := cosim.vpi
+
 test: testbench.run
 clean:
-	rm -rf *.elf
-%.elf: %.v
+	rm -rf *.vvp *.vpi
+%.vvp: %.v
 	iverilog $< -o $@
-%.run: %.elf
-	$$(readlink -f $<)
+%.run: %.vvp $(VPI)
+	vvp -m./cosim $<
 
+%.vpi: %.c Makefile
+	gcc -I/usr/include/iverilog -shared -o $@ $<
+
+.SECONDARY:
