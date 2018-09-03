@@ -45,7 +45,7 @@ module counter_tb;
    end
    
    always @(posedge clk) begin
-      $display("%d", count);
+      $display("%d %d", count, v);
       $seq_tick;
       
    end
