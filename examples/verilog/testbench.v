@@ -28,7 +28,7 @@ module counter_tb;
    reg [3:0] v = 123;
    
    initial begin
-      $seq_to(count, clk, rst);
+      $seq_to(count);
       $seq_from(v);
       #1 rst <= 1;
       //repeat (20) @(posedge clk);

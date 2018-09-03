@@ -22,10 +22,14 @@ import Control.Exception
 -- import Data.Bits
 
 import Network.Socket hiding (send, sendTo, recv, recvFrom)
-import Network.Socket.ByteString
-import qualified Data.ByteString.Char8 as Char8
+import qualified Network.Socket.ByteString as NBS
+
+import qualified Data.ByteString.Lazy as DBS
+
 import Control.Monad
 
+import Data.Binary.Get
+import Data.Binary.Builder
 
 
 -- Running MyHDL
@@ -84,11 +88,13 @@ testPipe = withTempDirectory "/tmp" "seq" $ \dir -> do
   let sock_path = dir ++ "/sock"
       setVar = "SEQ_SOCK=" ++ sock_path
       cmd = setVar ++ " make -C ~/asm_tools/examples/verilog cosim"
+      nb_from_verilog = 1
+      nb_to_verilog = 1
+      nb_out = 1
 
   putStrLn setVar
 
   -- Set up socket.  Module will connect here.
-  removeLink' sock_path
   sock <- socket AF_UNIX Stream 0
   bind sock (SockAddrUnix sock_path)
   listen sock maxListenQueue
@@ -100,13 +106,27 @@ testPipe = withTempDirectory "/tmp" "seq" $ \dir -> do
   -- Expecting only one connection from the module.
   (conn, _) <- accept sock
 
-  msg <- recv conn 1024
-  putStrLn $ "msg: " ++ show msg
+  -- FIXME: For "real" simulations, it will make sense to push/pull
+  -- chunks with larger granularity, which will limit the number of
+  -- system calls.  For now, just do one sample at a time.
+  
+  let getFrom = do
+        msg <- NBS.recv conn $ 4 * nb_from_verilog
+        let ws = runGet from $ DBS.fromStrict msg
+        print ws
+        return ws
+      from = do
+        ws <- sequence $ [getWord32le | _ <- [1..nb_from_verilog]]
+        return $ ws -- map fromIntegral ws
 
-  send conn msg
+      putTo bus = do
+        let msg = DBS.toStrict $ toLazyByteString $ mconcat $ map putWord32le bus
+        NBS.send conn msg
 
-  msg <- recv conn 1024
-  putStrLn $ "msg: " ++ show msg
+
+  getFrom ; putTo [7]
+  getFrom ; putTo [8]
+  getFrom
   
   close conn
   close sock
