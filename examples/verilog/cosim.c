@@ -133,6 +133,7 @@ void setup_seq(void) {
     char *sock_path;
     socklen_t addrlen = 0;
     ASSERT(NULL != (sock_path = getenv("SEQ_SOCK")));
+    vpi_printf("SEQ_SOCK=%s\n", sock_path);
     ASSERT(-1 != (seq->fd = socket(PF_UNIX, SOCK_STREAM,0)));
     struct sockaddr_un addr = {.sun_family = AF_UNIX};
     strcpy(addr.sun_path, sock_path);

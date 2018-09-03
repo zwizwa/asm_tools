@@ -9,6 +9,7 @@ import qualified Language.Seq.Verilog as Verilog
 
 import System.IO
 import System.IO.Error
+import System.IO.Temp
 import System.Process
 -- import System.Socket
 -- import System.Socket.Type.Stream
@@ -71,17 +72,20 @@ testStdout = m where
         putStr stderr
 
 
-removeLink' p = do
-  let handle e
-        | isDoesNotExistError e = return ()
-        | otherwise = throwIO e
-  removeLink p `catch` handle
 
+-- We need to talk to code that runs inside of a VPI module.  There
+-- are a couple of ways to do this, but the simplest one seems to be a
+-- unix domain socket in a dedicated temporary directory.  The
+-- location is then passed to the module code through an environment
+-- variable.
 
-testPipe = do
-  let sock_path = "/tmp/seq_sock"
-      cmd = "make -C ~/asm_tools/examples/verilog cosim"
+testPipe = withTempDirectory "/tmp" "seq" $ \dir -> do
+  
+  let sock_path = dir ++ "/sock"
+      setVar = "SEQ_SOCK=" ++ sock_path
+      cmd = setVar ++ " make -C ~/asm_tools/examples/verilog cosim"
 
+  putStrLn setVar
 
   -- Set up socket.  Module will connect here.
   removeLink' sock_path
@@ -116,4 +120,11 @@ testPipe = do
   putStr out
 
   removeLink sock_path
+
+
+removeLink' p = do
+  let handle e
+        | isDoesNotExistError e = return ()
+        | otherwise = throwIO e
+  removeLink p `catch` handle
 
