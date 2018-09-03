@@ -25,10 +25,21 @@ module counter_tb;
    
    counter U0 (clk, rst, count);
 
+   reg [7:0] v = 123;
+   
+   
+   
    initial begin
+
+      //$increment(v);
+      
       clk <= 0;
       rst <= 0;
       #1 rst <= 1;
+
+      $to_seq(count, clk, rst);
+      $from_seq(v);
+      
       repeat (20) @(posedge clk);
       $finish;
    end
