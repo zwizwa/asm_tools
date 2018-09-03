@@ -498,7 +498,8 @@ x_run_myhdl = do
 
 x_run_verilog = do
   putStrLn "-- x_run_verilog"
-  VerilogRun.test
+  VerilogRun.testStdout
+  VerilogRun.testPipe
 
 
 x_testbench = do

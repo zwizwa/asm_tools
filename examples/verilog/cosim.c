@@ -3,8 +3,23 @@
 #include <stdint.h>
 #include "vpi_user.h"
 
-// Keep this simple for now: only sequential interface.  The bridge
-// between Seq code and Icarus is registered.
+// Keep this simple for now: only sequential interface implemented in
+// terms of a $seq_tick method.
+
+// Speed will likely depend on context switch time.  The question on
+// our end is mostly: flush or not?  Practically, simulation driver
+// will operate in chunks: read a bunch of data until a condition is
+// met, then send the next driver signal.  Some options:
+
+// - Make flush explicit.  E.g. let the simulation driver send out a
+//   flush command, possibly through some 1-bit signal.
+//
+// - Perform non-blocking read, but if it would block, perform a
+//   flush, then perform blocking read.
+
+// The latter seems to have some issues.  Let's always flush, then
+// make it a command later.
+
 
 // http://iverilog.wikia.com/wiki/Using_VPI
 // https://en.wikipedia.org/wiki/Verilog_Procedural_Interface
@@ -24,21 +39,31 @@ struct seq {
 // Implements the increment system task
 static int seq_tick(char *ctx) {
     struct seq *seq = (void*)ctx;
-    uint32_t to_vals[seq->nb_to];
 
-    for (int i=0; i<seq->nb_to; i++) {
-        struct t_vpi_value val = {.format = vpiIntVal };
-        vpi_get_value(seq->r_to[i], &val);
-        to_vals[i] = val.value.integer;
-        //vpi_printf("to : %d=%d\n", i, val.value.integer);
+    if (seq->nb_to) {
+        uint32_t to_vals[seq->nb_to];
+        for (int i=0; i<seq->nb_to; i++) {
+            struct t_vpi_value val = {.format = vpiIntVal };
+            vpi_get_value(seq->r_to[i], &val);
+            to_vals[i] = val.value.integer;
+            //vpi_printf("to : %d=%d\n", i, val.value.integer);
+        }
+        fwrite(to_vals, sizeof(to_vals), 1, seq->f_to);
     }
-    fwrite(to_vals, sizeof(to_vals), 1, seq->f_to);
-    for (int i=0; i<seq->nb_from; i++) {
-        struct t_vpi_value val = {.format = vpiIntVal };
-        vpi_get_value(seq->r_from[i], &val);
-        //vpi_printf("from : %d=%d\n", i, val.value.integer);
-        val.value.integer += 1;
-        vpi_put_value(seq->r_from[i], &val, NULL, vpiNoDelay);
+
+    if (seq->nb_from) {
+        uint32_t from_vals[seq->nb_from];
+        if (1 != fread(from_vals, sizeof(from_vals), 1, seq->f_from)) {
+            //vpi_printf("end of input\n"); // doesn't print
+            vpi_control(vpiFinish, 0);
+        }
+        for (int i=0; i<seq->nb_from; i++) {
+            struct t_vpi_value val = {.format = vpiIntVal };
+            //vpi_get_value(seq->r_from[i], &val);
+            //vpi_printf("from : %d=%d\n", i, val.value.integer);
+            val.value.integer = from_vals[i];
+            vpi_put_value(seq->r_from[i], &val, NULL, vpiNoDelay);
+        }
     }
     return 0;
 }
@@ -80,22 +105,21 @@ static int seq_from(char *ctx) {
         vpi_register_systf(&_data); \
 }
 
-char *check_getenv(char *var) {
+char *check_getenv(char *var, char *dflt) {
     char *val = getenv(var);
     if (!val) {
         vpi_printf("WARNING: Environment variable '%s' is not defined\n", var);
-        exit(1);
+        val=dflt;
     }
-    else
-        vpi_printf("%s=%s\n", var, val);
+    vpi_printf("%s=%s\n", var, val);
     return val;
 }
 
 void setup_seq(void) {
     struct seq *seq = calloc(1,sizeof(*seq));
     vpi_printf("Setting up Seq cosim.\n");
-    seq->f_to   = fopen(check_getenv("SEQ_TO"), "a");
-    seq->f_from = fopen(check_getenv("SEQ_FROM"), "r");
+    seq->f_to   = fopen(check_getenv("SEQ_TO",""), "a");
+    seq->f_from = fopen(check_getenv("SEQ_FROM",""), "r");
 
     TASK(vpiSysTask, 0, "$seq_tick",  seq_tick,  0, 0, (char*)seq);
     TASK(vpiSysTask, 0, "$seq_from",  seq_from,  0, 0, (char*)seq);

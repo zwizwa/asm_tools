@@ -8,7 +8,15 @@ import Language.Seq.Term
 import qualified Language.Seq.Verilog as Verilog
 
 import System.IO
+import System.IO.Error
 import System.Process
+
+import System.Posix.Files
+import Control.Concurrent
+import Control.Exception
+
+import Data.Bits
+
 
 -- Running MyHDL
 run_process :: String -> IO (Either [[Int]] (String, String, String))
@@ -34,8 +42,8 @@ run_testbench name inSizes mod inputs = do
   writeFile (name ++ ".v") vCode
   run_process name
 
-test :: IO ()
-test = m where 
+testStdout :: IO ()
+testStdout = m where 
   name = "x_tb"
   inputs = map (:[]) [1,0,1,1,0,0]
   inSizes = [1]
@@ -52,3 +60,45 @@ test = m where
         putStr stdout
         putStrLn "output:"
         putStr stderr
+
+
+
+-- Using binary pipe interface.
+-- createNamedPipe
+
+-- We can only open for writing ince the other end has opened the pipe
+-- for reading, so loop until it's ready.
+
+openPipeAppend p = again 3 where
+  again 0 = error $ "openPipeAppend: " ++ p
+  again n = do
+    openFile p AppendMode `catch` handle where
+      handle e
+        | isDoesNotExistError e = do
+            print e
+            threadDelay 500000
+            again $ n - 1
+        | otherwise = throwIO e
+
+      
+
+
+testPipe = do
+  let mode = ownerReadMode .|. ownerWriteMode .|. namedPipeMode
+      p_to = "/tmp/seq_to"
+      p_from = "/tmp/seq_from"
+      cmd = "cat /dev/urandom"
+
+  
+  createNamedPipe p_to mode
+  createNamedPipe p_from mode
+  to <- openFile p_to ReadMode
+  
+  (_, Just stdout, Just stderr, _) <-
+    createProcess (shell cmd) { std_out = CreatePipe, std_err = CreatePipe }
+
+  from <- openPipeAppend p_from
+
+  removeLink p_to
+  removeLink p_from
+

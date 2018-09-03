@@ -19,35 +19,25 @@ endmodule
 
 module counter_tb;
 
-   reg clk;
-   reg rst;
+   reg clk = 0;
+   reg rst = 0;
    wire [7:0] count; 
    
    counter U0 (clk, rst, count);
 
    reg [3:0] v = 123;
    
-   
-   
    initial begin
-
-      //$increment(v);
-      
-      clk <= 0;
-      rst <= 0;
-      #1 rst <= 1;
-
       $seq_to(count, clk, rst);
       $seq_from(v);
-      
-      repeat (20) @(posedge clk);
-      $finish;
+      #1 rst <= 1;
+      //repeat (20) @(posedge clk);
+      //$finish;
    end
    
    always @(posedge clk) begin
       $display("%d %d", count, v);
       $seq_tick;
-      
    end
    
    always 
