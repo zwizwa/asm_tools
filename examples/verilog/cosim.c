@@ -24,7 +24,14 @@ static int seq_tick(char *ctx) {
     for (int i=0; i<seq->nb_to; i++) {
         struct t_vpi_value val = {.format = vpiIntVal };
         vpi_get_value(seq->to[i], &val);
-        vpi_printf("%d=%d\n", i, val.value.integer);
+        vpi_printf("to : %d=%d\n", i, val.value.integer);
+    }
+    for (int i=0; i<seq->nb_from; i++) {
+        struct t_vpi_value val = {.format = vpiIntVal };
+        vpi_get_value(seq->from[i], &val);
+        vpi_printf("from : %d=%d\n", i, val.value.integer);
+        val.value.integer += 1;
+        vpi_put_value(seq->from[i], &val, NULL, vpiNoDelay);
     }
     return 0;
 }

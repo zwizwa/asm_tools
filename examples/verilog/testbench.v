@@ -25,7 +25,7 @@ module counter_tb;
    
    counter U0 (clk, rst, count);
 
-   reg [7:0] v = 123;
+   reg [3:0] v = 123;
    
    
    
