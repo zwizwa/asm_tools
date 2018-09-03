@@ -37,8 +37,8 @@ module counter_tb;
       rst <= 0;
       #1 rst <= 1;
 
-      $to_seq(count, clk, rst);
-      $from_seq(v);
+      $seq_to(count, clk, rst);
+      $seq_from(v);
       
       repeat (20) @(posedge clk);
       $finish;
@@ -46,6 +46,8 @@ module counter_tb;
    
    always @(posedge clk) begin
       $display("%d", count);
+      $seq_tick;
+      
    end
    
    always 

@@ -1,4 +1,5 @@
-# include "vpi_user.h"
+#include <stdlib.h>
+#include "vpi_user.h"
 
 // Keep this simple for now: only sequential interface.  The bridge
 // between Seq code and Icarus is registered.
@@ -10,59 +11,66 @@
 // $increment(val);
 // $display("After $increment, val=%d", val);
 
+#define MAX_REGS 64
+
+struct seq {
+    int nb_to, nb_from;
+    vpiHandle to[MAX_REGS], from[MAX_REGS];
+};
+
 // Implements the increment system task
-static int increment(char *userdata) {
-    vpiHandle systfref  = vpi_handle(vpiSysTfCall, NULL);
-    vpiHandle args_iter = vpi_iterate(vpiArgument, systfref); {
-        vpiHandle reg   = vpi_scan(args_iter);
+static int seq_tick(char *ctx) {
+    struct seq *seq = (void*)ctx;
+    for (int i=0; i<seq->nb_to; i++) {
         struct t_vpi_value val = {.format = vpiIntVal };
-        vpi_get_value(reg, &val);
-        vpi_printf("VPI routine received %d\n", val.value.integer);
-        val.value.integer += 1;
-        vpi_put_value(reg, &val, NULL, vpiNoDelay);
+        vpi_get_value(seq->to[i], &val);
+        vpi_printf("%d=%d\n", i, val.value.integer);
     }
-    vpi_free_object(args_iter);
     return 0;
 }
 
-static int to_seq(char *userdata) {
+static int seq_to(char *ctx) {
+    struct seq *seq = (void*)ctx;
     // Registers driven from Seq
     vpiHandle systfref = vpi_handle(vpiSysTfCall, NULL);
     vpiHandle iter = vpi_iterate(vpiArgument, systfref);
     vpiHandle reg;
-    int count = 0;
     while (NULL != (reg = vpi_scan(iter))) {
         struct t_vpi_value val = {.format = vpiIntVal };
         vpi_get_value(reg, &val);
-        vpi_printf("to_seq %d %d\n", count, val.value.integer);
-        count++;
+        vpi_printf("seq_to %d %d\n", seq->nb_to, val.value.integer);
+        seq->to[seq->nb_to++] = reg;
     }
     //vpi_free_object(iter); // this crashes
     return 0;
 }
-static int from_seq(char *userdata) {
+static int seq_from(char *ctx) {
+    struct seq *seq = (void*)ctx;
     // Registers driven from Seq
     vpiHandle systfref = vpi_handle(vpiSysTfCall, NULL);
     vpiHandle iter = vpi_iterate(vpiArgument, systfref);
     vpiHandle reg;
-    int count = 0;
     while (NULL != (reg = vpi_scan(iter))) {
         struct t_vpi_value val = {.format = vpiIntVal };
         vpi_get_value(reg, &val);
-        vpi_printf("from_seq %d %d\n", count, val.value.integer);
-        count++;
+        vpi_printf("seq_from %d %d\n", seq->nb_from, val.value.integer);
+        seq->from[seq->nb_from++] = reg;
     }
     //vpi_free_object(iter); // this crashes
     return 0;
 }
 
 // Registers the increment system task
-#define TASK(...) if(1) { s_vpi_systf_data _data = {__VA_ARGS__}; vpi_register_systf(&_data); }
+#define TASK(...) if(1) {\
+        s_vpi_systf_data _data = {__VA_ARGS__}; \
+        vpi_register_systf(&_data); \
+}
 void setup_seq(void) {
+    struct seq *seq = calloc(1,sizeof(*seq));
     vpi_printf("Setting up Seq cosim.\n");
-    TASK(vpiSysTask, 0, "$increment", increment, 0, 0, 0);
-    TASK(vpiSysTask, 0, "$from_seq",  from_seq,  0, 0, 0);
-    TASK(vpiSysTask, 0, "$to_seq",    to_seq,    0, 0, 0);
+    TASK(vpiSysTask, 0, "$seq_tick",  seq_tick,  0, 0, (char*)seq);
+    TASK(vpiSysTask, 0, "$seq_from",  seq_from,  0, 0, (char*)seq);
+    TASK(vpiSysTask, 0, "$seq_to",    seq_to,    0, 0, (char*)seq);
 }
 
 void startup_hello(void) {
