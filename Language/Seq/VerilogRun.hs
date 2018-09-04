@@ -6,6 +6,7 @@ module Language.Seq.VerilogRun where
 import Language.Seq
 import Language.Seq.Term
 import qualified Language.Seq.Verilog as Verilog
+import qualified Language.Seq.Test.Tools as TestTools
 
 import System.IO
 import System.IO.Error
@@ -89,46 +90,58 @@ testPipe = run where
   mod [i] = do
     o <- add i 1
     return [o]
+
+
+withTempDir = withTempDirectory "/tmp" "seq"
+-- withTempDir f = f "/tmp"
   
 run_testbench' ::
   String
   -> [Int]
   -> (forall m r. Seq m r => [r S] -> m [r S])
   -> [[Int]] -> IO (Either [[Int]] (String, String, String))
-run_testbench' name inSizes mod inputs = withTempDirectory "/tmp" "seq" $ \dir -> do
-
-  -- FIXME: this needs a different version of testbench'
-  -- Currently it leads to:
-  -- assign s2 = (p0 + s2);
-  -- assign p1 = s2;
-
   
-  let vCode = show $ Verilog.testbench' name inSizes mod inputs
-  putStrLn vCode
-  -- FIXME: verilog glue is missing
-  writeFile (dir ++ "/" ++ name ++ ".v") vCode
+run_testbench' name inSizes mod inputs = withTempDir $ \dir -> do
+
+  -- Convert in->out Seq-style function to explicit port module.  Also
+  -- "probe" to determine output size.
+  let in_probe = take 1 inputs
+      (portNames, portTypes, mod', out_probe) =
+        TestTools.testbench name inSizes mod in_probe
+      nb_to_verilog = length inSizes
+      nb_from_verilog = length $ head out_probe
+      v_code = show $ Verilog.vModule' Verilog.Cosim name portNames portTypes mod'
+      name' = dir ++ "/" ++ name
+      v_file = name' ++ ".v"
+      vvp_file = name' ++ ".vvp"
+  putStrLn v_code
+  writeFile v_file v_code
   run_process name
   
   let sock_path = dir ++ "/sock"
+      gen = "iverilog " ++ v_file ++ " -o " ++ vvp_file
       setVar = "SEQ_SOCK=" ++ sock_path
-      cmd = setVar ++ " make -C ~/asm_tools/examples/verilog cosim"
-      nb_from_verilog = 1
-      nb_to_verilog = 1
-      nb_out = 1
+      cosim = "/home/tom/asm_tools/examples/verilog/cosim"
+      run = setVar ++ " vvp -m" ++ cosim ++ " " ++ vvp_file
+      -- run = setVar ++ " make -C ~/asm_tools/examples/verilog cosim"
+      cmd = gen ++ " ; " ++ run
 
   putStrLn setVar
 
-  -- Set up socket.  Module will connect here.
+  -- Set up listening socket.  Module will connect here.
   sock <- socket AF_UNIX Stream 0
   bind sock (SockAddrUnix sock_path)
   listen sock maxListenQueue
 
   -- Start process
-  (_, Just stdout, Just stderr, _) <-
-    createProcess (shell cmd) { std_out = CreatePipe, std_err = CreatePipe }
+  -- (_, Just stdout, Just stderr, _) <-
+  --   createProcess (shell cmd) { std_out = CreatePipe, std_err = CreatePipe }
+  createProcess (shell cmd)
 
   -- Expecting only one connection from the module.
+  putStrLn "Waiting for module to connect.."
   (conn, _) <- accept sock
+  putStrLn "Connected."
 
   -- FIXME: For "real" simulations, it will make sense to push/pull
   -- chunks with larger granularity, which will limit the number of
@@ -155,13 +168,13 @@ run_testbench' name inSizes mod inputs = withTempDirectory "/tmp" "seq" $ \dir -
   close conn
   close sock
 
-  out <- hGetContents stdout
-  err <- hGetContents stderr
+  -- out <- hGetContents stdout
+  -- err <- hGetContents stderr
 
-  putStrLn "stderr:"
-  putStr err
-  putStrLn "output:"
-  putStr out
+  -- putStrLn "stderr:"
+  -- putStr err
+  -- putStrLn "output:"
+  -- putStr out
 
   removeLink sock_path
 

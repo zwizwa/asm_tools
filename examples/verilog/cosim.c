@@ -141,9 +141,9 @@ void setup_seq(void) {
     ASSERT(0 == connect(seq->fd, (struct sockaddr *)&addr, addrlen));
     ASSERT(NULL != (seq->f = fdopen(seq->fd, "a+")));
 
-    REGISTER_SYSTF(vpiSysTask, 0, "$seq_tick",  seq_tick,  0, 0, (char*)seq);
-    REGISTER_SYSTF(vpiSysTask, 0, "$seq_from",  seq_from,  0, 0, (char*)seq);
-    REGISTER_SYSTF(vpiSysTask, 0, "$seq_to",    seq_to,    0, 0, (char*)seq);
+    REGISTER_SYSTF(vpiSysTask, 0, "$tick_seq",  seq_tick,  0, 0, (char*)seq);
+    REGISTER_SYSTF(vpiSysTask, 0, "$from_seq",  seq_from,  0, 0, (char*)seq);
+    REGISTER_SYSTF(vpiSysTask, 0, "$to_seq",    seq_to,    0, 0, (char*)seq);
 }
 
 void startup_hello(void) {

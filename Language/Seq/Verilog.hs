@@ -230,7 +230,7 @@ vModule' variant mod_name portNames portTypes mod = Verilog vCode where
         "reg CLK;\n" ++
         "reg RST;\n" ++
         decls "reg"    (part Inputs) ++
-        decls "reg"    (part Connects)
+        decls "wire"   (part Connects)
     ) ++
     decls "wire"   (part Exprs) ++
     decls "reg"    delays ++
@@ -258,14 +258,14 @@ vModule' variant mod_name portNames portTypes mod = Verilog vCode where
          "end\n"
        Cosim ->
          "initial begin\n" ++
-         tab ++ "$seq_to(" ++ commas inputs ++ ");\n" ++
-         tab ++ "$seq_from(" ++ commas outputs ++ ");\n" ++
+         tab ++ "$to_seq(" ++ commas outputs ++ ");\n" ++
+         tab ++ "$from_seq(" ++ commas inputs ++ ");\n" ++
          tab ++ "RST <= 0;\n" ++
          tab ++ "CLK <= 0;\n" ++
          tab ++ "#1 RST <= 1;\n" ++
          "end\n" ++
          "always @(posedge CLK) begin\n" ++
-         tab ++ "$seq_tick;\n" ++
+         tab ++ "$tick_seq;\n" ++
          "end\n" ++
          "always\n" ++
          tab ++ "#5 CLK = ~CLK;\n"
