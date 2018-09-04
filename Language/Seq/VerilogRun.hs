@@ -99,7 +99,7 @@ run_testbench' ::
   String
   -> [Int]
   -> (forall m r. Seq m r => [r S] -> m [r S])
-  -> [[Int]] -> IO (Either [[Int]] (String, String, String))
+  -> [[Int]] -> IO [[Int]]
   
 run_testbench' name inSizes mod inputs = withTempDir $ \dir -> do
 
@@ -122,9 +122,9 @@ run_testbench' name inSizes mod inputs = withTempDir $ \dir -> do
       gen = "iverilog " ++ v_file ++ " -o " ++ vvp_file
       setVar = "SEQ_SOCK=" ++ sock_path
       cosim = "/home/tom/asm_tools/examples/verilog/cosim"
-      run = setVar ++ " vvp -m" ++ cosim ++ " " ++ vvp_file
+      start = setVar ++ " vvp -m" ++ cosim ++ " " ++ vvp_file
       -- run = setVar ++ " make -C ~/asm_tools/examples/verilog cosim"
-      cmd = gen ++ " ; " ++ run
+      cmd = gen ++ " ; " ++ start
 
   putStrLn setVar
 
@@ -160,26 +160,20 @@ run_testbench' name inSizes mod inputs = withTempDir $ \dir -> do
         let msg = DBS.toStrict $ toLazyByteString $ mconcat $ map putWord32le bus
         NBS.send conn msg
 
+      cleanup = do
+        close conn
+        close sock
+        removeLink sock_path
 
-  getFrom ; putTo [7]
-  getFrom ; putTo [8]
-  getFrom
-  
-  close conn
-  close sock
+      run = mapM tick inputs
+      tick i = do
+        o <- getFrom
+        putTo $ map fromIntegral i
+        return $ map fromIntegral o
 
-  -- out <- hGetContents stdout
-  -- err <- hGetContents stderr
-
-  -- putStrLn "stderr:"
-  -- putStr err
-  -- putStrLn "output:"
-  -- putStr out
-
-  removeLink sock_path
-
-  -- FIXME
-  return $ Left []
+  outputs <- run
+  cleanup
+  return outputs
 
 
 removeLink' p = do
