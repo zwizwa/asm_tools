@@ -121,7 +121,7 @@ run_testbench' name inSizes mod inputs = withTempDir $ \dir -> do
   let sock_path = dir ++ "/sock"
       gen = "iverilog " ++ v_file ++ " -o " ++ vvp_file
       setVar = "SEQ_SOCK=" ++ sock_path
-      cosim = "/home/tom/asm_tools/examples/verilog/cosim"
+      cosim = "/home/tom/asm_tools/vpi/cosim" -- FIXME: how to find the lib?
       start = setVar ++ " vvp -m" ++ cosim ++ " " ++ vvp_file
       -- run = setVar ++ " make -C ~/asm_tools/examples/verilog cosim"
       cmd = gen ++ " ; " ++ start
@@ -136,6 +136,7 @@ run_testbench' name inSizes mod inputs = withTempDir $ \dir -> do
   -- Start process
   -- (_, Just stdout, Just stderr, _) <-
   --   createProcess (shell cmd) { std_out = CreatePipe, std_err = CreatePipe }
+  putStrLn cmd
   createProcess (shell cmd)
 
   -- Expecting only one connection from the module.
