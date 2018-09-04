@@ -63,9 +63,14 @@ partition' bindings t = map snd $ filter ((t ==) . fst) tagged where
   p (Memory _ _ _ _) = Memories
   p _                = Exprs
 
+data Variant =
+  Module |   -- Ordinary Verilog module
+  Cosim      -- Test bench bound to cosim.vpi
+
+vModule = vModule' Module
   
-vModule :: String -> [String] -> [SType] -> ([SeqTerm.R S] -> SeqTerm.M ()) -> Verilog
-vModule mod_name portNames portTypes mod = Verilog vCode where
+vModule' :: Variant -> String -> [String] -> [SType] -> ([SeqTerm.R S] -> SeqTerm.M ()) -> Verilog
+vModule' variant mod_name portNames portTypes mod = Verilog vCode where
   
   -- See SeqTerm for some post processing steps that are shared
   -- between HDLs.
@@ -207,13 +212,26 @@ vModule mod_name portNames portTypes mod = Verilog vCode where
   --   concat $ [tab0 ++ tab ++ ++ line ++ "\n" | line <- lines] ++
   --   tab0 ++ "end\n"
 
+  ios = map (vertexName . fst)
+  inputs  = ios $ part Inputs
+  outputs = ios $ part Connects
+
   vCode =
-    -- "`timescale 1ns/10ps\n" ++  -- from MyHDL output
-    "module " ++ mod_name ++ "(" ++ commas (["CLK","RST"] ++ portNames) ++ ");\n" ++
-    "input CLK;\n" ++
-    "input RST;\n" ++
-    decls "input"  (part Inputs) ++
-    decls "output" (part Connects) ++
+    (case variant of
+      Module ->
+        -- "`timescale 1ns/10ps\n" ++  -- from MyHDL output
+        "module " ++ mod_name ++ "(" ++ commas (["CLK","RST"] ++ portNames) ++ ");\n" ++
+        "input CLK;\n" ++
+        "input RST;\n" ++
+        decls "input"  (part Inputs) ++
+        decls "output" (part Connects)
+      Cosim ->
+        "module " ++ mod_name ++ ";\n" ++
+        "reg CLK;\n" ++
+        "reg RST;\n" ++
+        decls "reg"    (part Inputs) ++
+        decls "reg"    (part Connects)
+    ) ++
     decls "wire"   (part Exprs) ++
     decls "reg"    delays ++
     mem_decls ++
@@ -228,14 +246,30 @@ vModule mod_name portNames portTypes mod = Verilog vCode where
     tab ++ "end\n" ++
     "end\n" ++
 
-    "reg [7:0] reset_count;\n" ++
-    "assign RST = (reset_count == 255);\n" ++
-    "always @(posedge CLK) begin: RESET_GEN\n" ++
-    tab ++ "if (!RST) begin\n" ++
-    tab ++ tab ++ "reset_count <= (reset_count + 1);\n" ++
-    tab ++ "end\n" ++
-    "end\n" ++
-    
+    (case variant of
+       Module ->
+         -- FIXME: reset generator should go somewhere else.
+         "reg [7:0] reset_count;\n" ++
+         "assign RST = (reset_count == 255);\n" ++
+         "always @(posedge CLK) begin: RESET_GEN\n" ++
+         tab ++ "if (!RST) begin\n" ++
+         tab ++ tab ++ "reset_count <= (reset_count + 1);\n" ++
+         tab ++ "end\n" ++
+         "end\n"
+       Cosim ->
+         "initial begin\n" ++
+         tab ++ "$seq_to(" ++ commas inputs ++ ");\n" ++
+         tab ++ "$seq_from(" ++ commas outputs ++ ");\n" ++
+         tab ++ "RST <= 0;\n" ++
+         tab ++ "CLK <= 0;\n" ++
+         tab ++ "#1 RST <= 1;\n" ++
+         "end\n" ++
+         "always @(posedge CLK) begin\n" ++
+         tab ++ "$seq_tick;\n" ++
+         "end\n" ++
+         "always\n" ++
+         tab ++ "#5 CLK = ~CLK;\n"
+    ) ++
     "endmodule\n"
     
 
@@ -275,4 +309,19 @@ testbench mod_name inSizes mod inputs = hdl where
   (portNames, portTypes, mod', outputs) =
     TestTools.testbench mod_name inSizes mod inputs
   hdl = vModule mod_name portNames portTypes mod'
+
+
+testbench' ::
+  String
+  -> [Int]
+  -- Rank 2, because we instantiate it twice.
+  -> (forall m r. Seq m r => [r S] -> m [r S])
+  -> [[Int]]
+  -> Verilog
+
+testbench' mod_name inSizes mod inputs = hdl where
+  -- tb = TestBench hdl input $ Just $ output
+  (portNames, portTypes, mod', outputs) =
+    TestTools.testbench mod_name inSizes mod inputs
+  hdl = vModule' Cosim mod_name portNames portTypes mod'
 

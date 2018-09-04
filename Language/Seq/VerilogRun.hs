@@ -81,9 +81,33 @@ testStdout = m where
 -- are a couple of ways to do this, but the simplest one seems to be a
 -- unix domain socket in a dedicated temporary directory.  The
 -- location is then passed to the module code through an environment
--- variable.
+-- variable.  Since we have that directory, why not put the generated
+-- .v files there as well.
 
-testPipe = withTempDirectory "/tmp" "seq" $ \dir -> do
+testPipe = run where
+  run = run_testbench' "testPipe" [8] mod $ map (:[]) [0..10]
+  mod [i] = do
+    o <- add i 1
+    return [o]
+  
+run_testbench' ::
+  String
+  -> [Int]
+  -> (forall m r. Seq m r => [r S] -> m [r S])
+  -> [[Int]] -> IO (Either [[Int]] (String, String, String))
+run_testbench' name inSizes mod inputs = withTempDirectory "/tmp" "seq" $ \dir -> do
+
+  -- FIXME: this needs a different version of testbench'
+  -- Currently it leads to:
+  -- assign s2 = (p0 + s2);
+  -- assign p1 = s2;
+
+  
+  let vCode = show $ Verilog.testbench' name inSizes mod inputs
+  putStrLn vCode
+  -- FIXME: verilog glue is missing
+  writeFile (dir ++ "/" ++ name ++ ".v") vCode
+  run_process name
   
   let sock_path = dir ++ "/sock"
       setVar = "SEQ_SOCK=" ++ sock_path
@@ -141,6 +165,9 @@ testPipe = withTempDirectory "/tmp" "seq" $ \dir -> do
 
   removeLink sock_path
 
+  -- FIXME
+  return $ Left []
+
 
 removeLink' p = do
   let handle e
@@ -148,3 +175,45 @@ removeLink' p = do
         | otherwise = throwIO e
   removeLink p `catch` handle
 
+
+{-
+
+// TB needs an additional stub that
+// - declares module i/o reg/wire
+// - instantiates module under test
+// - initial block with $seq_to() and $seq_from()
+// - rst, clk drivers
+// - always @(posedge clk) for $seq_tick
+
+// How to do this without duplication?  Instead of generating a module
+// signature, just generate plain registers and collect those in a
+// $seq_to / $seq_from call.
+
+module counter_tb;
+
+   reg clk = 0;
+   reg rst = 0;
+   wire [7:0] count; 
+   
+   counter U0 (clk, rst, count);
+
+   reg [3:0] v = 123;
+   
+   initial begin
+      $seq_to(count);
+      $seq_from(v);
+      #1 rst <= 1;
+      //repeat (20) @(posedge clk);
+      //$finish;
+   end
+   
+   always @(posedge clk) begin
+      $display("%d %d", count, v);
+      $seq_tick;
+   end
+   
+   always 
+     #5  clk = ~clk;
+
+endmodule
+-}

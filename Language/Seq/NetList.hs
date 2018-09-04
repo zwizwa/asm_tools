@@ -85,7 +85,7 @@ newtype M t = M { unM :: WriterT CompOut (State CompState) t } deriving
     (Functor, Applicative, Monad, MonadState CompState, MonadWriter CompOut)
 
 convert (ports, bindings, probes) = NetList ports' (Map.fromList bindings') probes'  where
-  init = maximum $ map fst bindings
+  init = 1 + (maximum $ map fst bindings)
   ((ports', bindings'), _)  = runState (runWriterT $ unM mconv) init
 
   probes' :: [(Vertex, String)]

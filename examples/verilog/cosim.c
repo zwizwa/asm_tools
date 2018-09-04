@@ -106,11 +106,6 @@ static int seq_from(char *ctx) {
     return 0;
 }
 
-// Registers the increment system task
-#define TASK(...) if(1) {\
-        s_vpi_systf_data _data = {__VA_ARGS__}; \
-        vpi_register_systf(&_data); \
-}
 
 char *check_getenv(char *var, char *dflt) {
     char *val = getenv(var);
@@ -124,6 +119,11 @@ char *check_getenv(char *var, char *dflt) {
 
 #define ERROR(msg, ...) { fprintf(stderr, msg, __VA_ARGS__); exit(1); }
 #define ASSERT(x) if (!(x)) { ERROR("%s\n", #x) }
+
+#define REGISTER_SYSTF(...) if(1) {\
+        s_vpi_systf_data _data = {__VA_ARGS__}; \
+        vpi_register_systf(&_data); \
+}
 
 void setup_seq(void) {
     struct seq *seq = calloc(1,sizeof(*seq));
@@ -141,9 +141,9 @@ void setup_seq(void) {
     ASSERT(0 == connect(seq->fd, (struct sockaddr *)&addr, addrlen));
     ASSERT(NULL != (seq->f = fdopen(seq->fd, "a+")));
 
-    TASK(vpiSysTask, 0, "$seq_tick",  seq_tick,  0, 0, (char*)seq);
-    TASK(vpiSysTask, 0, "$seq_from",  seq_from,  0, 0, (char*)seq);
-    TASK(vpiSysTask, 0, "$seq_to",    seq_to,    0, 0, (char*)seq);
+    REGISTER_SYSTF(vpiSysTask, 0, "$seq_tick",  seq_tick,  0, 0, (char*)seq);
+    REGISTER_SYSTF(vpiSysTask, 0, "$seq_from",  seq_from,  0, 0, (char*)seq);
+    REGISTER_SYSTF(vpiSysTask, 0, "$seq_to",    seq_to,    0, 0, (char*)seq);
 }
 
 void startup_hello(void) {
