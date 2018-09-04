@@ -57,6 +57,7 @@ import Control.Monad.ST
 import Data.Array.Unboxed hiding (assocs)
 import Data.Array.ST
 
+import System.Environment
   
 -- t_: trace
 -- h_: hdl port module
@@ -496,12 +497,6 @@ x_run_myhdl = do
   -- MyHDLRun.run_process "x_soc_fpga"
   MyHDLRun.test
 
-x_run_verilog = do
-  putStrLn "-- x_run_verilog"
-  VerilogRun.testStdout
-  VerilogRun.testPipe
-
-
 x_testbench = do
   putStrLn "-- x_testbench"
   let mod [s, d] = do return $ [s, d]
@@ -537,24 +532,27 @@ x_verilog_ops = do
   print $ v
   writeFile "x_verilog_ops.v" $ show v
 
-verilog_tb [] = do
-  closeMem [bits 16] $ \[rd] -> do
-    let we = cbits 1 1
-        wa = cbits 8 0
-        ra = cbits 8 0
-    wd <- add rd 0
-    return ([(we, wa, wd, ra)], [rd, wd])
-
-x_verilog_tb = do
-  putStrLn "-- x_verilog_tb"
-  let v = Verilog.testbench "mymod" [] verilog_tb (replicate 10 [])
-  print $ v
-  writeFile "x_verilog_tb.v" $ show v
-
 x_verilog = do
   x_verilog_ops
-  x_verilog_tb
-  
+
+-- verilog_tb [] = do
+--   closeMem [bits 16] $ \[rd] -> do
+--     let we = cbits 1 1
+--         wa = cbits 8 0
+--         ra = cbits 8 0
+--     wd <- add rd 0
+--     return ([(we, wa, wd, ra)], [rd, wd])
+
+x_run_verilog = do
+  putStrLn "-- x_run_verilog"
+  let mod [i] = do o <- add i 1 ; return [o]
+  setEnv "SEQ_COSIM" "vpi/cosim"
+  outs <- VerilogRun.run_testbench "testPipe" [8] mod $ map (:[]) [0..10]
+  print outs
+
+
+
+
   
 x_seqnetlist = do
   putStrLn "-- x_seqnetlist"

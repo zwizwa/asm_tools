@@ -9,74 +9,20 @@ import qualified Language.Seq as Seq
 import qualified Language.Seq.Verilog as Verilog
 import qualified Language.Seq.Test.Tools as TestTools
 
+import Control.Monad
+import Data.Binary.Get
+import Data.Binary.Builder
+import qualified Data.ByteString.Lazy as DBS
+
 import System.IO
 import System.IO.Error
 import System.IO.Temp
 import System.Process
 import System.Environment
--- import System.Socket
--- import System.Socket.Type.Stream
--- import System.Socket.Family.Unix
-
-import System.Posix.Files
--- import Control.Concurrent
-import Control.Exception
-
--- import Data.Bits
 
 import Network.Socket hiding (send, sendTo, recv, recvFrom)
 import qualified Network.Socket.ByteString as NBS
 
-import qualified Data.ByteString.Lazy as DBS
-
-import Control.Monad
-
-import Data.Binary.Get
-import Data.Binary.Builder
-
-
--- Running MyHDL
-run_process :: String -> IO (Either [[Int]] (String, String, String))
-run_process hdl_module_name = do
-  let cmd = "iverilog " ++ hdl_module_name ++ ".v"
-  (_, Just stdout, Just stderr, _) <-
-    createProcess (shell cmd) { std_out = CreatePipe, std_err = CreatePipe }
-  out <- hGetContents stdout
-  err <- hGetContents stderr
-  return $ case err of
-    "" -> Left $ map read $ lines out
-    _  -> Right (cmd, out, err)
-
--- Temp file is necessary.  See below.
-run_testbench ::
-  String
-  -> [Int]
-  -> (forall m r. Seq m r => [r S] -> m [r S])
-  -> [[Int]] -> IO (Either [[Int]] (String, String, String))
-run_testbench name inSizes mod inputs = do  
-  let vCode = show $ Verilog.testbench name inSizes mod inputs
-  -- FIXME: concatenate testbench wrapper, or use script.x
-  writeFile (name ++ ".v") vCode
-  run_process name
-
-testStdout :: IO ()
-testStdout = m where 
-  name = "x_tb"
-  inputs = map (:[]) [1,0,1,1,0,0]
-  inSizes = [1]
-  mod [i] = do return [i]
-  
-  m = do
-    result <- run_testbench name inSizes mod inputs
-    case result of
-      Left out -> print out
-      Right (cmd, stdout, stderr) -> do
-        putStrLn "cmd:"
-        putStrLn cmd
-        putStrLn "stderr:"
-        putStr stdout
-        putStrLn "output:"
-        putStr stderr
 
 
 
@@ -87,23 +33,16 @@ testStdout = m where
 -- variable.  Since we have that directory, why not put the generated
 -- .v files there as well.
 
-testPipe = run where
-  run = run_testbench' "testPipe" [8] mod $ map (:[]) [0..10]
-  mod [i] = do
-    o <- Seq.add i 1
-    return [o]
-
 
 withTempDir = withTempDirectory "/tmp" "seq"
--- withTempDir f = f "/tmp"
   
-run_testbench' ::
+run_testbench ::
   String
   -> [Int]
   -> (forall m r. Seq m r => [r S] -> m [r S])
   -> [[Int]] -> IO [[Int]]
   
-run_testbench' name inSizes mod inputs = withTempDir $ \dir -> do
+run_testbench name inSizes mod inputs = withTempDir $ \dir -> do
 
   -- Convert in->out Seq-style function to explicit port module.  Also
   -- "probe" to determine output size.
@@ -116,9 +55,8 @@ run_testbench' name inSizes mod inputs = withTempDir $ \dir -> do
       name' = dir ++ "/" ++ name
       v_file = name' ++ ".v"
       vvp_file = name' ++ ".vvp"
-  putStrLn v_code
+  -- putStrLn v_code
   writeFile v_file v_code
-  run_process name
 
   -- There's no good way to hard-link this, so it's expected to be
   -- configured higher up.
@@ -153,7 +91,7 @@ run_testbench' name inSizes mod inputs = withTempDir $ \dir -> do
   let getFrom = do
         msg <- NBS.recv conn $ 4 * nb_from_verilog
         let ws = runGet from $ DBS.fromStrict msg
-        print ws
+        -- print ws
         return ws
       from = do
         ws <- sequence $ [getWord32le | _ <- [1..nb_from_verilog]]
@@ -166,7 +104,6 @@ run_testbench' name inSizes mod inputs = withTempDir $ \dir -> do
       cleanup = do
         close conn
         close sock
-        removeLink sock_path
 
       run = mapM tick inputs
       tick i = do
@@ -177,11 +114,4 @@ run_testbench' name inSizes mod inputs = withTempDir $ \dir -> do
   outputs <- run
   cleanup
   return outputs
-
-
-removeLink' p = do
-  let handle e
-        | isDoesNotExistError e = return ()
-        | otherwise = throwIO e
-  removeLink p `catch` handle
 

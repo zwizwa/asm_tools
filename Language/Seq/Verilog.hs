@@ -2,14 +2,17 @@
 
 -- FIXME: Can't compile f_soc.hs yet, but f_blink.hs works.  Can't
 -- find any more obvious errors.  Where to start debugging?  It's
--- likely the memory.
+-- likely the memory.  EDIT: There was an off-by-one in node counter
+-- init.  Is it fixed now?
+
+
 
 -- TODO:
 
 -- . Create two generators: one for CLK,RST and one for just CLK.
 --   This allows the iCE40 reset generator to be generated as well.
 
--- . Verilator has a C api.
+-- . Verilator has a C api.  EDIT: Using Icarus for this now.
 
 -- The 'error' cases are projection errors.  FIXME: is there a simple
 -- way to avoid these?  E.g. project partitions down to simpler data
@@ -64,8 +67,8 @@ partition' bindings t = map snd $ filter ((t ==) . fst) tagged where
   p _                = Exprs
 
 data Variant =
-  Module |   -- Ordinary Verilog module
-  Cosim      -- Test bench bound to cosim.vpi
+  Module | -- Ordinary Verilog module
+  Cosim    -- Test bench using unix socket glue from vpi/cosim.c
 
 vModule = vModule' Module
   
