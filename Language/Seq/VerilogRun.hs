@@ -3,8 +3,9 @@
 
 module Language.Seq.VerilogRun where
 
-import Language.Seq
+import Language.Seq(Seq,S)
 import Language.Seq.Term
+import qualified Language.Seq as Seq
 import qualified Language.Seq.Verilog as Verilog
 import qualified Language.Seq.Test.Tools as TestTools
 
@@ -12,6 +13,7 @@ import System.IO
 import System.IO.Error
 import System.IO.Temp
 import System.Process
+import System.Environment
 -- import System.Socket
 -- import System.Socket.Type.Stream
 -- import System.Socket.Family.Unix
@@ -88,7 +90,7 @@ testStdout = m where
 testPipe = run where
   run = run_testbench' "testPipe" [8] mod $ map (:[]) [0..10]
   mod [i] = do
-    o <- add i 1
+    o <- Seq.add i 1
     return [o]
 
 
@@ -117,13 +119,15 @@ run_testbench' name inSizes mod inputs = withTempDir $ \dir -> do
   putStrLn v_code
   writeFile v_file v_code
   run_process name
+
+  -- There's no good way to hard-link this, so it's expected to be
+  -- configured higher up.
+  cosim <- getEnv "SEQ_COSIM"
   
   let sock_path = dir ++ "/sock"
       gen = "iverilog " ++ v_file ++ " -o " ++ vvp_file
       setVar = "SEQ_SOCK=" ++ sock_path
-      cosim = "/home/tom/asm_tools/vpi/cosim" -- FIXME: how to find the lib?
       start = setVar ++ " vvp -m" ++ cosim ++ " " ++ vvp_file
-      -- run = setVar ++ " make -C ~/asm_tools/examples/verilog cosim"
       cmd = gen ++ " ; " ++ start
 
   putStrLn setVar
@@ -134,8 +138,6 @@ run_testbench' name inSizes mod inputs = withTempDir $ \dir -> do
   listen sock maxListenQueue
 
   -- Start process
-  -- (_, Just stdout, Just stderr, _) <-
-  --   createProcess (shell cmd) { std_out = CreatePipe, std_err = CreatePipe }
   putStrLn cmd
   createProcess (shell cmd)
 
@@ -155,7 +157,7 @@ run_testbench' name inSizes mod inputs = withTempDir $ \dir -> do
         return ws
       from = do
         ws <- sequence $ [getWord32le | _ <- [1..nb_from_verilog]]
-        return $ ws -- map fromIntegral ws
+        return $ ws
 
       putTo bus = do
         let msg = DBS.toStrict $ toLazyByteString $ mconcat $ map putWord32le bus
@@ -183,45 +185,3 @@ removeLink' p = do
         | otherwise = throwIO e
   removeLink p `catch` handle
 
-
-{-
-
-// TB needs an additional stub that
-// - declares module i/o reg/wire
-// - instantiates module under test
-// - initial block with $seq_to() and $seq_from()
-// - rst, clk drivers
-// - always @(posedge clk) for $seq_tick
-
-// How to do this without duplication?  Instead of generating a module
-// signature, just generate plain registers and collect those in a
-// $seq_to / $seq_from call.
-
-module counter_tb;
-
-   reg clk = 0;
-   reg rst = 0;
-   wire [7:0] count; 
-   
-   counter U0 (clk, rst, count);
-
-   reg [3:0] v = 123;
-   
-   initial begin
-      $seq_to(count);
-      $seq_from(v);
-      #1 rst <= 1;
-      //repeat (20) @(posedge clk);
-      //$finish;
-   end
-   
-   always @(posedge clk) begin
-      $display("%d %d", count, v);
-      $seq_tick;
-   end
-   
-   always 
-     #5  clk = ~clk;
-
-endmodule
--}

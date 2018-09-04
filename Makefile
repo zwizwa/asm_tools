@@ -55,7 +55,7 @@ f_blink: default.nix
 t_cosim: default.nix
 	make -C vpi
 	$(NIX_SHELL) --run "cabal build t_cosim"
-	./dist/build/t_cosim/t_cosim
+	export SEQ_COSIM=$$(readlink -f vpi)/cosim ; ./dist/build/t_cosim/t_cosim
 
 # Inidividual tests
 test-seq-qc: default.nix
