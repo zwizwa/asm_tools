@@ -1,11 +1,11 @@
 import Language.Seq
-import Language.Seq.VerilogRun
-main = do
-  testPipe
+import qualified Language.Seq.VerilogRun as VerilogRun
 
-testPipe = run where
-  run = run_testbench "testPipe" [8] mod $ map (:[]) [0..10]
-  mod [i] = do
-    o <- add i 1
-    return [o]
+main = do
+  out <- v_add $ map (:[]) [0..10]
+  print out
+
+v_add = VerilogRun.trace [8] $ \[i] -> do
+  o <- add i 1
+  return [o]
 

@@ -547,7 +547,7 @@ x_run_verilog = do
   putStrLn "-- x_run_verilog"
   let mod [i] = do o <- add i 1 ; return [o]
   setEnv "SEQ_COSIM" "vpi/cosim"
-  outs <- VerilogRun.run_testbench "testPipe" [8] mod $ map (:[]) [0..10]
+  outs <- VerilogRun.trace [8] mod $ map (:[]) [0..10]
   print outs
 
 

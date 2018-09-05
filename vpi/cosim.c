@@ -27,9 +27,6 @@
 // http://iverilog.wikia.com/wiki/Using_VPI
 // https://en.wikipedia.org/wiki/Verilog_Procedural_Interface
 
-// val = 41;
-// $increment(val);
-// $display("After $increment, val=%d", val);
 
 #define MAX_REGS 64
 
@@ -106,17 +103,6 @@ static int seq_from(char *ctx) {
     return 0;
 }
 
-
-char *check_getenv(char *var, char *dflt) {
-    char *val = getenv(var);
-    if (!val) {
-        vpi_printf("WARNING: Environment variable '%s' is not defined\n", var);
-        val=dflt;
-    }
-    vpi_printf("%s=%s\n", var, val);
-    return val;
-}
-
 #define ERROR(msg, ...) { fprintf(stderr, msg, __VA_ARGS__); exit(1); }
 #define ASSERT(x) if (!(x)) { ERROR("%s\n", #x) }
 
@@ -146,10 +132,6 @@ void setup_seq(void) {
     REGISTER_SYSTF(vpiSysTask, 0, "$to_seq",    seq_to,    0, 0, (char*)seq);
 }
 
-void startup_hello(void) {
-}
-
-// Contains a zero-terminated list of functions that have to be called at startup
 void (*vlog_startup_routines[])() = {
     setup_seq,
     0

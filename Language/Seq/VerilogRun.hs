@@ -36,17 +36,17 @@ import qualified Network.Socket.ByteString as NBS
 
 withTempDir = withTempDirectory "/tmp" "seq"
   
-run_testbench ::
-  String
-  -> [Int]
+trace ::
+  [Int]
   -> (forall m r. Seq m r => [r S] -> m [r S])
   -> [[Int]] -> IO [[Int]]
   
-run_testbench name inSizes mod inputs = withTempDir $ \dir -> do
+trace inSizes mod inputs = withTempDir $ \dir -> do
 
   -- Convert in->out Seq-style function to explicit port module.  Also
   -- "probe" to determine output size.
-  let in_probe = take 1 inputs
+  let name = "testbench" -- not really needed for anything
+      in_probe = take 1 inputs
       (portNames, portTypes, mod', out_probe) =
         TestTools.testbench name inSizes mod in_probe
       nb_to_verilog = length inSizes
@@ -90,12 +90,9 @@ run_testbench name inSizes mod inputs = withTempDir $ \dir -> do
   
   let getFrom = do
         msg <- NBS.recv conn $ 4 * nb_from_verilog
-        let ws = runGet from $ DBS.fromStrict msg
-        -- print ws
-        return ws
-      from = do
-        ws <- sequence $ [getWord32le | _ <- [1..nb_from_verilog]]
-        return $ ws
+        return $ runGet from $ DBS.fromStrict msg
+      from =
+        sequence $ [getWord32le | _ <- [1..nb_from_verilog]]
 
       putTo bus = do
         let msg = DBS.toStrict $ toLazyByteString $ mconcat $ map putWord32le bus
