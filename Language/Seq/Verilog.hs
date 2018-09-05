@@ -252,13 +252,14 @@ vModule' variant mod_name portNames portTypes mod = Verilog vCode where
     (case variant of
        Module ->
          -- FIXME: reset generator should go somewhere else.
-         "reg [7:0] reset_count;\n" ++
-         "assign RST = (reset_count == 255);\n" ++
-         "always @(posedge CLK) begin: RESET_GEN\n" ++
-         tab ++ "if (!RST) begin\n" ++
-         tab ++ tab ++ "reset_count <= (reset_count + 1);\n" ++
-         tab ++ "end\n" ++
-         "end\n"
+         tab ++ "reset RESET (CRL, RST);\n"
+         -- "reg [7:0] reset_count;\n" ++
+         -- "assign RST = (reset_count == 255);\n" ++
+         -- "always @(posedge CLK) begin: RESET_GEN\n" ++
+         -- tab ++ "if (!RST) begin\n" ++
+         -- tab ++ tab ++ "reset_count <= (reset_count + 1);\n" ++
+         -- tab ++ "end\n" ++
+         -- "end\n"
        Cosim ->
          "initial begin\n" ++
          tab ++ "$to_seq(" ++ commas outputs ++ ");\n" ++

@@ -12,12 +12,13 @@ all: compile
 .SECONDARY:
 
 clean:
-	rm -f result *~ x_* *.v *.vhd *.bin *.blif *.asc f_*.py x_*.py *.compile *.tmp *.vcd
+	rm -f result *~ x_* *.v *.vhd *.bin *.blif *.asc f_*.py x_*.py *.compile *.tmp *.vcd f_*.bin f_*.v
 	rm -rf __pycache__ dist
 
 .PHONY: myhdl_test
 myhdl_test:  f_blink.ct256.bin f_soc.ct256.bin
 
+HS := $(shell find -name '*.hs')
 
 
 
@@ -46,11 +47,17 @@ test: default.nix
 	$(NIX_SHELL) --run "cabal test --log=/dev/stdout"
 
 # Target applications
-f_soc: default.nix
-	$(NIX_SHELL) --run "cabal build f_soc"
-f_blink: default.nix
-	$(NIX_SHELL) --run "cabal build f_blink"
+f_%.v f_%.pcf: default.nix $(HS)
+	$(NIX_SHELL) --run "cabal build f_$*"
+	dist/build/f_$*/f_$*
 
+
+# f_soc: default.nix
+# 	$(NIX_SHELL) --run "cabal build f_soc"
+# 	dist/build/f_soc/f_soc
+# f_blink: default.nix
+# 	$(NIX_SHELL) --run "cabal build f_blink"	
+# 	dist/build/f_blink/f_blink
 
 t_cosim: default.nix
 	make -C vpi
@@ -69,10 +76,10 @@ test-edif: default.nix
 test-sat: default.nix
 	$(NIX_SHELL) --run "cabal test sat --log=/dev/stdout"
 
-# These need corresponding entries in the .cabal file
-f_%.py f_%.pcf f_%.imem.bin: f_%.hs *.hs
-	rm -f f_$*.imem.bin # workaround: openBinaryFile: resource exhausted (Resource temporarily unavailable)
-	$(NIX_SHELL) --run "cabal test f_$* --log=/dev/stdout"
+# # These need corresponding entries in the .cabal file
+# f_%.py f_%.pcf f_%.imem.bin: f_%.hs $(HS)
+# 	rm -f f_$*.imem.bin # workaround: openBinaryFile: resource exhausted (Resource temporarily unavailable)
+# 	$(NIX_SHELL) --run "cabal test f_$* --log=/dev/stdout"
 
 
 
@@ -83,23 +90,26 @@ f_%.py f_%.pcf f_%.imem.bin: f_%.hs *.hs
 MYHDL:=$(shell readlink -f myhdl)
 
 # FIXME: side effect files .v -> .vhd
-%.v %.vhd: %.py run_myhdl.py $(MYHDL) Makefile
-	PYTHONPATH="$(MYHDL)" python3 run_myhdl.py $* $<
+# %.v %.vhd: %.py run_myhdl.py $(MYHDL) Makefile
+# 	PYTHONPATH="$(MYHDL)" python3 run_myhdl.py $* $<
 
 # apt-get install gtkwave
 # gtkwave module.vcd
 
 
+VERILOG_LIB := \
+	verilog/reset.v
+
 # Logic synthesis.  Same for all ice40.
-%.blif: %.v
-	yosys -p "synth_ice40 -blif $@" $<  >$*.yosys.log
+%.blif: %.v $(VERILOG_LIB) Makefile
+	yosys -p "synth_ice40 -blif $@" $(VERILOG_LIB) $<  >$*.yosys.log
 	tail -n35 $*.yosys.log 
 
 # Place and route, one for each device,package type.
 %.qn84.asc: %.blif %.pcf
-	arachne-pnr -P qn84 -d 1k -p $*.pcf $< -o $@ >$*.qn84.pnr
+	arachne-pnr -P qn84 -d 1k -p $*.pcf $< -o $@
 %.ct256.asc: %.blif %.pcf
-	arachne-pnr -P ct256 -d 8k -p $*.pcf $< -o $@ >$*.ct256.pnr
+	arachne-pnr -P ct256 -d 8k -p $*.pcf $< -o $@
 
 
 %.ct256.time: %.pcf %.ct256.asc

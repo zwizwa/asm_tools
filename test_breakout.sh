@@ -2,6 +2,9 @@
 
 # FIXME: remove this.  too specific to kzoo setup.
 
+# iceprog is modified to support the -x parameter, to send a command
+# over SPI to the running FPGA image.
+
 [ -z "$1" ] && echo "usage: $0 <host>" && exit 1
 
 PRJ=f_soc
