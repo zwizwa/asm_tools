@@ -37,7 +37,7 @@ import Language.Pru.BeagleLogic   -- Example code to interface with BeagleLogic 
 import Language.Pru.Lib
 
 import Data.List
-import Data.Map.Strict (Map, (!), lookup, empty, insert, fromList, adjust)
+import Data.Map.Strict (Map, lookup, empty, insert, fromList, adjust)
 import qualified Data.Map.Strict as Map
 import Control.Monad.State
 import Control.Monad.Writer
@@ -56,14 +56,15 @@ test_coroutine = do
   print $ asm coroutine
   let (tick, labels) = compile' (coroutine :: Src)
   print $ labels
-  print $ take 30 $ vartrace1 tick (machineInit' 123 [10,11]) PCounter
+  print $ take 30 $ vartrace1 tick (machineInit0 [10,11] []) PCounter
 
 test_beaglelogic_loop = do
   putStrLn "--- test_beaglelogic_loop"
   print $ asm beaglelogic_loop
 
   let tick = compile beaglelogic_loop
-  print $ take 200 $ vartrace1 (gpi >> tick) machineInit PCounter
+      s0 = machineInit0 [0..31] []
+  print $ take 200 $ vartrace1 (gpi >> tick) s0 PCounter
 
 
 printl es = sequence_ $ map print es
@@ -73,6 +74,10 @@ vartrace :: EmuOp -> EmuState -> [EmuVar] -> [[Int]]
 vartrace tick s0 mach_vars = map select trace where
   trace = stateTrace tick s0
   select ms = [ms ! v | v <- mach_vars]
+
+(!) m k = case Map.lookup k m of
+  Just v -> v
+  Nothing -> error $ "lookup failed: " ++ show k
 
 -- Single
 vartrace1 :: EmuOp -> EmuState -> EmuVar -> [Int]
@@ -146,25 +151,40 @@ beaglelogic_loop = do
   comment "End"
 
 
-
 test_memory = do
-  putStrLn "--- test_memory"
+  test_memory1
+  test_memory2
+
+test_memory1 = do
+  putStrLn "--- test_memory1"
   let prog = do
-        -- These are wierd..  For now, let's implement just what's
-        -- needed in the Emu.
-        lbbo (R 0) (R 1) (Im $ I 0) (Im $ I 4)
-        -- sbbo (R 0) (R 1) (Im $ I 0) (Im $ I 4)
+        ldi (Rw 0 0) (I 0)
+        ldi (Rw 0 1) (I 1)
+        lbbo (R 1) (R 0) (Im $ I 0) (Im $ I 8)
+        sbbo (R 1) (R 0) (Im $ I 4) (Im $ I 8)
         -- ldi (Rb 0 1) (I 1)
-      (tick, labels) = compile' prog
+      (tick, _) = compile' prog
       s0 = Map.fromList (
-        [(PCounter, 0), (Time, 0), (File 0, 0), (File 1, 0)] ++
-        [(Mem addr, val) | (val,addr) <- zip [1,2,3,4] [0..] ])
-         
-        
+        [(PCounter, 0), (Time, 0), (File 1, 0), (File 2, 0), (File 0, 123)] ++
+        [(Mem addr, val) | (val,addr) <- zip [1,2,3,4,5,6,7,8] [0x10000..]])
         
   print $ asm prog
-  printL $ take 2 $ vartrace tick s0 [PCounter, File 0]
-  -- FXIME: do emu
+  printL $ take 5 $ vartrace tick s0 [PCounter, File 1, File 2, File 0, Mem 0x10004]
+
+test_memory2 = do
+  putStrLn "--- test_memory2"
+  let prog = do
+        ldi (R 0) (I 0)
+        ldi (Rw 1 0) (I 0x0201)
+        ldi (Rw 1 1) (I 0x0403)
+        sbbo (R 1) (R 0) (Im $ I 0) (Im $ I 4)
+        
+      (tick, _) = compile' prog
+      s0 = machineInit0 [0..31] [0..3]
+        
+  print $ asm prog
+  printL $ take 5 $ vartrace tick s0 $ [PCounter] ++ map File [0,1] ++ map Mem [0,1,2,3]
+
 
 printL = traverse print
   

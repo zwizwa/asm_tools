@@ -16,7 +16,7 @@ module Language.Pru.Emu(
   ,EmuState(..),EmuVar(..)
   ,runEmu,stateTrace,tickTrace
   ,pseudo, loadm
-  ,machineInit,machineInit0,machineInit'
+  ,machineInit,machineInit0
   ,rle
   ) where
 
@@ -71,11 +71,11 @@ newtype Emu t = Emu { unEmu :: State EmuState t }
 
 type EmuState = Map EmuVar Int
 data EmuVar
-  = File Int  -- 32 bit register file
-  | Mem Int   -- byte addressed memory
-  | CFlag     -- carry flag
-  | PCounter  -- program counter
-  | Time      -- instruction counter
+  = File Int   -- 32 bit register file
+  | Mem Int    -- byte addressed memory
+  | CFlag      -- carry flag
+  | PCounter   -- program counter
+  | Time       -- instruction counter
   deriving (Eq,Ord,Show)
 
 
@@ -155,16 +155,20 @@ load (R r)    = loadm (File r)
 load (Rw r w) = word 16 w <$> (loadm $ File r)
 load (Rb r b) = word  8 b <$> (loadm $ File r)
 
-mask bits = (shift 1 bits) - 1
-word bits w v = v' .&. (mask bits) where
-  v' = shift v $ 0 - bits
+mask bits = (1 `shiftL` bits) - 1
+
+word bits index v = v' .&. (mask bits) where
+  v' = v `shiftR` (bits * index)
 
 trunc bits = (.&. (mask bits))
   
-store (R r) = (storem $ File r) . (trunc 32)
-store (Rw r w) = store' 16 w (R r)
-store (Rb r b) = store'  8 b (R r)
+store (R r)    = store' 32 0 r
+store (Rw r w) = store' 16 w r
+store (Rb r b) = store'  8 b r
 
+store' bits index r sub = do
+  old <- loadm (File r)
+  storem (File r) $ merge_bits bits (bits * index) old sub
 
 -- This is an awkward operation, so factor it out.
 merge_bits bit_size bit_offset old sub = new where
@@ -172,10 +176,6 @@ merge_bits bit_size bit_offset old sub = new where
   erased = old    .&. (complement $ m `shiftL` bit_offset)
   new    = erased .|. ((sub .&. m) `shiftL` bit_offset)
 
--- This is really awkward to express!  Why?
-store' bits index (R r) sub = do
-  old <- loadm (File r)
-  storem (File r) $ merge_bits bits (bits * index) old sub
 
 clrbit val bit = val .&. (complement $ shift 1 bit)
 setbit val bit = val .|. (shift 1 bit)
@@ -291,7 +291,7 @@ instance Pru Comp where
     
   -- Generic instructions
   insrr MOV ra rb = move ra (Reg rb)
-  insri LDI ra ib = move ra (Im ib)
+  insri LDI ra ib = move ra (Im $ fitsI 16 ib)
   insrro ADD = intop2 (+)
   insrro SUB = intop2 (-)
   insrro CLR = intop2 clrbit
@@ -302,9 +302,13 @@ instance Pru Comp where
   ins HALT = comp $ return ()
   ins NOP  = comp next
 
+fitsI n (I v) = I $ fits n v
+fitsI n (L l) = L l
 
-
-
+fits n v = case v == trunc n v of
+  True -> v
+  False -> error $ show v ++ " does not fit in " ++ show n ++ " bits"
+  
 
 -- Execution
 
@@ -312,12 +316,13 @@ instance Pru Comp where
 -- Machines behavior is fully determined by the code represented as a
 -- tick operation produced by the compiler, and the initial machine
 -- state.
-machineInit = machineInit0 []
-machineInit0 = machineInit' 0
+machineInit = machineInit0 [] []
 
-machineInit' :: Int -> [Int] -> EmuState
-machineInit' init regs = Map.fromList $
-  [(PCounter, 0), (Time, 0)] ++ [(File r, init) | r <- regs]
+machineInit0 :: [Int] -> [Int] -> EmuState
+machineInit0 regs mems = Map.fromList $
+  [(PCounter, 0), (Time, 0)] ++
+  [(File r, 0) | r <- regs] ++
+  [(Mem a, 0) | a <- mems]
 
 
 -- Generic monad run method.  See below for usage examples.
