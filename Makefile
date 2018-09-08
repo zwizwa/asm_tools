@@ -43,7 +43,7 @@ repl-test-edif: default.nix
 # incremental development.
 configure: default.nix
 	$(NIX_SHELL) --run "cabal configure --disable-optimization"
-test: default.nix
+cabal-test: default.nix
 	$(NIX_SHELL) --run "cabal test --log=/dev/stdout"
 
 # Target applications

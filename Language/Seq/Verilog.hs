@@ -222,13 +222,13 @@ vModule' variant mod_name portNames portTypes mod = Verilog vCode where
   vCode =
     (case variant of
       Module ->
-        -- "`timescale 1ns/10ps\n" ++  -- from MyHDL output
         "module " ++ mod_name ++ "(" ++ commas (["CLK","RST"] ++ portNames) ++ ");\n" ++
         "input CLK;\n" ++
         "input RST;\n" ++
         decls "input"  (part Inputs) ++
         decls "output" (part Connects)
       Cosim ->
+        -- "`timescale 1ns/10ps\n" ++  -- from MyHDL output
         "module " ++ mod_name ++ ";\n" ++
         "reg CLK;\n" ++
         "reg RST;\n" ++
@@ -251,16 +251,10 @@ vModule' variant mod_name portNames portTypes mod = Verilog vCode where
 
     (case variant of
        Module ->
-         -- FIXME: reset generator should go somewhere else.
-         tab ++ "reset RESET (CRL, RST);\n"
-         -- "reg [7:0] reset_count;\n" ++
-         -- "assign RST = (reset_count == 255);\n" ++
-         -- "always @(posedge CLK) begin: RESET_GEN\n" ++
-         -- tab ++ "if (!RST) begin\n" ++
-         -- tab ++ tab ++ "reset_count <= (reset_count + 1);\n" ++
-         -- tab ++ "end\n" ++
-         -- "end\n"
+         -- FIXME: see verilog/reset.v
+         "reset RESET (CLK, RST);\n"
        Cosim ->
+         -- See vpi/cosim.c and Language.Seq.VerilogRun
          "initial begin\n" ++
          tab ++ "$to_seq(" ++ commas outputs ++ ");\n" ++
          tab ++ "$from_seq(" ++ commas inputs ++ ");\n" ++

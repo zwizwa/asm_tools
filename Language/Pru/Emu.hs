@@ -1,3 +1,8 @@
+-- (c) 2018 Tom Schouten -- see LICENSE file
+
+-- Note: This is experimental code driven by a concrete need.
+-- Not all corner cases are implemented or implemented correctly.
+
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -66,7 +71,8 @@ newtype Emu t = Emu { unEmu :: State EmuState t }
 
 type EmuState = Map EmuVar Int
 data EmuVar
-  = File Int  -- register file
+  = File Int  -- 32 bit register file
+  | Mem Int   -- byte addressed memory
   | CFlag     -- carry flag
   | PCounter  -- program counter
   | Time      -- instruction counter
@@ -141,6 +147,9 @@ checkVar var (Just val) = val
 checkVar var Nothing = error $ "Uninitialized EmuVar: " ++ show var
 
 -- Registers are special: they have word, byte subaccess.
+
+-- FIXME: is 'word' actually correct?
+
 load :: R -> Emu Int
 load (R r)    = loadm (File r)
 load (Rw r w) = word 16 w <$> (loadm $ File r)
@@ -152,17 +161,21 @@ word bits w v = v' .&. (mask bits) where
 
 trunc bits = (.&. (mask bits))
   
-store (R r) = (storem (File r)) . (trunc 32)
+store (R r) = (storem $ File r) . (trunc 32)
 store (Rw r w) = store' 16 w (R r)
 store (Rb r b) = store'  8 b (R r)
 
+
+-- This is an awkward operation, so factor it out.
+merge_bits bit_size bit_offset old sub = new where
+  m = mask bit_size
+  erased = old    .&. (complement $ m `shiftL` bit_offset)
+  new    = erased .|. ((sub .&. m) `shiftL` bit_offset)
+
+-- This is really awkward to express!  Why?
 store' bits index (R r) sub = do
   old <- loadm (File r)
-  let shift' = shift $ bits * index
-      kill   = complement $ shift' (mask bits)
-      sub'   = shift' sub
-      old'   = old .&. kill
-  storem (File r) $ old' .|. sub'
+  storem (File r) $ merge_bits bits (bits * index) old sub
 
 clrbit val bit = val .&. (complement $ shift 1 bit)
 setbit val bit = val .|. (shift 1 bit)
@@ -221,6 +234,36 @@ intop2 f ra rb c = do
     store ra $ f b' c''
     next
 
+-- Load and store behave as memcpy between the addressable memory and
+-- the register file.  Note that we do not have accurate timing
+-- information for these, so use them only for setup and debugging.
+
+sbbo' = bbo $ \reg_addr mem_addr -> do
+  byte <- load (addr2reg reg_addr)
+  storem (Mem mem_addr) byte
+
+lbbo' = bbo $ \reg_addr mem_addr -> do
+  byte <- loadm $ Mem mem_addr
+  store (addr2reg reg_addr) byte
+
+reg2addr (R r) = 4 * r
+reg2addr (Rw r w) = 4 * r + 2 * w
+reg2addr (Rb r b) = 4 * r + b
+
+addr2reg addr = (Rb r b) where
+  r = addr `shiftR` 2
+  b = trunc 2 addr
+
+-- Iteration over memory and register file addresses.
+bbo :: (Int -> Int -> Emu ()) -> R -> R -> O -> O -> Comp ()
+bbo op reg mem_ptr (Im (I mem_offset)) (Im (I nb)) =  do
+  -- FIXME: the last argument can also be R0.bn
+  comp $ do
+    let reg_addr = reg2addr reg
+    mem_addr <- fmap (mem_offset +) $ load mem_ptr
+    sequence_ [ op (reg_addr + i) (mem_addr + i) | i <- [0..nb-1] ]
+    next
+
 
 -- Pru source code semantics
 instance Pru Comp where
@@ -242,6 +285,9 @@ instance Pru Comp where
       pc <- loadm PCounter
       storem (File r) (pc + 1)
       storem PCounter o
+
+  insrroo SBBO = sbbo'
+  insrroo LBBO = lbbo'
     
   -- Generic instructions
   insrr MOV ra rb = move ra (Reg rb)
@@ -255,8 +301,6 @@ instance Pru Comp where
   -- Implemented as spin
   ins HALT = comp $ return ()
   ins NOP  = comp next
-
-
 
 
 

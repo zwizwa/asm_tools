@@ -49,6 +49,7 @@ type EmuOp = Emu ()
 main = do
   test_coroutine
   test_beaglelogic_loop
+  test_memory
 
 test_coroutine = do
   putStrLn "--- test_coroutine"
@@ -146,5 +147,24 @@ beaglelogic_loop = do
 
 
 
-  
+test_memory = do
+  putStrLn "--- test_memory"
+  let prog = do
+        -- These are wierd..  For now, let's implement just what's
+        -- needed in the Emu.
+        lbbo (R 0) (R 1) (Im $ I 0) (Im $ I 4)
+        -- sbbo (R 0) (R 1) (Im $ I 0) (Im $ I 4)
+        -- ldi (Rb 0 1) (I 1)
+      (tick, labels) = compile' prog
+      s0 = Map.fromList (
+        [(PCounter, 0), (Time, 0), (File 0, 0), (File 1, 0)] ++
+        [(Mem addr, val) | (val,addr) <- zip [1,2,3,4] [0..] ])
+         
+        
+        
+  print $ asm prog
+  printL $ take 2 $ vartrace tick s0 [PCounter, File 0]
+  -- FXIME: do emu
+
+printL = traverse print
   

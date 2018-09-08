@@ -11,14 +11,15 @@ module Language.Pru where
 class Monad m => Pru m where
   declare :: m I
   label   :: I -> m ()
-  inso    :: OpcO   -> O           -> m ()
-  insi    :: OpcI   -> I           -> m ()
-  insrr   :: OpcRR  -> R -> R      -> m ()
-  insri   :: OpcRI  -> R -> I      -> m ()
-  insro   :: OpcRO  -> R -> O      -> m ()
-  insrro  :: OpcRRO -> R -> R -> O -> m ()
-  insiri  :: OpcIRI -> I -> R -> I -> m ()
-  insiro  :: OpcIRO -> I -> R -> O -> m ()
+  inso    :: OpcO    -> O                -> m ()
+  insi    :: OpcI    -> I                -> m ()
+  insrr   :: OpcRR   -> R -> R           -> m ()
+  insri   :: OpcRI   -> R -> I           -> m ()
+  insro   :: OpcRO   -> R -> O           -> m ()
+  insrro  :: OpcRRO  -> R -> R -> O      -> m ()
+  insiri  :: OpcIRI  -> I -> R -> I      -> m ()
+  insiro  :: OpcIRO  -> I -> R -> O      -> m ()
+  insrroo :: OpcRROO -> R -> R -> O -> O -> m ()
   ins     :: Opc -> m ()
 
   -- Meta
@@ -32,15 +33,16 @@ data R = R Int | Rw Int Int | Rb Int Int deriving (Show,Eq,Ord)
 
 
 -- Instructions
-data OpcO   = JMP  deriving Show
-data OpcRR  = MOV  deriving Show
-data OpcRI  = LDI  deriving Show
-data OpcRO  = JAL  deriving Show
-data OpcIRI = XOUT deriving Show
-data Opc    = NOP | HALT deriving Show
-data OpcRRO = ADD | SUB | CLR | SET deriving Show
-data OpcIRO = QBGT | QBGE | QBLT | QBLE | QBEQ | QBNE | QBBS | QBBC deriving Show
-data OpcI   = QBA deriving Show
+data OpcO    = JMP  deriving Show
+data OpcRR   = MOV  deriving Show
+data OpcRI   = LDI  deriving Show
+data OpcRO   = JAL  deriving Show
+data OpcIRI  = XOUT deriving Show
+data Opc     = NOP | HALT deriving Show
+data OpcRRO  = ADD | SUB | CLR | SET deriving Show
+data OpcIRO  = QBGT | QBGE | QBLT | QBLE | QBEQ | QBNE | QBBS | QBBC deriving Show
+data OpcRROO = SBBO | LBBO deriving Show
+data OpcI    = QBA deriving Show
 
 mov :: Pru m => R -> R -> m ()
 mov = insrr MOV
@@ -102,6 +104,21 @@ qbbc = insiro QBBC
 qba :: Pru m => I -> m ()
 qba = insi QBA
 
+-- These are quirky.  
+-- Semantics:
+--
+-- - LBBO &REG1, Rn2, OP(255), IM(124)
+--   memcpy(offset(REG1), Rn2+OP(255), IM(124))
+--
+-- - LBBO &REG1, Rn2, OP(255), bn
+--   memcpy(offset(REG1), Rn2+OP(255), R0.bn)
+--
+-- Note: the latter is currently not implemented properly
+
+lbbo :: Pru m => R -> R -> O -> O -> m ()
+sbbo :: Pru m => R -> R -> O -> O -> m ()
+lbbo = insrroo LBBO
+sbbo = insrroo SBBO
 
 
 -- Shortcut in case no back-references are required.

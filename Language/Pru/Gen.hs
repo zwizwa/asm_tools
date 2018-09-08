@@ -26,18 +26,19 @@ asm m = Asm w where
 w i = tell [i]
 
 instance Pru Gen where
-  declare        = do l <- get ; modify (+1) ; return $ L l
-  label (L l)    = w $ Lbl l
-  insri o a b    = w $ Ins (show o) [Reg a, Im b]
-  insrr o a b    = w $ Ins (show o) [Reg a, Reg b]
-  insrro o a b c = w $ Ins (show o) [Reg a, Reg b, c]
-  insiri o a b c = w $ Ins (show o) [Im a, Reg b, Im c]
-  insiro o a b c = w $ Ins (show o) [Im a, Reg b, c]
-  insro o a b    = w $ Ins (show o) [Reg a, b]
-  insi o i       = w $ Ins (show o) [Im i]
-  inso o a       = w $ Ins (show o) [a]
-  ins o          = w $ Ins (show o) []
-  comment c      = w $ Comment c
+  declare           = do l <- get ; modify (+1) ; return $ L l
+  label (L l)       = w $ Lbl l
+  insri o a b       = w $ Ins (show o) [Reg a, Im b]
+  insrr o a b       = w $ Ins (show o) [Reg a, Reg b]
+  insrroo o a b c d = w $ Ins (show o) [Reg a, Reg b, c, d]
+  insrro o a b c    = w $ Ins (show o) [Reg a, Reg b, c]
+  insiri o a b c    = w $ Ins (show o) [Im a, Reg b, Im c]
+  insiro o a b c    = w $ Ins (show o) [Im a, Reg b, c]
+  insro o a b       = w $ Ins (show o) [Reg a, b]
+  insi o i          = w $ Ins (show o) [Im i]
+  inso o a          = w $ Ins (show o) [a]
+  ins o             = w $ Ins (show o) []
+  comment c         = w $ Comment c
 
 
 
@@ -46,8 +47,16 @@ instance Pru Gen where
 instance Show Asm where
   show (Asm lines) = concat $ map line lines
 
+-- Handle special cases here.
+
 line (Comment c)          = "\t;; " ++ c ++ "\n"
 line (Lbl l)              = lbl l ++ ":\n"
+line (Ins i [a,b,c,d])
+  | i == "SBBO" || i == "LBBO" =
+    let op' o@(Im _) = op o
+        op' o@(Reg _) = error $ "FIXME: Pru.Gen.line needs special case for SBBO/LBBO register count"
+    in "\t" ++ i ++ "\t" ++ (comma ["&" ++ op a, op b, op c, op' d]) ++ "\n"
+
 line (Ins "XOUT" [a,b,c]) = "\tXOUT\t" ++ (comma [op a, "&" ++ op b, op c]) ++ "\n"
 line (Ins opc ops)        = "\t" ++ opc ++ "\t" ++ (comma $ map op ops) ++ "\n"
 

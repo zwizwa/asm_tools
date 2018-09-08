@@ -218,8 +218,9 @@ x_template_haskell = do
 
 x_syntax = do
   putStrLn "--- x_syntax"
-  let stx = $(seqFile "example.seq")
-  print stx
+  putStrLn "<disabled>"
+  -- let stx = $(seqFile "example.seq")
+  -- print stx
 
 x_seqTH = m1 >> m2 where
   m1 = do
@@ -545,10 +546,11 @@ x_verilog = do
 
 x_run_verilog = do
   putStrLn "-- x_run_verilog"
-  let mod [i] = do o <- add i 1 ; return [o]
-  setEnv "SEQ_COSIM" "vpi/cosim"
-  outs <- VerilogRun.trace [8] mod $ map (:[]) [0..10]
-  print outs
+  putStrLn "disabled: doesn't run well as part of main test suite.. see t_cosim"
+  -- let mod [i] = do o <- add i 1 ; return [o]
+  -- setEnv "SEQ_COSIM" "vpi/cosim"
+  -- outs <- VerilogRun.trace [8] mod $ map (:[]) [0..10]
+  -- print outs
 
 
 
