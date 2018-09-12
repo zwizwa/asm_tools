@@ -1,4 +1,5 @@
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE BangPatterns #-}
 module Data.AsmTools.VCD where
 
 import Data.Maybe

@@ -64,6 +64,9 @@ t_cosim: default.nix
 	$(NIX_SHELL) --run "cabal build t_cosim"
 	export SEQ_COSIM=$$(readlink -f vpi)/cosim ; ./dist/build/t_cosim/t_cosim
 
+csv2vcd: default.nix
+	$(NIX_SHELL) --run "cabal build csv2vcd"
+
 # Inidividual tests
 test-seq-qc: default.nix
 	$(NIX_SHELL) --run "cabal test seq-qc --log=/dev/stdout"

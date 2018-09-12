@@ -31,6 +31,7 @@ import qualified Language.Seq.NetList as SeqNetList
 import qualified Data.AsmTools.MT as MT
 import qualified Data.AsmTools.VCD as VCD
 import qualified Data.AsmTools.CSV as CSV
+import qualified Data.AsmTools.DigiView as DigiView
 import qualified Data.AsmTools.NetFun as NetFun
 
 import qualified Language.Seq.MyHDL as MyHDL
@@ -94,8 +95,8 @@ main = do
   x_testbench
   x_verilog
   x_seqnetlist
-
   x_mt
+  x_digiview
 
 x_counter = do
   putStrLn "--- x_counter"
@@ -594,3 +595,10 @@ x_mt = do
   putStrLn "-- x_mt"
   MT.test
   
+x_digiview = do
+  putStrLn "-- x_digiview"
+  traverse print $
+    expandVC 5 [(5,   "a"),
+                (10,  "b"),
+                (25,  "c"),
+                (100, "d")]

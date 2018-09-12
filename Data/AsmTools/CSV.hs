@@ -37,9 +37,11 @@ comment = do
   many $ noneOf "\n\r"
   return [""]
 
+newline' = (char '\r' >> char '\n') <|> char '\n'
+
 table :: Parser Table
 table = do
-  t <- sepBy (comment <|> record) newline
+  t <- sepBy (comment <|> record) newline'
   -- eof
   return t
 

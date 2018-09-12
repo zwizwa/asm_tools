@@ -280,10 +280,10 @@ instance Pru Comp where
   inso JMP = comp_link_ref $ storem PCounter
   insi QBA l = inso JMP $ Im l -- FIXME: only labels!
   insiro op l r o = cond_branch (cond op) l r o
-    
-  insro JAL (R r) = comp_link_ref $ \o -> do
+
+  insro JAL r = comp_link_ref $ \o -> do
       pc <- loadm PCounter
-      storem (File r) (pc + 1)
+      store r (pc + 1)
       storem PCounter o
 
   insrroo SBBO = sbbo'

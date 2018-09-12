@@ -56,6 +56,21 @@ rle (b:bs) = f 1 b bs where
     False -> (n,s) : f 1 b bs
     
 
+-- Expand a time-stamped value-change list to equidistant sampling.
+expandVC :: (Num n, Ord n) => n -> [(n,t)] -> [(n,t)]
+expandVC period [] = []
+expandVC period (first:rest) = first : f first rest where
+  f _ [] = []
+  f prev@(t_prev, v_prev) lst@(new@(t_new, _) : lst') =
+    let t_now = t_prev + period
+        same  = (t_now, v_prev)
+    in if t_new > t_now then
+      -- The value for t_now is not present, so keep constant
+      same : f same lst
+    else
+      new  : f new lst'
+
+
 
 
 mask nb_bits v = v .&. msk where
@@ -280,6 +295,7 @@ testbench name inSizes mod input = rv where
     let (ins,outs) = splitAt nb_in ports
     outs' <- mod ins
     sequence_ $ zipWith Seq.connect outs outs'
+
 
 
 

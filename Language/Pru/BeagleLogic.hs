@@ -1,3 +1,54 @@
+-- (c) 2018 Tom Schouten -- see LICENSE file
+
+-- To understand this code, it might be helpful to first have a look
+-- at the original BeagleLogic PRU1 assembly code.  It uses
+-- predictable PRU instruction timing to create the time based used
+-- for sampling.  The code here is a generalization of that idea,
+-- using the same PRU0<->PRU1 interface.
+
+-- Interleaved tasks
+--
+-- Essentially the original BeagleLogic PRU1 code contains 3 "tasks"
+-- that are statically interleaved (time-domain multiplexed) inside a
+-- loop body that iterates over 32 bytes = one block of buffer
+-- registers, together with a pre-roll that starts up the loop.  The 3
+-- tasks are:
+
+-- 1. 32x per loop: NOP to create the time base
+-- 2. 32x per loop: sample R31.b0 into one of 32 internal buffer registers
+-- 3.  1x per loop: broadside transfer the 32 register bytes to PRU0
+
+-- Weaving
+--
+-- In this code we use the same principle, but we make the instruction
+-- interleaving programmable.  I.e. we use a macro processing step
+-- that will take a description of the 3 loops and merge them
+-- together.
+
+-- Coroutines
+--
+-- One disadvantage of this approach is that the loop size is fixed,
+-- transferring one packet per loop containing 32 samples.  This
+-- imposes a strong constraint on the structure of the delay slot.
+--
+-- A way around this is to fill one slot with a coroutine call, and
+-- use a coroutine on the other end that has its own control flow.
+-- This uses up 2 instructions per cycle for the back and forth
+-- coroutine calls, leaving intact the predictable timing.  As long as
+-- the other coroutine takes constant time per call, the overall
+-- timing remains rigid.
+
+-- Review
+--
+-- The context of the problem that drove a solution like this is the
+-- control of a slightly more complex data acquisition system.  While
+-- the approach works, it is not simple to maintain proper timing by
+-- static instruction scheduling.  The technique becomes feasible if
+-- combined with constraint checking in emulation, especially because
+-- the PRU code is hard to debug on the target.
+
+
+
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Language.Pru.BeagleLogic where
@@ -7,7 +58,9 @@ import Language.Pru.Weave
 import Data.List
 
 -- A weaver for the PRU1 data acquisition loop used in the
--- BeagleLogic.  It interleaves two loops:
+-- BeagleLogic.
+
+-- It interleaves two loops:
 
 -- a) Sample (possibly combined with other I/O control)
 

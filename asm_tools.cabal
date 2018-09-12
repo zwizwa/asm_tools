@@ -42,6 +42,7 @@ Library
                      Data.AsmTools.SE
                      Data.AsmTools.SetMap
                      Data.AsmTools.VCD
+                     Data.AsmTools.DigiView
                      Data.AsmTools.MT
 
                      Language.Pru
@@ -67,6 +68,12 @@ executable t_cosim
     build-depends:  base, asm-tools
     main-is:        t_cosim.hs
     hs-source-dirs: examples
+
+executable csv2vcd
+    build-depends:  base, asm-tools
+    main-is:        csv2vcd.hs
+    hs-source-dirs: examples
+    optimization:   True
 
 
 
