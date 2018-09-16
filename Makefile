@@ -12,7 +12,7 @@ all: compile
 .SECONDARY:
 
 clean:
-	rm -f result *~ x_* *.v *.vhd *.bin *.blif *.asc f_*.py x_*.py *.compile *.tmp *.vcd f_*.bin f_*.v
+	rm -f result *~ x_* *.v *.vhd *.bin *.blif *.asc f_*.py x_*.py *.compile *.tmp *.vcd *.vcd.* f_*.bin f_*.v *.log
 	rm -rf __pycache__ dist
 
 .PHONY: myhdl_test
@@ -66,6 +66,9 @@ t_cosim: default.nix
 
 csv2vcd: default.nix
 	$(NIX_SHELL) --run "cabal build csv2vcd"
+
+dump: default.nix
+	$(NIX_SHELL) --run "cabal build dump"
 
 # Inidividual tests
 test-seq-qc: default.nix

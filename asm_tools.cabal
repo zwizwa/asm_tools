@@ -7,8 +7,9 @@ license: BSD3
 Library
     default-language: Haskell98
     build-depends:   base, containers, mtl, free, keys, set-extra,
-                     template-haskell, parsec, QuickCheck, array, mios, split,
+                     template-haskell, parsec, QuickCheck, array, split, 
                      binary, bytestring, process, unix, network, temporary
+--                   ,mios
     exposed-modules: Language.Seq
                      Language.Seq.App
                      Language.Seq.Arr
@@ -73,7 +74,12 @@ executable csv2vcd
     build-depends:  base, asm-tools
     main-is:        csv2vcd.hs
     hs-source-dirs: examples
-    optimization:   True
+
+executable dump
+    build-depends:  base, asm-tools, bytestring
+    main-is:        dump.hs
+    hs-source-dirs: examples
+
 
 
 
@@ -93,6 +99,12 @@ Test-Suite seq-x
     main-is:    seq-x.hs
     hs-source-dirs: test
 
+Test-Suite sat
+    default-language: Haskell98
+    build-depends: base, containers, asm-tools, z3
+    type:       exitcode-stdio-1.0
+    main-is:    sat.hs
+    hs-source-dirs: test
 
 Test-Suite pru
     default-language: Haskell98

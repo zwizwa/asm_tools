@@ -1,5 +1,3 @@
--- MIOS
-import SAT.Mios (CNFDescription (..), solveSAT)
 
 -- Z3
 import Z3.Monad
@@ -10,8 +8,8 @@ import Data.Maybe
 import qualified Data.Traversable as T
 
 
-script :: Z3 (Maybe [Integer])
-script = do
+queens :: Z3 (Maybe [Integer])
+queens = do
   q1 <- mkFreshIntVar "q1"
   q2 <- mkFreshIntVar "q2"
   q3 <- mkFreshIntVar "q3"
@@ -46,32 +44,29 @@ script = do
         diagonal d c c' =
           join $ mkEq <$> (mkAbs =<< mkSub [c',c]) <*> (mkInteger d)
 
-
-main_z3 = evalZ3 script >>= \mbSol ->
-        case mbSol of
-             Nothing  -> error "No solution found."
-             Just sol -> putStr "Solution: " >> print sol
+x_queens = do
+  putStrLn "x_queens"
+  evalZ3 queens >>= \mbSol ->
+    case mbSol of
+      Nothing  -> error "No solution found."
+      Just sol -> putStr "Solution: " >> print sol
           
 
--- MIOS
--- Clauses are represented by 1-base variable number * sign.
-clauses :: [[Int]]
-clauses =
-  [[1, 2],
-   [1, 3],
-   [-1, -2],
-   [1, -2, 3],
-   [-3]]
+trivial = do
+  [a,b] <- traverse mkFreshIntVar ["a","b"]
+  assert =<< mkLe a b
+  withModel $ \m -> do
+    a' <- evalInt m a
+    b' <- evalInt m b
+    return (a',b')
 
-desc = CNFDescription
-  3       -- number of variables
-  5       -- number of clauses
-  Nothing -- Maybe pathname
-main_mios = do
-  asg <- solveSAT desc clauses    -- solveSAT :: Traversable m => CNFDescription -> m [Int] -> IO [Int]
-  putStrLn $ if null asg then "unsatisfiable" else show asg
+x_trivial = do
+  putStrLn "x_trivial"
+  rv <- evalZ3 trivial
+  print rv
 
+main = do
+  x_queens
+  x_trivial
+  
 
-
-
-main = main_mios >> main_z3
