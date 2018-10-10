@@ -225,10 +225,18 @@ dec c = sub c 1
 counter :: Seq m r => SType -> m (r S)
 counter t = reg1 t inc
 
--- Combinatorial output for carry.
+
+
+
+--- mod_*_counter: downcounters, using one extra bit as carry to avoid
+--- comparator.
+
+
+
+-- Free running arbitrary period downcounter,
+-- combinatorial output for carry.
 mod_counter' :: Seq m r => Int -> m (r S, r S)
 mod_counter' period = do
-  -- Use one extra bit to use as carry, to avoid the big comparator.
   let n = nb_bits period
       init = cbits n $ period - 1
   closeReg [bits n] $ \[s] -> do
@@ -243,18 +251,39 @@ mod_counter period = do
   c' <- delay c
   return (c', cnt)
 
--- Combinatorial output for carry flag
+-- Free running 2^N upcounter, combinatorial output for carry flag
 carry_counter' :: Seq m r => SType -> m (r S, r S)
 carry_counter' t = do
   closeReg [t] $ \[s] -> do
     (c, s') <- carry inc s
     return ([s'], (c, s))
 
+-- Registered output.
 carry_counter t = do
   (c, cnt) <- carry_counter t
   c' <- delay c
   return (c', cnt)
     
+
+-- Similar to mod_counter', but instrumented to act as a clock
+-- recovery circuit with half-bit (transition) reset.
+mod_sync :: Seq m r => Int -> r S -> m (r S)
+mod_sync period edge = do
+  let n = nb_bits period
+      init = cbits n $ period - 1
+      half = cbits n $ (period `div` 2) - 1
+  closeReg [bits n] $ \[s] -> do
+    (c, dec') <- carry dec s
+    s'        <- if' c init dec'
+    s''       <- if' edge half s'
+    n_edge    <- inv edge
+    sync_out  <- c `band` n_edge
+    return ([s''], sync_out)
+
+
+
+
+
 
 
 delay :: Seq m r => r S -> m (r S)
@@ -265,6 +294,11 @@ delay x = do
 edge d = do
   d0 <- delay d
   d `bxor` d0
+
+
+-- Clock recovery is carry counter with half-bit reset.
+
+
 
 
 -- SPI
