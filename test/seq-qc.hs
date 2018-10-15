@@ -79,6 +79,8 @@ main = do
   x_soc_boot
   x_deser
 
+  x_sync_mod
+
 -- Tests for library code.
 --    t_  Trace wrapper (_emu or _th)
 --    e_  Higher level test evaluator  fst=bool
@@ -506,9 +508,23 @@ x_mod_counter = do
 -- parts: instruction decoder, state machines.
 
 
+t_sync_mod period = trace [1] $ \[idata] -> do
+  sync <- sync_mod period idata
+  return [sync]
 
 
+e_sync_mod period = (False, test 1 ++ test (-1)) where
+  rep' n v = replicate (period + n) v
+  rep n = rep' n 1 ++ rep' n (0 :: Int)
+  cycle' l = take 30 $ cycle l
+  test n = [ins, map (\[x] -> x) $ t_sync_mod period $ map (:[]) ins]
+    where ins = cycle' $ rep n
 
+
+x_sync_mod = do
+  putStrLn "x_sync_mod"
+  let (_, report) = e_sync_mod 6
+  traverse print report
 
 -- Tools tests
 

@@ -263,22 +263,7 @@ carry_counter t = do
   (c, cnt) <- carry_counter t
   c' <- delay c
   return (c', cnt)
-    
 
--- Similar to mod_counter', but instrumented to act as a clock
--- recovery circuit with half-bit (transition) reset.
-mod_sync :: Seq m r => Int -> r S -> m (r S)
-mod_sync period edge = do
-  let n = nb_bits period
-      init = cbits n $ period - 1
-      half = cbits n $ (period `div` 2) - 1
-  closeReg [bits n] $ \[s] -> do
-    (c, dec') <- carry dec s
-    s'        <- if' c init dec'
-    s''       <- if' edge half s'
-    n_edge    <- inv edge
-    sync_out  <- c `band` n_edge
-    return ([s''], sync_out)
 
 
 
@@ -463,6 +448,28 @@ sync' s0 i s = do
 sync :: Seq m r => SType -> r S -> m (r S)
 sync t i = do
   reg1 t $ sync' (constant t) i
+
+
+
+-- Synchronizer for non 2^N periods.
+-- See sync.  This is mod_counter' instrumented with edge reset.
+
+-- FIXME: This doesn't start up properly.  In practice, this needs to
+-- wait until the first transition before sending out any clocks.
+-- Also the number of pulses is usually known, but this can be handled
+-- externally.  Is it enough to just have an enable?
+
+sync_mod :: Seq m r => Int -> r S -> m (r S)
+sync_mod period idata = do
+  edge' <- edge idata
+  let n = nb_bits period
+      init = cbits n $ period - 1
+      half = cbits n $ (period `div` 2) - 1
+  closeReg [bits n] $ \[cnt] -> do
+    (c, dec') <- carry dec cnt
+    cnt'      <- if' edge' half =<< if' c init dec'
+    sync_out  <- (c `band`) =<< inv edge'
+    return ([cnt'], sync_out)
 
 
 -- Shift register in terms of slice + conc.
