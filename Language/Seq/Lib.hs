@@ -280,6 +280,28 @@ edge d = do
   d0 <- delay d
   d `bxor` d0
 
+edges d = do
+  e <- edge d
+  pos <- e `band` d
+  neg <- (e `band`) =<< inv d
+  return (pos, neg)
+
+posedge d = fmap fst $ edges d
+negedge d = fmap snd $ edges d
+
+
+-- Synchronous S/R FF. Combinatorial output. The hard part here is to
+-- determine what to do when both signals are active at the same time.
+-- We pick reset as the one that overrides.
+set_reset set reset = do
+  closeReg [bit] $ \[s] -> do
+    [s'] <- cond
+            [(reset, [0]),
+             (set,   [1])]
+            [s]
+    return ([s'], s')
+  
+
 
 -- Clock recovery is carry counter with half-bit reset.
 
@@ -408,7 +430,6 @@ spi_bc mode cs sck = do
 
 
 
-
 -- But the initial phase is important to properly reset the edge
 -- detector in order not to introduce spurious pulses.  E.g. suppose
 -- we're sampling on 0->1, but the initial clock phase is 1 and the
@@ -419,10 +440,6 @@ spi_bc mode cs sck = do
 -- ensure there is no spurios pulse.  E.g. if the delay element is
 -- initialized at 0, but the clock level starts out at 1, it will see
 -- a pulse.
-
-posedge sclk = do
-  e <- edge sclk
-  e `band` sclk
 
 
 
@@ -451,25 +468,37 @@ sync t i = do
 
 
 
--- Synchronizer for non 2^N periods.
--- See sync.  This is mod_counter' instrumented with edge reset.
+-- Synchronizer for non 2^N periods, with framing.
+sync_mod :: Seq m r => Int -> r S -> r S -> m (r S)
+sync_mod period frame idata = do
+  edge'  <- edge idata
 
--- FIXME: This doesn't start up properly.  In practice, this needs to
--- wait until the first transition before sending out any clocks.
--- Also the number of pulses is usually known, but this can be handled
--- externally.  Is it enough to just have an enable?
-
-sync_mod :: Seq m r => Int -> r S -> m (r S)
-sync_mod period idata = do
-  edge' <- edge idata
-  let n = nb_bits period
-      init = cbits n $ period - 1
-      half = cbits n $ (period `div` 2) - 1
+  -- Hold reset between frame enabled and first edge.  This is
+  -- represented as an adjusted framing signal: frame'
+  start  <- edge' .& frame
+  stop   <- negedge frame
+  frame' <- set_reset start stop
+  
+  let n        = nb_bits period
+      full_bit = cbits n $ period - 1
+      half_bit = cbits n $ (period `div` 2) - 1
   closeReg [bits n] $ \[cnt] -> do
-    (c, dec') <- carry dec cnt
-    cnt'      <- if' edge' half =<< if' c init dec'
-    sync_out  <- (c `band`) =<< inv edge'
+    (carry', dec') <- carry dec cnt
+
+    -- Reset sub-bit clock to 1/2 bits on data edges, or when not
+    -- enabled (= outside of frame).
+    clk_rst <- (edge' `bor`) =<< inv frame'
+    
+    [cnt'] <- cond
+      [(clk_rst, [half_bit]),
+       (carry',  [full_bit])]
+      [dec']
+
+    sync_out <- carry' `band` frame'
     return ([cnt'], sync_out)
+
+
+  
 
 
 -- Shift register in terms of slice + conc.

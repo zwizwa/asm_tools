@@ -80,6 +80,7 @@ main = do
   x_deser
 
   x_sync_mod
+  qc "p_sync_mod" p_sync_mod
 
 -- Tests for library code.
 --    t_  Trace wrapper (_emu or _th)
@@ -508,23 +509,58 @@ x_mod_counter = do
 -- parts: instruction decoder, state machines.
 
 
-t_sync_mod period = trace [1] $ \[idata] -> do
-  sync <- sync_mod period idata
-  return [sync]
+t_sync_mod period = trace [1,1] $ \[enable, idata] -> do
+  sync <- sync_mod period enable idata
+  return [sync, idata, enable]
 
 
-e_sync_mod period = (False, test 1 ++ test (-1)) where
-  rep' n v = replicate (period + n) v
-  rep n = rep' n 1 ++ rep' n (0 :: Int)
-  cycle' l = take 30 $ cycle l
-  test n = [ins, map (\[x] -> x) $ t_sync_mod period $ map (:[]) ins]
-    where ins = cycle' $ rep n
+e_sync_mod period pre post frac payload = (payload == payload', outs) where
+
+  -- Signal consists of a couple of phases:
+  -- . enable=0, data is ignored
+  -- . enable=1, first edge starts recovery clock
+
+
+  -- Idle level is the opposite of the first bit.  Usually payload
+  -- contains a well-defined preamble.
+  idle = 1 - head payload
+
+  with_enable e = map (\i -> [e,i])
+
+  ins =
+    (with_enable 0 pre) ++
+    -- Circuit detects the first edge when enable goes high, including
+    -- the simultaneous edge, so provide a safe transition.
+    (with_enable 0 [idle]) ++ 
+    (with_enable 1 [idle]) ++ 
+    (with_enable 1 $ fracSample frac payload) ++
+    (with_enable 0 post)
+  outs = t_sync_mod period ins
+  payload' = map head $ downSample' outs
+        
+
+p_sync_mod = forAll vars prop where
+  vars = do
+    let mk = vectorOf 8 $ word 1
+    pre <- mk
+    post <- mk
+    payload <- mk
+    return (pre,post,payload)
+  prop (pre,post,payload) = fst $ e_sync_mod 6 pre post (1.0 / 6.06) payload
 
 
 x_sync_mod = do
   putStrLn "x_sync_mod"
-  let (_, report) = e_sync_mod 6
-  traverse print report
+
+  let pre  = [1,0,1,1,0,1,1]
+      post = [1,0,0,1,1,1,0]
+      frac = 1.0 / 5.9
+      payload = [0,1,0,1,0,1,1,1]
+      (_, signals) = e_sync_mod 6 pre post frac payload
+      
+  traverse print signals
+  
+
 
 -- Tools tests
 

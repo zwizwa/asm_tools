@@ -183,6 +183,7 @@ f1 INV = complement
 f2 ADD = (+)
 f2 SUB = (-)
 f2 AND = (.&.)
+f2 OR  = (.|.)
 f2 XOR = xor
 f2 SLL = shiftL
 f2 SLR = shiftR
