@@ -79,7 +79,7 @@ main = do
   x_soc_boot
   x_deser
 
-  x_sync_mod
+  -- x_sync_mod
   qc "p_sync_mod" p_sync_mod
 
 -- Tests for library code.
@@ -494,20 +494,14 @@ x_mod_counter = do
   print $ rle $ t_mod_counter $ replicate 30 []
 
 
--- -- Add-hoc way to test periodic signals
--- check_periodic :: [t] -> [t] -> Bool
--- check_periodic per@(_:_) seq@(_:_:_) = _ where
---   seq' = head $ take (length seq - 1) seq
-  
-  
--- check_periodic per seq =
---   error $ "check_periodic: invalid argument: " ++ show (len per, len seq)
 
 
--- A slightly more involved program: read uart data into fifo until
--- newline character, then spit it out again.  Split it into two
--- parts: instruction decoder, state machines.
-
+-- Bit sync test.  It is not simple to define what "correct" means:
+-- performance is data-dependent.  In practice this would need an
+-- encoding scheme such as 8b/10b to guarantee transitions.  Once a
+-- minimal number of transitions is guaranteed, a bound can be placed
+-- on the frequency deviation.  TODO: Maybe add this on an as-needed
+-- basis?
 
 t_sync_mod period = trace [1,1] $ \[enable, idata] -> do
   sync <- sync_mod period enable idata
@@ -525,16 +519,16 @@ e_sync_mod period pre post frac payload = (payload == payload', outs) where
   -- contains a well-defined preamble.
   idle = 1 - head payload
 
-  with_enable e = map (\i -> [e,i])
+  enable e = map (\i -> [e,i])
 
   ins =
-    (with_enable 0 pre) ++
+    (enable 0 pre) ++
     -- Circuit detects the first edge when enable goes high, including
     -- the simultaneous edge, so provide a safe transition.
-    (with_enable 0 [idle]) ++ 
-    (with_enable 1 [idle]) ++ 
-    (with_enable 1 $ fracSample frac payload) ++
-    (with_enable 0 post)
+    (enable 0 [idle]) ++ 
+    (enable 1 [idle]) ++ 
+    (enable 1 $ fracSample frac payload) ++
+    (enable 0 post)
   outs = t_sync_mod period ins
   payload' = map head $ downSample' outs
         
@@ -546,7 +540,8 @@ p_sync_mod = forAll vars prop where
     post <- mk
     payload <- mk
     return (pre,post,payload)
-  prop (pre,post,payload) = fst $ e_sync_mod 6 pre post (1.0 / 6.06) payload
+  prop (pre,post,payload) =
+    fst $ e_sync_mod 6 pre post (1.0 / 6.0) payload
 
 
 x_sync_mod = do

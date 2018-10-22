@@ -118,12 +118,14 @@ sequencer (IMemWrite wEn wAddr wData) run execute = do
       ipCont <- inc ip
       -- Execute instruction, which produces control flow information.
       (Control loop jump ipJump, o) <- execute (Ins iw' ipCont)
+
       rst      <- inv run
       [ipNext] <- cond
                   [(rst,  [0]),
                    (loop, [ip]),
                    (jump, [ipJump])]
                   [ipCont]
+
       "ip"  <-- ip
       "run" <-- run
                   
