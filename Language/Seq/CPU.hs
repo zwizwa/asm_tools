@@ -399,7 +399,8 @@ bus [rx, tx_bc] (BusWr rEn wEn addr wData) = do
 
   -- UART.  Baud generator should probably be a circuit.
   tx_wc <- wEn' uart_tx_addr
-  (tx, tx_rdy) <- async_transmit tx_bc (tx_wc, wData)
+  tx_data <- slice' wData 8 0
+  (tx, tx_rdy) <- async_transmit tx_bc (tx_wc, tx_data)
 
   -- Debug writes.  Used for
   -- 1) CPU test programs in test suite

@@ -341,8 +341,13 @@ memRef mem n = v where
     True -> 0
     False -> mem !! n
 
-t_soc_idle = [1,1,1,0,0]
+
+t_soc_idle = [1,1,1,0,0] -- [rx,tx_bc,cs,sck,sda]
+t_soc_baud_div n = cycle ([[1,1,1,0,0]] ++ replicate (n-1) [1,0,1,0,0])
+
 t_soc prog = $(compile allProbe [1,1,1,1,1] soc_test) [memRef prog]
+
+
 
 
 -- Subroutine abstractions.  Note that this is not a 2-stack
@@ -392,6 +397,14 @@ x_soc = do
       drop                -- value returned is dummy
       jmp 0
 
+    -- Uart "done" test, head-to-tail transmit
+    -- This needs baud clock.  See t_soc call below.
+    uart_tx =  c $ do
+      push 0 ; write uart_tx_addr ; nop
+      read  uart_tx_addr ; drop
+      jmp 0
+
+  
     -- Loop
     prog_loop = c $ do push 3; loop 1; jmp 0
 
@@ -426,6 +439,10 @@ x_soc = do
   putStrLn "prog_bus:"
   printProbe ["iw","ip","tx_bc","tx_wc","tx_in","tx_done","tx_out"] $
     t_soc prog_bus $ replicate 30 idle
+
+  putStrLn "uart_tx:"
+  printProbe ["iw","ip","tx_done","tx_sr","tx_bc","tx_out"] $
+    t_soc uart_tx $ take 200 $ t_soc_baud_div 8
 
   putStrLn "prog_loop:"
   printProbe ["iw","ip","top","snd","c"] $

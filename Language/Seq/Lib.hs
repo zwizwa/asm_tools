@@ -735,8 +735,9 @@ async_receive nb_bits i = do
 
 async_transmit bitClock (wordClock, txData) = do
   n <- sbits txData
+  let n' = nb_bits $ n + 2
   closeReg [SInt (Just $ n+2) (-1),
-            SInt (Just $ nb_bits $ n+2) 0] $
+            SInt (Just $ n') 0] $
     \[shiftReg, cnt] -> do
 
 
@@ -750,11 +751,10 @@ async_transmit bitClock (wordClock, txData) = do
       -- Once fully shifted, contents is all 1, so also stop bit.
       newframe <- conc txData =<< conc (cbit 0) (cbit 1)
       shifted  <- conc (cbit 1) =<< slice' shiftReg (n+2) 1
-      cntDec'  <- dec cnt
-      cntDec   <- if' done 0 cntDec'
+      cntDec   <- if' done 0 =<< dec cnt
 
       [shiftReg', cnt'] <- cond
-        [(wordClock, [newframe, 10]),
+        [(wordClock, [newframe, cbits n' (n + 2)]),
          (bitClock,  [shifted,  cntDec])]
         [shiftReg, cnt]
 
@@ -763,6 +763,7 @@ async_transmit bitClock (wordClock, txData) = do
       "tx_in"   <-- txData
       "tx_done" <-- done
       "tx_out"  <-- out
+      "tx_sr"   <-- shiftReg
       
       -- return ([shiftReg', cnt'],
       --         [out, done,
