@@ -71,8 +71,10 @@ main = do
 
   qc "p_soc_fun" p_soc_fun
 
+  qc "p_async_transmit" p_async_transmit
+  -- x_async_transmit
+
   x_stack
-  x_async_transmit
   x_spi
   x_mod_counter
   x_soc
@@ -201,21 +203,33 @@ t_async_transmit ins =
      \[bc,wc,tx] -> async_transmit bc (wc, tx) >>= list2)
   memZero ins
 
-x_async_transmit = do
-  let tx_ins = take 100 $ [[0,0,0],[0,0,0],[1,1,0x5A]] ++
-               -- 8x oversampling
-               (cycle $ replicate 7 [0,0,0] ++ [[1,0,0]])
+-- FIXME: Multiple bytes.  This is not easy to test due to done->next
+-- word dependency.  Maybe make a CPU program?
+e_async_transmit tx_byte = ([tx_byte] == rx_bytes, (tx_out, rx_out, rx_bytes)) where
+  tx_ins = take 100 $ [[0,0,0],[0,0,0],[1,1,tx_byte]] ++
+           -- 8x oversampling
+           (cycle $ replicate 7 [0,0,0] ++ [[1,0,0]])
                
-      tx_out = t_async_transmit tx_ins
-      -- use the receiver to test the transmitter
-      dline  = map head tx_out  -- the line carrying the data
-      rx_out = t_async_receive 8 $ map (:[]) dline
+  tx_out = t_async_transmit tx_ins
+  -- use the receiver to test the transmitter
+  dline  = map head tx_out  -- the line carrying the data
+  rx_out = t_async_receive 8 $ map (:[]) dline
+  rx_bytes = map head $ downSample' rx_out
 
+p_async_transmit = forAll vars pred where
+  vars = word 8
+  pred = fst . e_async_transmit
+
+x_async_transmit = do
+  let (_, (tx_out, rx_out, rx_bytes)) = e_async_transmit 0x5A -- 90
   putStrLn "-- x_async_transmit"
+  putStrLn "rx-bytes:"
+  print $ rx_bytes
   putStrLn "tx:"
   printL $ tx_out
   putStrLn "rx:"
   printL $ rx_out
+  
 
 
 -- Using SeqTH it is not possible to generate outputs in response to
@@ -330,10 +344,6 @@ memRef mem n = v where
 t_soc_idle = [1,1,1,0,0]
 t_soc prog = $(compile allProbe [1,1,1,1,1] soc_test) [memRef prog]
 
-printProbe :: [String] -> ([String],[[Int]]) -> IO ()
-printProbe columns (names, signals) = do
-  let signals' = selectSignals columns names signals
-  putStr $ showSignals' True columns signals'
 
 -- Subroutine abstractions.  Note that this is not a 2-stack
 -- machine, so the return address needs to be restored to the top
@@ -342,8 +352,8 @@ prog_fun v1 v2 = program $ do
   proc1 <- fun $ do push v1 ; swap ; ret
   proc2 <- fun $ do push v2 ; swap ; ret
   start $ forever $ do
-    proc1 ; write dbg
-    proc2 ; write dbg
+    proc1 ; write dbg_addr
+    proc2 ; write dbg_addr
 
 e_soc_fun v1 v2 = e_soc_dbg_trace clocks expect (prog_fun v1 v2) where
   clocks = 40
@@ -376,10 +386,10 @@ x_soc = do
     prog_bus =  c $ do
       push 0xf
       -- push 0xF
-      write uart_tx
-      nop            -- tx_done doesnt clear fast enough
-      read  uart_tx  -- waits until tx_done is high
-      drop           -- value returned is dummy
+      write uart_tx_addr
+      nop                 -- tx_done doesnt clear fast enough
+      read  uart_tx_addr  -- waits until tx_done is high
+      drop                -- value returned is dummy
       jmp 0
 
     -- Loop
@@ -389,7 +399,7 @@ x_soc = do
     prog_loop2 = c $ do begin; push 3; for; next; again
 
     -- Write to debug register
-    prog_dbg = c $ do push 123; write dbg
+    prog_dbg = c $ do push 123; write dbg_addr
 
     -- Call, ret
     prog_call = c $ do
@@ -446,9 +456,9 @@ x_soc_boot = do
     prog = Forth.compile p
     p = forever $ do
       -- just one bit transition. easy to check for
-      push 0xff ; write uart_tx
+      push 0xff ; write uart_tx_addr
       -- wait for tx ready. nop is needed for flag to clear.
-      nop ; read uart_tx ; drop
+      nop ; read uart_tx_addr ; drop
 
     -- The 16-bit words are in big-endian form, and the most
     -- significant bit of the first word is the first serial bit sent.
@@ -580,6 +590,24 @@ p_bits = forAll wordList p where
     bits   = toBits  nb_bits words
     words' = toWords nb_bits bits
     bits'  = toBits  nb_bits words'
-  
+
+
+
+data ShowProbe = ShowInt Int | ShowIW Int
+instance Show (ShowProbe) where
+  show (ShowInt i) = show i
+  show (ShowIW iw) = dasm iw
+
+showProbe "iw" = ShowIW
+showProbe _    = ShowInt
+
+printProbe :: [String] -> ([String],[[Int]]) -> IO ()
+printProbe columns (names, signals) = do
+  let signals' = selectSignals columns names signals
+      showcol = zipWith ($) (map showProbe columns)
+  putStr $ showSignals' True columns $ map showcol signals'
+
+
+
   
   

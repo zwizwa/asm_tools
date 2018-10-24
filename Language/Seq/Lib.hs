@@ -724,13 +724,18 @@ async_receive nb_bits i = do
   -- return (sr:regs)
   return (wc,sr)
 
+-- FIXME: This is not very good.  Think in terms of specification:
+-- . bitClock: clock out the next bit.  if stop bit, raise done
+-- . wordClock: load shift register, regardless of bit clock
 
--- FIXME: To test this, use a program sequencer, because it requires
--- response to the done bit.
+-- . it is allowed to clock in a new word during the stop bit.  to
+--   make this work, the output should not change.
+
+
 
 async_transmit bitClock (wordClock, txData) = do
   n <- sbits txData
-  closeReg [SInt (Just $ n+1) (-1),
+  closeReg [SInt (Just $ n+2) (-1),
             SInt (Just $ nb_bits $ n+2) 0] $
     \[shiftReg, cnt] -> do
 
@@ -739,13 +744,15 @@ async_transmit bitClock (wordClock, txData) = do
       out  <- slice' shiftReg 1 0
       done <- cnt `equ` 0
 
-      newframe <- conc txData (cbit 0)
-      shifted  <- conc (cbit 1) =<< slice' shiftReg (n+1) 1
+      -- Make it so that inserting a new word in the shift register
+      -- during the stop bit doesn't change the bit output (== 1).
+      -- LSB is stop bit, the next one is start bit of next word.
+      -- Once fully shifted, contents is all 1, so also stop bit.
+      newframe <- conc txData =<< conc (cbit 0) (cbit 1)
+      shifted  <- conc (cbit 1) =<< slice' shiftReg (n+2) 1
       cntDec'  <- dec cnt
       cntDec   <- if' done 0 cntDec'
 
-      -- Not handling wordClock and bitClock at the same time makes it
-      -- easier to express and reduces data path length.
       [shiftReg', cnt'] <- cond
         [(wordClock, [newframe, 10]),
          (bitClock,  [shifted,  cntDec])]

@@ -184,6 +184,31 @@ o_ret   = 9
 -- 15
 
 
+itable :: [(Int, (String, Int))]
+itable =
+  [(o_nop,   ("nop",   0)),
+   (o_jmp,   ("jmp",   1)),
+   (o_push,  ("push",  1)),
+   (o_read,  ("read",  1)),
+   (o_write, ("write", 1)),
+   (o_swap,  ("swap",  0)),
+   (o_loop,  ("loop",  1)),
+   (o_call,  ("call",  1)),
+   (o_ret,   ("ret",   0))]
+
+dasm iw = asm where
+  o = iw `shiftR` (16 - o_nb_bits)
+  arg = iw .&. 0xFF
+  Just (opc, narg) = lookup o itable
+  asm = case (opc,arg) of
+    (o_write, 0) -> "drop"
+    _ -> case narg of
+           0 -> opc
+           1 -> opc ++ ":" ++ show arg
+
+  
+   
+
 -- Use Forth for flow control structures.
 
 -- Note that this is a Forth / Asm hybrid embedded in a Monad:
@@ -203,7 +228,7 @@ read  = i1 o_read
 write = i1 o_write
 swap  = i0 o_swap
 loop  = i1 o_loop
-drop  = write (-1)
+drop  = write drop_addr
 call  = i1 o_call
 ret   = i0 o_ret
 down  = i0 o_down
@@ -337,10 +362,13 @@ stack_machine  nb_stack (BusRd bus_rdy bus_data) (Ins iw ip) = do
     -- reads can take multiple cycles.  it is assumed that rReady is
     -- high for only one cycle.
 
+    -- A note about probes: don't mix inputs and 'next' values, as
+    -- this makes output very hard to read.
+
     -- probes
     "iw"  <-- iw
-    "top" <-- top'
-    "snd" <-- snd'
+    "top" <-- top
+    "snd" <-- snd
     "c"   <-- carry
     
     return (stack',                           -- internal reg feedback
@@ -354,9 +382,10 @@ stack_machine  nb_stack (BusRd bus_rdy bus_data) (Ins iw ip) = do
 
 -- Register addresses are abstract similar to instruction encodings.
 
-uart_rx = 0 :: Int
-uart_tx = 1 :: Int
-dbg     = 2 :: Int
+drop_addr    = 0 :: Int
+uart_rx_addr = 1 :: Int
+uart_tx_addr = 2 :: Int
+dbg_addr     = 3 :: Int
 -- -1 is the void used for "drop"
 
 bus [rx, tx_bc] (BusWr rEn wEn addr wData) = do
@@ -369,13 +398,13 @@ bus [rx, tx_bc] (BusWr rEn wEn addr wData) = do
   -- Bus write operations
 
   -- UART.  Baud generator should probably be a circuit.
-  tx_wc <- wEn' uart_tx
+  tx_wc <- wEn' uart_tx_addr
   (tx, tx_rdy) <- async_transmit tx_bc (tx_wc, wData)
 
   -- Debug writes.  Used for
   -- 1) CPU test programs in test suite
   -- 2) FPGA LED output (see with_debug and f_sock.hs)
-  dbg_wc <- wEn' dbg
+  dbg_wc <- wEn' dbg_addr
   "bus_data" <-- wData
   "bus_dbg"  <-- dbg_wc
 
@@ -383,13 +412,13 @@ bus [rx, tx_bc] (BusWr rEn wEn addr wData) = do
   -- streaming data ports, but when a read causes a side effect, the
   -- rEn bit should be used.
   [rStrobe, rData] <- switch addr'
-    [(c uart_rx,
+    [(c uart_rx_addr,
       do
         (s,d) <- async_receive 8 rx;
         "rx_s" <-- s
         "rx_d" <-- d
         return [s,d]),
-     (c uart_tx,
+     (c uart_tx_addr,
       do
         -- Blocking read is convenient.
         -- Alternatively, implement this as a global flag.

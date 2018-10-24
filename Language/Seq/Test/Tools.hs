@@ -214,7 +214,7 @@ list2 (a,b) = do
 
 -- Format a signal table.
 
-showSignals' :: Bool -> [String] -> [[Int]] -> String
+showSignals' :: Show t => Bool -> [String] -> [[t]] -> String
 showSignals' doRle header signals = str where
   table = padTable (header : (map (map show) signals))
   (header':signals') = map (concat . (intersperse " ")) table
@@ -231,6 +231,7 @@ showRLE (n, line) = line ++ " (" ++ show n ++ "x)"
 
     
 
+showSignals :: Show t => [String] -> [[t]] -> String
 showSignals = showSignals' False
 
 padTable :: [[String]] -> [[String]]
@@ -239,9 +240,10 @@ padTable rows = prows where
   widths   = map (maximum . (map length)) columns
   pcolumns = zipWith pad widths columns
   pad n column = map padCell column where
-    padCell str = lpad ++ str where
-      n' = n - length str
-      lpad = replicate n' ' '
+    padCell str@(c:_) =
+      if isDigit c then pad ++ str else str ++ pad where
+        n' = n - length str
+        pad = replicate n' ' '
   prows = transpose pcolumns
 
 
@@ -256,6 +258,8 @@ selectSignals columns names signals = signals' where
   fromJust' nm Nothing = error $
     "showSelectSignals: " ++ show nm ++ " not found in " ++ show names
   
+
+
 
 -- Trace writes to the CPU bus.
 dbg_trace = bus_trace "bus_dbg"

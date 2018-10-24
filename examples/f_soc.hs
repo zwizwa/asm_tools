@@ -89,11 +89,11 @@ generate = do
   let pin = CSV.ff (\[k,_,v,_] -> (k,v)) board
       c = Forth.compile
       busywait = do for' 100 $ for' 255 $ for' 255 $ nop
-      prog1 = c $ do push 0x55 ; write dbg ; begin ; again
+      prog1 = c $ do push 0x55 ; write dbg_addr ; begin ; again
       prog2 = c $ do begin ; push 0 ; again
       prog3 = c $ forever $ do
-        push 0x55 ; write dbg ; busywait
-        push 0xAA ; write dbg ; busywait
+        push 0x55 ; write dbg_addr ; busywait
+        push 0xAA ; write dbg_addr ; busywait
 
   -- MyHDL.fpgaWrite "f_soc" f_soc pin
   Verilog.fpgaWrite "f_soc" f_soc pin
