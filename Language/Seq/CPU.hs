@@ -23,6 +23,8 @@ import qualified Data.ByteString.Lazy as ByteString
 import Data.Binary
 import Data.Binary.Builder
 import Data.Binary.Get
+import Data.Char (intToDigit)
+import Numeric (showIntAtBase)
 
 -- Some realizations came up when this got built.
 
@@ -196,17 +198,22 @@ itable =
    (o_call,  ("call",  1)),
    (o_ret,   ("ret",   0))]
 
-dasm iw = asm where
+dasm iw = ":" ++ hex ++ ":" ++ asm where
+  
   o = iw `shiftR` (16 - o_nb_bits)
   arg = iw .&. 0xFF
   Just (opc, narg) = lookup o itable
-  asm = case (opc,arg) of
-    (o_write, 0) -> "drop"
-    _ -> case narg of
-           0 -> opc
-           1 -> opc ++ ":" ++ show arg
+  asm =
+    if o==o_write && arg==0 then
+      "drop"
+    else
+      case narg of
+        0 -> opc
+        1 -> opc ++ ":" ++ show arg
 
-  
+  hex' = showIntAtBase 16 intToDigit iw "" 
+  hex  = replicate (4 - length hex') '0' ++ hex'
+
    
 
 -- Use Forth for flow control structures.
