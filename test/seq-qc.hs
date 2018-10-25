@@ -43,6 +43,7 @@ import Data.List hiding (drop)
 import Data.List.Split
 import Data.Bits
 import Data.Maybe
+import Data.Array.IArray
 import Test.QuickCheck hiding ((.&.),(.|.),again)
 import Test.QuickCheck.Gen hiding (bitSize, getLine)
 import Language.Haskell.TH
@@ -60,6 +61,7 @@ main = do
   x_th_async_receive
   x_async_receive
   x_mem
+  x_st_mem
   x_fifo
   
   qc "p_bits" p_bits
@@ -128,8 +130,9 @@ x_deser = do
 -- t_async_receive_sample_emu nb_bits = trace [1] $ \[i] -> do
 --   async_receive_sample nb_bits i >>= list2
 
+
 t_async_receive_sample nb_bits@8 ins =
-  snd $
+  seqRunOuts $
   $(compile noProbe [1] $
     \[i] -> async_receive_sample 8 i >>= list2)
   memZero ins
@@ -153,7 +156,7 @@ x_async_receive_sample_for t = do
 --   async_receive nb_bits i >>= list2
 
 t_async_receive nb_bits@8 ins =
-  snd $
+  seqRunOuts $
   $(compile allProbe [1] $
     \[i] -> async_receive 8 i >>= list2)
   memZero ins
@@ -198,7 +201,7 @@ p_async_receive = forAll (listOf $ word 8) pred where
 
 -- async_transmit
 t_async_transmit ins =
-  snd $
+  seqRunOuts $
   $(compile noProbe [1,1,8] $
      \[bc,wc,tx] -> async_transmit bc (wc, tx) >>= list2)
   memZero ins
@@ -241,7 +244,8 @@ x_async_transmit = do
 
 -- spi
 
-t_spi' code ins = code memZero ins
+t_spi' code ins = (seqRunProbes res, seqRunOuts res) where
+  res = code memZero ins
 t_spi Mode0 = t_spi' $(compile allProbe [1,1,1] $ d_spi Mode0 8)
 t_spi Mode1 = t_spi' $(compile allProbe [1,1,1] $ d_spi Mode1 8)
 t_spi Mode2 = t_spi' $(compile allProbe [1,1,1] $ d_spi Mode2 8)
@@ -290,10 +294,30 @@ x_mem = do
   printL outs
 
 
+x_st_mem = do
+  putStrLn "-- x_st_mem"
+  let [mem] =
+        seqRunMems $
+        $(compile allProbe [] $
+           \_ -> closeMem [bits 16] $ \[rd] -> do
+             -- Note that the address size needs to be set explicitly.
+             -- Currently there is a bug in Seq Prim/TH code that
+             -- needs to assume 64 bit signals when sizes are not
+             -- defined.
+             let wa = cbits 8 0
+                 ra = wa
+                 wd = rd
+                 we = cbits 1 0
+             return ([(we,wa,wd,ra)],[])) memZero $ replicate 10 []
+  print $ elems mem
+  
+                                                   
+
+
 -- fifo  (d_fifo is in TestSeqLib.hs to allow staging)
 
 -- t_fifo_emu = trace [1,1,8] d_fifo
-t_fifo ins = snd $ $(compile noProbe [1,1,8] d_fifo) memZero ins
+t_fifo ins = seqRunOuts $ $(compile noProbe [1,1,8] d_fifo) memZero ins
 
 e_fifo lst = (lst == lst', (lst',outs)) where
   lst'   = downSampleCD outs
@@ -316,7 +340,7 @@ p_fifo = forAll (listOfMaxSize 16 $ word 8) (fst . e_fifo)
 
 -- Stack
 
-t_stack ins = snd $ $(compile noProbe [1,1,8] d_stack) memZero ins
+t_stack ins = seqRunOuts $ $(compile noProbe [1,1,8] d_stack) memZero ins
 
 x_stack = do
   let pushes = [[1,0,n] | n <- [1..10]]
@@ -345,7 +369,8 @@ memRef mem n = v where
 t_soc_idle = [1,1,1,0,0] -- [rx,tx_bc,cs,sck,sda]
 t_soc_baud_div n = cycle ([[1,1,1,0,0]] ++ replicate (n-1) [1,0,1,0,0])
 
-t_soc prog = $(compile allProbe [1,1,1,1,1] soc_test) [memRef prog]
+t_soc prog ins = (seqRunProbes res, seqRunOuts res) where
+  res = $(compile allProbe [1,1,1,1,1] soc_test) [memRef prog] ins
 
 
 
@@ -511,7 +536,7 @@ x_soc_boot = do
 
 
 t_mod_counter ins =
-  snd $
+  seqRunOuts $
   $(compile noProbe [] $
      \[] -> do (c,_) <- mod_counter 13 ; return [c])
   memZero ins

@@ -795,7 +795,7 @@ sync_receive mode nb_bits cs sclk sdata = do
   return out
 
 
--- Seserializer for converting bit streams to word streams.
+-- Deserializer for converting bit streams to word streams.
 -- Combinatorial output to allow for bc, wc to coincide.
 -- The 'rst' input is an enable line, active low.
 

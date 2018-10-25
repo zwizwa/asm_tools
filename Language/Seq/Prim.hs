@@ -9,7 +9,8 @@ module Language.Seq.Prim(
   seqADD, seqSUB, seqAND, seqOR, seqXOR, seqINV,
   seqEQU, seqIF, seqCONC, seqSLICE,
   seqInt, seqMemInit, seqMemUpdate,
-  seqRun
+  seqRun, seqRunOuts, seqRunMems, seqRunProbes,
+  Mem
   ) where
   
 import Data.Bits
@@ -47,10 +48,10 @@ seqEQU = op2 $ \a b   -> if a == b then 1 else 0
 seqCONC  = op3 $ \bs a b -> (a `shiftL` bs) .|. b
 seqSLICE = op2 $ shiftR
 
-type Mem s = STUArray s Int Int
-type Mem'  = UArray Int Int
+type STMem s = STUArray s Int Int
+type Mem     = UArray Int Int
 
-seqMemInit :: Int -> (Int -> Int) -> ST s (Mem s)
+seqMemInit :: Int -> (Int -> Int) -> ST s (STMem s)
 seqMemInit addrBits init = do
   let size  = 1 `shiftL` addrBits
       inits = map init [0 .. size-1]
@@ -58,7 +59,7 @@ seqMemInit addrBits init = do
 
 seqMemRd _ = return 0
 
-seqMemUpdate :: Mem s -> Int -> (Int, Int, Int, Int) -> ST s Int
+seqMemUpdate :: STMem s -> Int -> (Int, Int, Int, Int) -> ST s Int
 seqMemUpdate arr bits (wEn,wAddr,wData,rAddr) = do
   rData <- readArray arr rAddr
   case wEn of
@@ -76,21 +77,24 @@ seqInt = fromIntegral
 -- i/o is collected in a concrete [] type to make it easier to handle.
 
 seqRun ::
-  (forall s. ([Mem s], rd, r, [Int]) -> ST s (rd, r, [Int]))
+  (forall s. ([STMem s], rd, r, [Int]) -> ST s (rd, r, [Int]))
   -> [Int]
   -> (rd, r)
   -> [String]
   -> [Int -> Int]
-  -> [[Int]] -> ([String], [[Int]])
+  -> [[Int]] -> ([String], ([Mem], [[Int]]))
 seqRun update memSpec (rd0, r0) probeNames memInits i = (probeNames, out) where
   out = runST $ do
-    a <- sequence $ zipWith seqMemInit memSpec memInits
+    as <- sequence $ zipWith seqMemInit memSpec memInits
     let u _ _ [] = return []
         u rd r (i:is) = do
-          (rd',r',o) <- update (a, rd, r, i)
+          (rd',r',o) <- update (as, rd, r, i)
           os <- u rd' r' is
           return (o:os)
-    u rd0 r0 i
+    os <- u rd0 r0 i
+    as' <- sequence $ map unsafeFreeze as
+    return (as', os)
+    
 
 
 -- Similar, but return the state of the memories.  The idea is to turn
@@ -100,17 +104,22 @@ seqRun update memSpec (rd0, r0) probeNames memInits i = (probeNames, out) where
 -- FIXME: This is not quite enough.  To return the final state, the
 -- output needs to be collected differently.  Maybe best to collect it
 -- in an array as well.  Also, output types are unknown.
-  
+
+seqRunProbes :: ([String], ([Mem], [[Int]])) -> [String]
+seqRunOuts :: ([String], ([Mem], [[Int]])) -> [[Int]]
+seqRunMems :: ([String], ([Mem], [[Int]])) -> [Mem]
+seqRunProbes = fst
+seqRunOuts = snd . snd
+seqRunMems = fst . snd
 
 seqRun' ::
-  (forall s. ([Mem s], rd, r, [Int]) -> ST s (rd, r, [Int]))
+  (forall s. ([STMem s], rd, r, [Int]) -> ST s (rd, r, [Int]))
   -> [Int]
   -> (rd, r)
   -> [String]
   -> [Int -> Int]
-  -> [[Int]] -> ([String], ([Mem'], [[Int]]))
+  -> [[Int]] -> ([String], ([Mem], [[Int]]))
 seqRun' update memSpec (rd0, r0) probeNames memInits i = (probeNames, out) where
-
   out = runST $ do
     as <- sequence $ zipWith seqMemInit memSpec memInits
     let u _ _ [] = return []
@@ -124,8 +133,8 @@ seqRun' update memSpec (rd0, r0) probeNames memInits i = (probeNames, out) where
     -- Do not mutate the as after unsafeFreeze
     return (as', outs)
 
-mem2memInit :: Mem' -> Int -> Int
-mem2memInit = (!)
+-- mem2memInit :: Mem -> Int -> Int
+-- mem2memInit = (!)
 
 -- This hints at a better solution.  There is a way to have a lazy ST, and a way to wrap the arrays.
 -- See Lazy.strictToLazyST

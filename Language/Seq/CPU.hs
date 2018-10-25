@@ -88,16 +88,16 @@ data Control r = Control {
 
 -- The CPU can't write instruction memory.  The write port is
 -- connected to the external world through SPI.
-data IMemWrite r = IMemWrite {
-  iMemWriteEn   :: r S,
-  iMemWriteAddr :: r S,
-  iMemWriteData :: r S
+data MemWrite r = MemWrite {
+  memWriteEn   :: r S,
+  memWriteAddr :: r S,
+  memWriteData :: r S
   }
 
 -- That interface also determines sizes.  If there is no writer
 -- (e.g. a ROM), the following stub can be used to specify size.
-noIMemWrite :: Seq m r => Int -> Int -> IMemWrite r
-noIMemWrite ibits abits = IMemWrite e w d where
+noMemWrite :: Seq m r => Int -> Int -> MemWrite r
+noMemWrite ibits abits = MemWrite e w d where
   e = cbit 0
   w = cbits abits 0
   d = cbits ibits 0
@@ -107,11 +107,11 @@ noIMemWrite ibits abits = IMemWrite e w d where
 -- memory and passes them to a custom 'execute' module, expecting back
 -- a control instruction to describe what to do next.
 sequencer :: Seq m r =>
-  IMemWrite r
+  MemWrite r
   -> r S
   -> (Ins r -> m (Control r, o))
   -> m o
-sequencer (IMemWrite wEn wAddr wData) run execute = do
+sequencer (MemWrite wEn wAddr wData) run execute = do
   t_wAddr <- stype wAddr
   t_wData <- stype wData
   closeMem [t_wData] $ \[iw] -> do
@@ -198,7 +198,7 @@ itable =
    (o_call,  ("call",  1)),
    (o_ret,   ("ret",   0))]
 
-dasm iw = ":" ++ hex ++ ":" ++ asm where
+dasm iw = "(" ++ hex ++ " " ++ asm ++ ")" where
   
   o = iw `shiftR` (16 - o_nb_bits)
   arg = iw .&. 0xFF
@@ -209,7 +209,7 @@ dasm iw = ":" ++ hex ++ ":" ++ asm where
     else
       case narg of
         0 -> opc
-        1 -> opc ++ ":" ++ show arg
+        1 -> opc ++ " " ++ show arg
 
   hex' = showIntAtBase 16 intToDigit iw "" 
   hex  = replicate (4 - length hex') '0' ++ hex'
@@ -438,7 +438,7 @@ bus [rx, tx_bc] (BusWr rEn wEn addr wData) = do
 spi_boot nb_bits cs sck sda = do
   (wc, w) <- sync_receive Mode3 16 cs sck sda
   a <- arrPtr (bits nb_bits) cs wc
-  return $ IMemWrite wc a w
+  return $ MemWrite wc a w
 
 -- rom_boot :: Seq m r => IMemWrite r
 -- rom_boot = noIMemWrite 16 8

@@ -87,7 +87,7 @@ executable dump
 
 Test-Suite seq-qc
     default-language: Haskell98
-    build-depends: base, asm-tools, split, QuickCheck, template-haskell
+    build-depends: base, asm-tools, split, QuickCheck, template-haskell, array
     type:       exitcode-stdio-1.0
     main-is:    seq-qc.hs
     hs-source-dirs: test
