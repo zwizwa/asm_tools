@@ -9,7 +9,7 @@ module Language.Seq.Prim(
   seqADD, seqSUB, seqAND, seqOR, seqXOR, seqINV,
   seqEQU, seqIF, seqCONC, seqSLICE,
   seqInt, seqMemInit, seqMemUpdate,
-  seqRun, seqRunOuts, seqRunMems, seqRunProbes,
+  seqRun, seqRunOuts, seqRunMems, seqRunProbes, TestBench(..),
   Mem
   ) where
   
@@ -19,6 +19,7 @@ import qualified Control.Monad.ST.Lazy as Lazy
 import Data.Array.Unboxed
 import Data.Array.ST
 import Data.Array.Unsafe
+import Data.STRef
 
 type T = Int
 
@@ -76,14 +77,19 @@ seqInt = fromIntegral
 -- r: register state (tuple of Int)
 -- i/o is collected in a concrete [] type to make it easier to handle.
 
+data TestBench
+  = TestInput [[Int]]
+  | TestMachine [Int] (forall s. ([Int] -> ST s (Maybe [Int])))
+
 seqRun ::
   (forall s. ([STMem s], rd, r, [Int]) -> ST s (rd, r, [Int]))
   -> [Int]
   -> (rd, r)
   -> [String]
   -> [Int -> Int]
-  -> [[Int]] -> ([String], ([Mem], [[Int]]))
-seqRun update memSpec (rd0, r0) probeNames memInits i = (probeNames, out) where
+  -> TestBench -> ([String], ([Mem], [[Int]]))
+
+seqRun update memSpec (rd0, r0) probeNames memInits (TestInput i) = (probeNames, out) where
   out = runST $ do
     as <- sequence $ zipWith seqMemInit memSpec memInits
     let u _ _ [] = return []
@@ -92,6 +98,20 @@ seqRun update memSpec (rd0, r0) probeNames memInits i = (probeNames, out) where
           os <- u rd' r' is
           return (o:os)
     os <- u rd0 r0 i
+    as' <- sequence $ map unsafeFreeze as
+    return (as', os)
+
+seqRun update memSpec (rd0, r0) probeNames memInits (TestMachine i0 tb) = (probeNames, out) where
+  out = runST $ do
+    as <- sequence $ zipWith seqMemInit memSpec memInits
+    let u rd r i = do
+          (rd',r',o) <- update (as, rd, r, i)
+          mi' <- tb o
+          os <- case mi' of
+            Nothing -> return []
+            Just i' -> u rd' r' i'
+          return (o:os)
+    os <- u rd0 r0 i0
     as' <- sequence $ map unsafeFreeze as
     return (as', os)
     

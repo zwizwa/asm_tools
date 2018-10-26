@@ -83,6 +83,8 @@ main = do
   x_soc_boot
   x_deser
 
+  x_st_testbench
+
   -- x_sync_mod
   qc "p_sync_mod" p_sync_mod
 
@@ -135,7 +137,7 @@ t_async_receive_sample nb_bits@8 ins =
   seqRunOuts $
   $(compile noProbe [1] $
     \[i] -> async_receive_sample 8 i >>= list2)
-  memZero ins
+  memZero $ TestInput ins
 
 -- x_async_receive_sample_emu = do
 --   putStrLn "-- x_async_receive_sample_emu"
@@ -159,7 +161,7 @@ t_async_receive nb_bits@8 ins =
   seqRunOuts $
   $(compile allProbe [1] $
     \[i] -> async_receive 8 i >>= list2)
-  memZero ins
+  memZero $ TestInput ins
 
 x_th_async_receive = do
   putStrLn "-- x_th_async_receive"
@@ -204,7 +206,7 @@ t_async_transmit ins =
   seqRunOuts $
   $(compile noProbe [1,1,8] $
      \[bc,wc,tx] -> async_transmit bc (wc, tx) >>= list2)
-  memZero ins
+  memZero $ TestInput ins
 
 -- FIXME: Multiple bytes.  This is not easy to test due to done->next
 -- word dependency.  Maybe make a CPU program?
@@ -244,12 +246,10 @@ x_async_transmit = do
 
 -- spi
 
-t_spi' code ins = (seqRunProbes res, seqRunOuts res) where
-  res = code memZero ins
-t_spi Mode0 = t_spi' $(compile allProbe [1,1,1] $ d_spi Mode0 8)
-t_spi Mode1 = t_spi' $(compile allProbe [1,1,1] $ d_spi Mode1 8)
-t_spi Mode2 = t_spi' $(compile allProbe [1,1,1] $ d_spi Mode2 8)
-t_spi Mode3 = t_spi' $(compile allProbe [1,1,1] $ d_spi Mode3 8)
+t_spi Mode0 i = $(compile allProbe [1,1,1] $ d_spi Mode0 8) memZero $ TestInput i
+t_spi Mode1 i = $(compile allProbe [1,1,1] $ d_spi Mode1 8) memZero $ TestInput i
+t_spi Mode2 i = $(compile allProbe [1,1,1] $ d_spi Mode2 8) memZero $ TestInput i
+t_spi Mode3 i = $(compile allProbe [1,1,1] $ d_spi Mode3 8) memZero $ TestInput i
 
 e_spi (mode, bytes)  = (bytes == bytes', (bytes', table)) where
   (cpol, cpha) = spi_mode mode
@@ -259,17 +259,17 @@ e_spi (mode, bytes)  = (bytes == bytes', (bytes', table)) where
 
   bits   = concat $ map (toBitList 8) bytes
   bytes' = downSampleCD $ selectSignals ["s_wc","s_w"] probes outs
-  table@(probes, outs) = t_spi mode ins
+  table@(probes, (_, outs)) = t_spi mode ins
 
 x_spi = do
   let cfg' = (Mode0, [202,123])
       cfg@(_,bytes)  = (Mode1, [4,5])
-      (_, (bytes', table)) = e_spi cfg
+      (_, (bytes', (probes, (_, outs)))) = e_spi cfg
 
   putStrLn "-- x_spi"
   print bytes
   print bytes'
-  printProbe ["s_wc","s_w","sclk","sdata","s_bc"] $ table
+  printProbe ["s_wc","s_w","sclk","sdata","s_bc"] $ (probes, outs)
 
 p_spi = forAll vars $ fst . e_spi where
   vars = do
@@ -308,7 +308,7 @@ x_st_mem = do
                  ra = wa
                  wd = rd
                  we = cbits 1 0
-             return ([(we,wa,wd,ra)],[])) memZero $ replicate 10 []
+             return ([(we,wa,wd,ra)],[])) memZero $ TestInput $ replicate 10 []
   print $ elems mem
   
                                                    
@@ -317,7 +317,7 @@ x_st_mem = do
 -- fifo  (d_fifo is in TestSeqLib.hs to allow staging)
 
 -- t_fifo_emu = trace [1,1,8] d_fifo
-t_fifo ins = seqRunOuts $ $(compile noProbe [1,1,8] d_fifo) memZero ins
+t_fifo ins = seqRunOuts $ $(compile noProbe [1,1,8] d_fifo) memZero $ TestInput ins
 
 e_fifo lst = (lst == lst', (lst',outs)) where
   lst'   = downSampleCD outs
@@ -340,7 +340,7 @@ p_fifo = forAll (listOfMaxSize 16 $ word 8) (fst . e_fifo)
 
 -- Stack
 
-t_stack ins = seqRunOuts $ $(compile noProbe [1,1,8] d_stack) memZero ins
+t_stack ins = seqRunOuts $ $(compile noProbe [1,1,8] d_stack) memZero $ TestInput ins
 
 x_stack = do
   let pushes = [[1,0,n] | n <- [1..10]]
@@ -370,7 +370,7 @@ t_soc_idle = [1,1,1,0,0] -- [rx,tx_bc,cs,sck,sda]
 t_soc_baud_div n = cycle ([[1,1,1,0,0]] ++ replicate (n-1) [1,0,1,0,0])
 
 t_soc prog ins = (seqRunProbes res, seqRunOuts res) where
-  res = $(compile allProbe [1,1,1,1,1] soc_test) [memRef prog] ins
+  res = $(compile allProbe [1,1,1,1,1] soc_test) [memRef prog] $ TestInput ins
 
 
 
@@ -539,7 +539,7 @@ t_mod_counter ins =
   seqRunOuts $
   $(compile noProbe [] $
      \[] -> do (c,_) <- mod_counter 13 ; return [c])
-  memZero ins
+  memZero $ TestInput ins
   
 x_mod_counter = do
   putStrLn "x_mod_counter"
@@ -606,6 +606,17 @@ x_sync_mod = do
       (_, signals) = e_sync_mod 6 pre post frac payload
       
   traverse print signals
+  
+
+x_st_testbench = do
+  putStrLn "x_st_testbench"
+  let tb o = return $ Nothing  -- Terminate after 1 step.
+  print $ $(compile allProbe [1] $
+            \[i] -> do
+              i' <- inc i
+              return [i'])
+    memZero $ TestMachine [0] tb
+    
   
 
 
