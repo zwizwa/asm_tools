@@ -236,7 +236,7 @@ x_seqTH = m1 >> m2 where
 
   m2 = do
     -- Some ad-hoc tests for SeqTH,SeqPrim combo.
-    let test f = print $ snd $ f mz $ map (:[]) [0..9]
+    let test f = print $ snd $ f mz $ TestInput $ map (:[]) [0..9]
         mz = cycle [const 0]
         -- FIXME: test is rank-2
     test $(SeqTH.compile (const False) [1] $ \[i] -> do c <- counter $ bits 3 ; return [c])
