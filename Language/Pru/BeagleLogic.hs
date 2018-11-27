@@ -78,11 +78,13 @@ transfer nb_samples again = fill ++ tail where
     nops $ nb_samples - length tail
     :: [m ()]
   tail =
-    [xout (I 10) (R 21) (I 32),
+    [xout (I 10) (R 21) (I 36),
      ldi  (R 31) (I $ 20 + 16),      -- Interrupt PRU0
      jmp (Im again)]
     :: [m ()]
-              
+
+counter = R 29
+    
 -- These are woven together to produce the same skeleton as in the
 -- original BeagleLogic code, but parameterized to be able to play
 -- with it a bit.
