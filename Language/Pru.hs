@@ -39,7 +39,7 @@ data OpcRI   = LDI  deriving Show
 data OpcRO   = JAL  deriving Show
 data OpcIRI  = XOUT deriving Show
 data Opc     = NOP | HALT deriving Show
-data OpcRRO  = ADD | SUB | CLR | SET deriving Show
+data OpcRRO  = ADD | SUB | XOR | CLR | SET deriving Show
 data OpcIRO  = QBGT | QBGE | QBLT | QBLE | QBEQ | QBNE | QBBS | QBBC deriving Show
 data OpcRROO = SBBO | LBBO deriving Show
 data OpcI    = QBA deriving Show
@@ -55,6 +55,9 @@ add = insrro ADD
 
 sub :: Pru m => R -> R -> O -> m ()
 sub = insrro SUB
+
+xor :: Pru m => R -> R -> O -> m ()
+xor = insrro XOR
 
 clr :: Pru m => R -> R -> O -> m ()
 clr = insrro CLR

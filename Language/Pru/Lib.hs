@@ -43,3 +43,26 @@ wait reg cycles = nops where
     sub reg reg (Im (I 1))   -- 1
     qbne l  reg (Im (I 0))   -- 1
 
+
+-- Put an abstract data type here to allow easy extension for
+-- different compile-time predicate types.
+data Pred = IfBit R O Bool
+
+notPred (IfBit reg bit val) = IfBit reg bit $ not val
+
+-- conditional move if bit is set (balanced, 3 cycles)
+cmov :: Pru m => Pred -> R -> R -> m ()
+cmov pred dst src  = do
+  when pred           $ mov dst src
+  when (notPred pred) $ nop
+
+-- Conditional do if bit is set/unset
+-- 1 instruction if false, 1 + n instructions if true
+when :: Pru m => Pred -> m () -> m ()
+when (IfBit reg bit pol) block = do
+  skip <- declare
+  case pol of
+    True  -> qbbc skip reg bit
+    False -> qbbs skip reg bit
+  block
+  label skip
