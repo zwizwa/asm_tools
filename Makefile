@@ -15,7 +15,8 @@ all: compile
 .SECONDARY:
 
 clean:
-	rm -f result *~ x_* *.v *.vhd *.bin *.blif *.asc f_*.py x_*.py *.compile *.tmp *.vcd *.vcd.* f_*.bin f_*.v *.log ghc.env
+	rm -f result *~ x_* *.v *.vhd *.bin *.blif *.asc f_*.py x_*.py \
+		*.compile *.tmp *.vcd *.vcd.* f_*.bin f_*.v *.log ghc.env *.elf *.d *.pcf default.nix
 	rm -rf __pycache__ dist
 
 .PHONY: myhdl_test
@@ -140,11 +141,13 @@ VERILOG_LIB := \
 	yosys -p "synth_ice40 -blif $@" $(VERILOG_LIB) $<  >$*.yosys.log
 	tail -n35 $*.yosys.log 
 
-# Place and route, one for each device,package type.
-%.qn84.asc: %.blif %.qn84.pcf
-	arachne-pnr -P qn84 -d 1k -p $*.pcf $< -o $@
-%.ct256.asc: %.blif %.ct256.pcf
-	arachne-pnr -P ct256 -d 8k -p $*.pcf $< -o $@
+# Place and route.  One rule for each board type (there might be
+# different boards with the same FPGA).
+%.breakout.asc: %.blif %.breakout.pcf
+	arachne-pnr -P ct256 -d 8k -p $*.breakout.pcf $< -o $@
+%.fbr.asc: %.blif %.fbr.pcf
+	arachne-pnr -P qn84 -d 1k -p $*.fbr.pcf $< -o $@
+
 
 
 %.ct256.time: %.pcf %.ct256.asc
@@ -166,15 +169,14 @@ build/testbench_gen.py: .stamp.generate
 # SRAM programming.  Note that the jumpers J6 need to be in the
 # correct position (horizontal when holding the board up with USB
 # connector at the bottom).
-DOCK_HOST := zoe
-%.iceprog: %.bin
-	./iceprog.sh $(DOCK_HOST) -S $<
+%.iceprog.zoe: %.bin
+	./iceprog.sh zoe -S $<
 
 # Note: this uses a modified version of iceprog to upload the SRAM
 # image over the same SPI interface as used for the iCE40 image.
-%.ramprog: %.bin
-	./iceprog.sh $(DOCK_HOST) -x $<
+%.ramprog.zoe: %.bin
+	./iceprog.sh zoe -x $<
 
 # Examples:
-# tom@panda:~/asm_tools$ make f_soc.imem.ramprog
-# tom@panda:~/asm_tools$ make f_soc.ct256.iceprog
+# tom@panda:~/asm_tools$ make f_soc.breakout.iceprog.zoe
+# tom@panda:~/asm_tools$ make f_soc.prog3.ramprog.zoe

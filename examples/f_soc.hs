@@ -62,8 +62,8 @@ targets =
     (("f_soc.v", []),
       \(f,[]) -> writeFile f $ show $ Verilog.fpgaVerilog "f_soc" f_soc),
 
-    (("f_soc.ct256.pcf", ["specs/f_soc.ct256.csv"]), writePCF),
-    (("f_soc.qn84.pcf",  ["specs/f_soc.qn84.csv"]),  writePCF),
+    (("f_soc.breakout.pcf", ["specs/f_soc.breakout.csv"]), writePCF),
+    (("f_soc.fbr.pcf",      ["specs/f_soc.fbr.csv"]),  writePCF),
 
     (("f_soc.prog1.bin", []),
       \(f,[]) -> writeProg f $ do
