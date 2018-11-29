@@ -278,20 +278,24 @@ debug _ = "\n"
 
 commas = intercalate ", "
 
+-- Code generators, using the underscore naming convention to embed
+-- capitalized identifiers in Haskell code.
 
-
-
-
-fpgaGen name (names, fun) pins = (v, pcf') where 
+fpgaVerilog name (names, fun) = v where 
   names' = map (\('_':nm) -> nm) names
   v = vModule name names' types fun
   types = [SInt (Just 1) 0 | _ <- names]
+
+fpgaPCF (names, fun) pins = pcf' where 
+  names' = map (\('_':nm) -> nm) names
   pcf' = PCF ("CLK":"RST":names') pins
 
 fpgaWrite name mod pins = do
-  let (v,pcf) = fpgaGen name mod pins
-  writeFile (name ++ ".v")   $ show v
-  writeFile (name ++ ".pcf") $ show pcf
+  putStrLn "WARNING: Verilog.fpgaWrite is deprecated.  Use .v and .pcf generators separately."
+  writeFile (name ++ ".v")   $ show $ fpgaVerilog name mod
+  writeFile (name ++ ".pcf") $ show $ fpgaPCF mod pins
+
+  
 
 testbench ::
   String

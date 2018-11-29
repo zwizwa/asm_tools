@@ -1,7 +1,23 @@
--- Example top level file for generating .py and .pcf files
+-- Example top level file
 
--- Only used setting up I/O.
--- Any non-trivial functionality should go into a library.
+-- This file can produce a couple of file types:
+--
+-- 1. Top level HDL as MyHDL .py or (later) RTL Verilog .v with
+--    abstract port names.
+--
+-- 2. A PCF file mapping the top level HDL port names to iCE40 FPGA
+--    package pins.
+--
+-- 3. Embedded CPU binary code
+--
+-- As a guideline, the top level file should do only instantiation,
+-- placing the functionality in some .hs library.  Note that the style
+-- is different for top level files: while .hs circuit library code is
+-- applicative (state machines applied to inputs, producing outputs),
+-- the HDL code is written in "network style", where output ports are
+-- passed into the module as named entities, and are assigned to
+-- explicitly in the body of the code.
+
 
 {-# LANGUAGE TemplateHaskell #-}
 
@@ -18,17 +34,58 @@ import qualified Language.Seq.Term as SeqTerm
 import qualified Language.Seq.Expr as SeqExpr 
 import qualified Data.AsmTools.CSV as CSV
 
+import qualified Language.MakeDeps
+
 import Control.Monad hiding (forever)
-  
-main = do
-  test
-  generate
 
-test = do
-  return ()
 
--- SOC example for HX8K breakout
--- On-board clock is 12MHz
+-- See Language.MakeDeps.Build
+
+-- The "targets" table is essentially a Makefile, which instead of
+-- calling shell script will call into Haskell code.  It will be
+-- renderable as an actual Makefile, with rules calling into the
+-- generator binary.
+
+main = Language.MakeDeps.build "f_soc" targets
+
+targets =
+  let 
+    writePCF (pcf, [csv]) = do
+      board <- CSV.readTagged id csv
+      let pin = CSV.ff (\[k,_,v,_] -> (k,v)) board
+      writeFile pcf $ show $ Verilog.fpgaPCF f_soc pin
+    writeProg file  = (writeProgram file) . Forth.compile
+
+    busywait = do for' 100 $ for' 255 $ for' 255 $ nop
+
+  in [
+    (("f_soc.v", []),
+      \(f,[]) -> writeFile f $ show $ Verilog.fpgaVerilog "f_soc" f_soc),
+
+    (("f_soc.ct256.pcf", ["specs/f_soc.ct256.csv"]), writePCF),
+    (("f_soc.qn84.pcf",  ["specs/f_soc.qn84.csv"]),  writePCF),
+
+    (("f_soc.prog1.bin", []),
+      \(f,[]) -> writeProg f $ do
+        push 0x55 ; write dbg_addr ; begin ; again),
+
+    (("f_soc.prog2.bin", []),
+      \(f,[]) -> writeProg f $ do
+        begin ; push 0 ; again),
+
+    (("f_soc.prog3.bin", []), 
+      \(f,[]) -> writeProg f $ forever $ do
+        push 0x55 ; write dbg_addr ; busywait
+        push 0xAA ; write dbg_addr ; busywait)
+    ]
+
+-- FIXME: .py
+-- # # f_%.py f_%.pcf f_%.imem.bin: f_%.hs $(HS)
+-- # # 	rm -f f_$*.imem.bin # workaround: openBinaryFile: resource exhausted (Resource temporarily unavailable)
+-- # # 	$(NIX_SHELL) --run "./cabal.sh test f_$* --log=/dev/stdout"
+
+
+-- For HX8K breakout, on-board clock is 12MHz
 
 
 f_soc :: ([String], [SeqTerm.R S] -> SeqTerm.M ())
@@ -83,21 +140,8 @@ f_soc =
       
     |])
 
-generate = do
-  putStrLn "-- f_soc"
-  board <- CSV.readTagged id "specs/hx8k_breakout.csv"
-  let pin = CSV.ff (\[k,_,v,_] -> (k,v)) board
-      c = Forth.compile
-      busywait = do for' 100 $ for' 255 $ for' 255 $ nop
-      prog1 = c $ do push 0x55 ; write dbg_addr ; begin ; again
-      prog2 = c $ do begin ; push 0 ; again
-      prog3 = c $ forever $ do
-        push 0x55 ; write dbg_addr ; busywait
-        push 0xAA ; write dbg_addr ; busywait
 
-  -- MyHDL.fpgaWrite "f_soc" f_soc pin
-  Verilog.fpgaWrite "f_soc" f_soc pin
-  
-  writeProgram "f_soc.imem.bin" prog3
+
+
 
 

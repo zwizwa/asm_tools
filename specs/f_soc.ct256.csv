@@ -1,3 +1,10 @@
+# f_soc.hs config for CT256 on hx8k_breakout.csv
+
+# Note that the Makefile currently does not distinguish between
+# different pin configurations for board types that are the same,
+# hence the name of this file is tagged with the iCE40 device type,
+# not the board type!
+
 # FPGA code consists of:
 # - Seq.hs code  (see  fpga_trigger in Trigger.hs)
 # - Net name to pin map like this file

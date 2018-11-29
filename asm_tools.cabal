@@ -53,6 +53,8 @@ Library
                      Language.Pru.Lib
                      Language.Pru.Weave
 
+                     Language.MakeDeps
+
 -- Example FPGA HDL applications: these generate .pcf and .py and/or .v code
 
 executable f_blink
