@@ -73,6 +73,8 @@ cabal-test: default.nix
 # asm_tools.cabal for the list of generators.  Look at the .d files to
 # get a better idea of how everything is built.
 -include f_soc.d
+.PHONY: f_soc
+f_soc: $(f_soc_files)
 
 # These .d files are created in a uniform way by the generator
 # executable.  Dump the file into the build log, leaving breadcrumbs.
