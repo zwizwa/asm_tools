@@ -15,7 +15,9 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
-module Language.Seq.MyHDL(myhdl,MyHDL,testbench,fpgaGen,fpgaWrite,noOutputCheck) where
+module Language.Seq.MyHDL(myhdl,MyHDL,testbench,
+                          fpgaGen, fpgaGenPy, fpgaGenPcf,
+                          fpgaWrite,noOutputCheck) where
 import Language.Seq
 import Language.Seq.Lib
 import Data.AsmTools.CSV
@@ -345,10 +347,19 @@ fpgaModule name (portNames, mod) = pyModule name portNames portTypes mod where
 -- (.py module + .pcf pin map). This uses the convention that pin
 -- names names are prefixed with underscores in the code, so capital
 -- letters can be used in Haskell code.
-fpgaGen name (names, fun) pinMap = (py, pcf') where 
+fpgaGen name (names, fun) pinMap = (py, pcf') where
+  py   = fpgaGenPy name (names, fun)
+  pcf' = fpgaGenPcf name names pinMap
+
+fpgaGenPy name (names, fun) = py where 
   names' = map (\('_':nm) -> nm) names
   py = fpgaModule name (names', fun)
+
+fpgaGenPcf name names pinMap = pcf' where 
+  names' = map (\('_':nm) -> nm) names
   pcf' = PCF ("CLK":"RST":names') pinMap
+
+
 
 fpgaWrite name mod pins = do
   let (py,pcf) = fpgaGen name mod pins
