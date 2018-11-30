@@ -8,7 +8,8 @@ Library
     default-language: Haskell98
     build-depends:   base, containers, mtl, free, keys, set-extra,
                      template-haskell, parsec, QuickCheck, array, split, 
-                     binary, bytestring, process, unix, network, temporary
+                     binary, bytestring, process, unix, network, temporary,
+                     system-argv0, system-filepath
 --                   ,mios
     exposed-modules: Language.Seq
                      Language.Seq.App

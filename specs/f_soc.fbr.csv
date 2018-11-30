@@ -5,32 +5,35 @@
 # - Net name to pin map like this file
 #
 firmware,dir,fpga,schematic
-#TEST_IN,in,C16,J2_37
-#TEST_OUT,out,B16,J2_38
 
-# check these
-TX,out,B12,RS232_Tx_TTL
-RX,in,B10,RS232_Rx_TTL
-
-# RST is out since we're using an internal reset generator.
-RST,out,C16,J2_37
-CLK,in,J3,iCE_CLK
+CLK,in,A25,iCE_CLK
 
 # program SPI port is used for commands
-SPI_SI,in,P11,SPI_SI
-SPI_SO,out,P12,SPI_SO
-SPI_SCK,in,R11,SPI_SCK
-SPI_SS_B,in,R12,SPI_SS_B
+SPI_SI,in,A22,SPI_SI
+SPI_SO,out,B17,SPI_SO
+SPI_SCK,in,A23,SPI_SCK
+SPI_SS_B,in,B18,SPI_SS_B
 
-LED0,out,B5,LED0
-LED1,out,B4,LED1
-LED2,out,A2,LED2
-LED3,out,A1,LED3
-LED4,out,C5,LED4
-LED5,out,C4,LED5
-LED6,out,B3,LED6
-LED7,out,C3,LED7
 
+# Below, Not connected on FBR board
+#
+# ------------------------------------------
+
+# RST is out since we're using an internal reset generator.
+RST,out,A10,RST
+
+# FIXME: use some GPIOs as feedback instead
+LED0,out,B1,LED0 
+LED1,out,B2,LED1
+LED2,out,B3,LED2
+LED3,out,B4,LED3
+LED4,out,B5,LED4
+LED5,out,B7,LED5
+LED6,out,B8,LED6
+LED7,out,B9,LED7
+
+TX,out,A11,RS232_Tx_TTL
+RX,in,A12,RS232_Rx_TTL
 
 # There is no proper reset switch on the board.  Is it possible to
 # disable it in the circuit?  On the board it seems simplest to just

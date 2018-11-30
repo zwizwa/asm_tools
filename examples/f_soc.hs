@@ -50,7 +50,7 @@ main = Language.MakeDeps.build "f_soc" targets
 
 targets =
   let 
-    writePCF (pcf, [csv]) = do
+    writePCF ([pcf], [csv]) = do
       board <- CSV.readTagged id csv
       let pin = CSV.ff (\[k,_,v,_] -> (k,v)) board
       writeFile pcf $ show $ Verilog.fpgaPCF f_soc pin
@@ -59,22 +59,22 @@ targets =
     busywait = do for' 100 $ for' 255 $ for' 255 $ nop
 
   in [
-    (("f_soc.v", []),
-      \(f,[]) -> writeFile f $ show $ Verilog.fpgaVerilog "f_soc" f_soc),
+    ((["f_soc.v"], []),
+      \([f],[]) -> writeFile f $ show $ Verilog.fpgaVerilog "f_soc" f_soc),
 
-    (("f_soc.breakout.pcf", ["specs/f_soc.breakout.csv"]), writePCF),
-    (("f_soc.fbr.pcf",      ["specs/f_soc.fbr.csv"]),  writePCF),
+    ((["f_soc.breakout.pcf"], ["specs/f_soc.breakout.csv"]), writePCF),
+    ((["f_soc.fbr.pcf"],      ["specs/f_soc.fbr.csv"]),  writePCF),
 
-    (("f_soc.prog1.bin", []),
-      \(f,[]) -> writeProg f $ do
+    ((["f_soc.prog1.bin"], []),
+      \([f],[]) -> writeProg f $ do
         push 0x55 ; write dbg_addr ; begin ; again),
 
-    (("f_soc.prog2.bin", []),
-      \(f,[]) -> writeProg f $ do
+    ((["f_soc.prog2.bin"], []),
+      \([f],[]) -> writeProg f $ do
         begin ; push 0 ; again),
 
-    (("f_soc.prog3.bin", []), 
-      \(f,[]) -> writeProg f $ forever $ do
+    ((["f_soc.prog3.bin"], []), 
+      \([f],[]) -> writeProg f $ forever $ do
         push 0x55 ; write dbg_addr ; busywait
         push 0xAA ; write dbg_addr ; busywait)
     ]

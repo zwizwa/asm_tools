@@ -1,6 +1,8 @@
 #!/bin/sh
 ENV_FILE=$(dirname $0)/ghc.env
-OLD_ENV=$(cat $ENV_FILE)
+if [ -f $ENV_FILE ]; then
+    OLD_ENV=$(cat $ENV_FILE)
+fi
 NEW_ENV=$(readlink -f $(which ghc))
 
 if [ "$OLD_ENV" != "$NEW_ENV" ]; then
