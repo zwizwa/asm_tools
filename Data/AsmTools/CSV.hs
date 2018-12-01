@@ -7,6 +7,8 @@ module Data.AsmTools.CSV where
 import Text.ParserCombinators.Parsec
 import Text.Parsec.Error
 
+import Data.List
+
 type Field = String
 type Record = [Field]
 type Table = [Record]
@@ -100,3 +102,11 @@ lookup' k l = case lookup k l of
   Just v -> v
   Nothing -> error $ "lookup': " ++ show (k,l)
 
+
+-- Simple reverse parse.
+
+showCSVFile :: ([String],[[String]]) -> String
+showCSVFile (header, rows) = line header ++ (concat $ map line rows) where
+  line cols = (intercalate "," cols) ++ "\n"
+
+writeCSVFile file table = writeFile file $ showCSVFile table
