@@ -46,6 +46,7 @@ Library
                      Data.AsmTools.VCD
                      Data.AsmTools.DigiView
                      Data.AsmTools.MT
+                     Data.AsmTools.Make
 
                      Language.Pru
                      Language.Pru.Gen
@@ -54,7 +55,6 @@ Library
                      Language.Pru.Lib
                      Language.Pru.Weave
 
-                     Language.MakeDeps
 
 -- Example FPGA HDL applications: these generate .pcf and .py and/or .v code
 
@@ -81,6 +81,11 @@ executable csv2vcd
 executable dump
     build-depends:  base, asm-tools, bytestring
     main-is:        dump.hs
+    hs-source-dirs: examples
+
+executable run_codegen
+    build-depends:  base, asm-tools, bytestring
+    main-is:        run_codegen.hs
     hs-source-dirs: examples
 
 

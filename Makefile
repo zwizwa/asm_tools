@@ -16,7 +16,8 @@ all: compile
 
 clean:
 	rm -f result *~ x_* *.v *.vhd *.bin *.blif *.asc f_*.py x_*.py \
-		*.compile *.tmp *.vcd *.vcd.* f_*.bin f_*.v *.log ghc.env *.elf *.d *.pcf default.nix
+		*.compile *.tmp *.vcd *.vcd.* f_*.bin f_*.v *.log ghc.env \
+		*.elf *.d *.pcf default.nix test.*
 	rm -rf __pycache__ dist
 
 .PHONY: myhdl_test
@@ -80,7 +81,7 @@ f_soc: $(f_soc_files)
 # executable.  Dump the file into the build log, leaving breadcrumbs.
 f_%.d: f_%.elf
 	./f_$*.elf >$@
-	cat $@
+#	cat $@
 
 # The generator executables themselves are created by cabal.  We don't
 # have access to the deps, so use all the .hs files in the project.
@@ -88,6 +89,28 @@ f_%.elf: default.nix $(HS)
 	$(NIX_SHELL) --run "./cabal.sh build f_$*"
 	rm -f $@
 	ln dist/build/f_$*/f_$* $@
+
+
+
+# Another generated Makefile, serving as an example
+run_codegen.d: dist/build/run_codegen/run_codegen
+	$< >$@.tmp
+	mv $@.tmp $@
+#	cat $@
+
+dist/build/run_codegen/run_codegen: default.nix $(HS)
+	$(NIX_SHELL) --run "./cabal.sh build run_codegen"	
+	touch $@
+
+-include run_codegen.d
+
+# Compile SQL init file to SQLITE3 database file.
+%.db: %.sql Makefile
+	rm -f $@
+	sqlite3 $@ <$<
+	echo ".dump" | sqlite3 $@
+
+
 
 
 

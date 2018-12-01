@@ -103,10 +103,21 @@ lookup' k l = case lookup k l of
   Nothing -> error $ "lookup': " ++ show (k,l)
 
 
--- Simple reverse parse.
+-- Convert parsed form back to text
 
 showCSVFile :: ([String],[[String]]) -> String
 showCSVFile (header, rows) = line header ++ (concat $ map line rows) where
   line cols = (intercalate "," cols) ++ "\n"
 
-writeCSVFile file table = writeFile file $ showCSVFile table
+-- writeCSVFile file table = writeFile file $ showCSVFile table
+
+
+-- Or a SQL
+showSQL :: String -> ([String],[[String]]) -> String
+showSQL name (header, rows) = sql where
+  sql = "begin transaction;\n" ++
+        create ++ concat (map insert rows) ++
+        "end transaction;\n"
+  create = "create table " ++ name ++ "(" ++ commas header ++ ");\n"
+  insert row = "insert into " ++ name ++ " values(" ++ commas (map show row) ++ ");\n"
+  commas = intercalate ", "

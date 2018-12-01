@@ -34,19 +34,19 @@ import qualified Language.Seq.Term as SeqTerm
 import qualified Language.Seq.Expr as SeqExpr 
 import qualified Data.AsmTools.CSV as CSV
 
-import qualified Language.MakeDeps
+import qualified Data.AsmTools.Make
 
 import Control.Monad hiding (forever)
 
 
--- See Language.MakeDeps.Build
+-- See Data.AsmTools.Makefile
 
 -- The "targets" table is essentially a Makefile, which instead of
 -- calling shell script will call into Haskell code.  It will be
 -- renderable as an actual Makefile, with rules calling into the
 -- generator binary.
 
-main = Language.MakeDeps.build "f_soc" targets
+main = Data.AsmTools.Make.build "f_soc" targets
 
 targets =
   let 
