@@ -4,9 +4,10 @@ Low-level macro languages embedded in Haskell
   Basic idea is to use the PRU's predictable timing for control tasks
   that would normally require an FPGA.
 
-- A 'tagless final' Sequential Logic (RTL) language.  Targets MyHDL,
-  which can target Verilog, VHDL.  A fast Template Haskell step is
-  included for QuickCheck-based simulation.
+- A 'tagless final' Sequential Logic (RTL) language.  Targets Verilog
+  directly, and MyHDL, which translates to Verilog, VHDL.  A fast
+  Template Haskell + Strict State Threads step is included for
+  QuickCheck-based simulation.
 
 - A stack CPU + embedded Forth/Assembler hybrid
 
