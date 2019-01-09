@@ -64,8 +64,6 @@ main = do
   x_st_mem
   x_fifo
 
-  x_si_edge
-
   qc "p_si_edge" p_si_edge
   qc "p_bits" p_bits
   qc "p_sample" p_sample
@@ -104,22 +102,17 @@ main = do
 
 
 
--- FIXME: Already simplfied for bit->bit signature.  But it would be
--- nice to make it even simpler to test the very common signatures.
+-- Note: this is an example case for a bit->bit signature, sugint the
+-- specialized trace_b_b function.  This requires only two functions:
+-- the parameterized test e_ and the property spec p_.
 
-e_si_edge ins = (outs == outs', outs) where
-  outs = trace_b_b si_edge ins
-  outs' = 0 : (zipWith xor ins $ tail ins)
+e_si_edge ins = f ins == f' ins where
+  f           = trace_b_b si_edge
+  f' i@(_:di) = 0 : (zipWith xor i di)
 
-p_si_edge = forAll vars $ fst . e_si_edge where
+p_si_edge = forAll vars $ e_si_edge where
   vars = listOf1 $ word 1
 
-x_si_edge = do
-  putStrLn "-- x_si_edge"
-  let ins = [1,1,0,1]
-      (_, outs) = e_si_edge ins
-  print ins
-  printL' outs
 
 
 
@@ -669,11 +662,16 @@ p_bits = forAll wordList p where
     bits'  = toBits  nb_bits words'
 
 
--- trace wrappers
--- bit->bit is very common, so simplify
-trace_b_b f is = map head $ f' $ map (:[]) is where
+-- transposed trace wrappers for common cases, mapping state machines
+-- to integer sequence functions.
+
+-- FIXME: It would be great to be able to auto-generate these.
+
+trace_b_b f is = map head $ f' $ transpose [is] where
   f' = trace [1] $ \[i] -> do o <- f i; return [o]
 
+trace_bb_b f as bs = map head $ map f' $ transpose [as, bs] where
+  f' = trace [1,1] $ \[a,b] -> do o <- f a b; return [o]
 
 
 data ShowProbe = ShowInt Int | ShowIW Int
