@@ -64,7 +64,7 @@ main = do
   x_st_mem
   x_fifo
 
-  -- x_si_edge
+  x_si_edge
 
   qc "p_si_edge" p_si_edge
   qc "p_bits" p_bits
@@ -103,33 +103,23 @@ main = do
 -- deser
 
 
+
+-- FIXME: Already simplfied for bit->bit signature.  But it would be
+-- nice to make it even simpler to test the very common signatures.
+
+e_si_edge ins = (outs == outs', outs) where
+  outs = trace_b_b si_edge ins
+  outs' = 0 : (zipWith xor ins $ tail ins)
+
+p_si_edge = forAll vars $ fst . e_si_edge where
+  vars = listOf1 $ word 1
+
 x_si_edge = do
   putStrLn "-- x_si_edge"
-  let ins = [1,1,1]
+  let ins = [1,1,0,1]
       (_, outs) = e_si_edge ins
   print ins
   printL' outs
-
-
--- FIXME: create a special case for testing a simple [[Int]] ->
--- [[Int]] function.  For compositional designs, this is usually
--- enough.
-
-e_si_edge ins = (outs == outs', outs) where
-  outs = map head $ t_si_edge $ map (:[]) ins
-  outs' = 0 : (zipWith xor ins $ tail ins)
-
-t_si_edge :: [[Int]] -> [[Int]]
-t_si_edge = trace [1] $ \[i] -> do
-  e <- si_edge i
-  return [e]
-
-p_si_edge = forAll vars $ fst . e_si_edge where
-  vars = do
-    -- FIXME: simpler?
-    w0 <- word 1
-    ws <- listOf $ word 1
-    return (w0:ws)
 
 
 
@@ -679,6 +669,12 @@ p_bits = forAll wordList p where
     bits'  = toBits  nb_bits words'
 
 
+-- trace wrappers
+-- bit->bit is very common, so simplify
+trace_b_b f is = map head $ f' $ map (:[]) is where
+  f' = trace [1] $ \[i] -> do o <- f i; return [o]
+
+
 
 data ShowProbe = ShowInt Int | ShowIW Int
 instance Show (ShowProbe) where
@@ -696,5 +692,4 @@ printProbe columns (names, signals) = do
 
 
 
-  
   
