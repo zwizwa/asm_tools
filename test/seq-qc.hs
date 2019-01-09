@@ -63,7 +63,10 @@ main = do
   x_mem
   x_st_mem
   x_fifo
-  
+
+  -- x_si_edge
+
+  qc "p_si_edge" p_si_edge
   qc "p_bits" p_bits
   qc "p_sample" p_sample
   qc "p_deser" p_deser
@@ -98,6 +101,37 @@ main = do
 --    _th  TH code. Fast, but only pure target semantics.
 
 -- deser
+
+
+x_si_edge = do
+  putStrLn "-- x_si_edge"
+  let ins = [1,1,1]
+      (_, outs) = e_si_edge ins
+  print ins
+  printL' outs
+
+
+-- FIXME: create a special case for testing a simple [[Int]] ->
+-- [[Int]] function.  For compositional designs, this is usually
+-- enough.
+
+e_si_edge ins = (outs == outs', outs) where
+  outs = map head $ t_si_edge $ map (:[]) ins
+  outs' = 0 : (zipWith xor ins $ tail ins)
+
+t_si_edge :: [[Int]] -> [[Int]]
+t_si_edge = trace [1] $ \[i] -> do
+  e <- si_edge i
+  return [e]
+
+p_si_edge = forAll vars $ fst . e_si_edge where
+  vars = do
+    -- FIXME: simpler?
+    w0 <- word 1
+    ws <- listOf $ word 1
+    return (w0:ws)
+
+
 
 p_deser = forAll vars $ fst . e_deser where
   vars = do

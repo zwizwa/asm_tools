@@ -290,6 +290,15 @@ posedge d = fmap fst $ edges d
 negedge d = fmap snd $ edges d
 
 
+-- Similar, but self-initializing.  The requirement is that the
+-- circuit does not produce a spurious edge coming out of reset.  A
+-- lazy way is to just mask out the first result.
+si_edge i = do
+  e <- edge i
+  mask <- seq1
+  mask `band` e
+
+
 -- Synchronous S/R FF. Combinatorial output. The hard part here is to
 -- determine what to do when both signals are active at the same time.
 -- We pick reset as the one that overrides.
