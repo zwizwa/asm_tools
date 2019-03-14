@@ -48,7 +48,6 @@ import Test.QuickCheck hiding ((.&.),(.|.),again)
 import Test.QuickCheck.Gen hiding (bitSize, getLine)
 import Language.Haskell.TH
 
-
 main = do
 
   -- print $ toWord [1,0,0,0]
