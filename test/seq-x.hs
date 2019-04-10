@@ -7,6 +7,7 @@
 {-# LANGUAGE Arrows #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE NoMonadFailDesugaring #-}
 
 import Language.Seq
 import Language.Seq.Lib

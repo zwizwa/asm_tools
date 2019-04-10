@@ -11,6 +11,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE NoMonadFailDesugaring #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module Language.Seq.Forth where

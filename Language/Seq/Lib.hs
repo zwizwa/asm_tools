@@ -6,6 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE EmptyDataDecls #-}
+{-# LANGUAGE NoMonadFailDesugaring #-}
 
 module Language.Seq.Lib where
 import Language.Seq

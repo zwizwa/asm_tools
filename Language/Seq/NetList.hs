@@ -5,7 +5,10 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE NoMonadFailDesugaring #-}
+-- {-# LANGUAGE DerivingStrategies #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module Language.Seq.NetList where
@@ -60,7 +63,10 @@ data Form n =
   deriving (Show, Functor, Foldable)
 
 data TypedForm n = TypedForm { typedFormType :: SSize, typedFormForm :: Form n }
-  deriving (Show, Functor, Foldable)
+  deriving (Show, Show1, Functor, Foldable)
+-- FIXME: Show1 is just to make a build error shut up.  It is probably not correct.
+
+
 
 
 -- Converting between Term.Term and this makes sense only at the level
@@ -245,6 +251,14 @@ io bindings = (delays_in, delays_out, inputs, drives, rest) where
 
 type TypedExpr' n = Free TypedForm n
 newtype TypedExpr n = TypedExpr (TypedExpr' n) deriving Show
+
+--instance Show (TypedExpr n) where
+--  show (TypedExpr e) = show e
+
+-- FIXME: Why doesn't "deriving Show" work any more?  I just need to
+-- get it to build right now.
+--instance Show (TypedExpr n) where
+--  show _ = "FIXME: Show(TypedExpr n)"
 
 
 inlined :: DG -> [(Vertex, TypedExpr Vertex)]

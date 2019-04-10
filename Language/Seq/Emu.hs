@@ -18,11 +18,13 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE NoMonadFailDesugaring #-}
 
 module Language.Seq.Emu where
 import Language.Seq
 import Control.Monad.State
 import Control.Monad.Reader
+import Control.Monad.Fail
 import Control.Applicative
 import Data.Map.Lazy (Map, (!), lookup, empty, insert, fromList)
 import qualified Data.Map as Map
