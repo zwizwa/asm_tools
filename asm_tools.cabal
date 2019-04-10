@@ -56,89 +56,95 @@ Library
                      Language.Pru.Weave
 
 
--- Example FPGA HDL applications: these generate .pcf and .py and/or .v code
+-- FIXME: Split all these off into a separate project.  The
+-- granularity of the nix build is otherwise just too large, and any
+-- problem here will need a full rebuild.
 
-executable f_blink
-    build-depends:  base, asm-tools
-    main-is:        f_blink.hs
-    hs-source-dirs: examples
+-- FIXME: Why does it rebiuld the library every time?
 
-executable f_soc
-    build-depends:  base, asm-tools
-    main-is:        f_soc.hs
-    hs-source-dirs: examples
+-- -- Example FPGA HDL applications: these generate .pcf and .py and/or .v code
 
-executable t_cosim
-    build-depends:  base, asm-tools
-    main-is:        t_cosim.hs
-    hs-source-dirs: examples
+-- executable f_blink
+--     build-depends:  base, asm-tools
+--     main-is:        f_blink.hs
+--     hs-source-dirs: examples
 
-executable csv2vcd
-    build-depends:  base, asm-tools
-    main-is:        csv2vcd.hs
-    hs-source-dirs: examples
+-- executable f_soc
+--     build-depends:  base, asm-tools
+--     main-is:        f_soc.hs
+--     hs-source-dirs: examples
 
-executable dump
-    build-depends:  base, asm-tools, bytestring
-    main-is:        dump.hs
-    hs-source-dirs: examples
+-- executable t_cosim
+--     build-depends:  base, asm-tools
+--     main-is:        t_cosim.hs
+--     hs-source-dirs: examples
 
-executable run_codegen
-    build-depends:  base, asm-tools, bytestring
-    main-is:        run_codegen.hs
-    hs-source-dirs: examples
+-- executable csv2vcd
+--     build-depends:  base, asm-tools
+--     main-is:        csv2vcd.hs
+--     hs-source-dirs: examples
 
+-- executable dump
+--     build-depends:  base, asm-tools, bytestring
+--     main-is:        dump.hs
+--     hs-source-dirs: examples
 
-
-
--- Tests
-
-Test-Suite seq-qc
-    default-language: Haskell98
-    build-depends: base, asm-tools, split, QuickCheck, template-haskell, array
-    type:       exitcode-stdio-1.0
-    main-is:    seq-qc.hs
-    hs-source-dirs: test
-
-Test-Suite seq-x
-    default-language: Haskell98
-    build-depends: base, containers, keys, array, asm-tools, split, template-haskell
-    type:       exitcode-stdio-1.0
-    main-is:    seq-x.hs
-    hs-source-dirs: test
-
-Test-Suite sat
-    default-language: Haskell98
-    build-depends: base, containers, asm-tools, z3
-    type:       exitcode-stdio-1.0
-    main-is:    sat.hs
-    hs-source-dirs: test
-
-Test-Suite pru
-    default-language: Haskell98
-    build-depends: base, containers, mtl, free, keys, asm-tools
-    type:       exitcode-stdio-1.0
-    main-is:    pru.hs
-    build-depends: base
-    hs-source-dirs: test
+-- executable run_codegen
+--     build-depends:  base, asm-tools, bytestring
+--     main-is:        run_codegen.hs
+--     hs-source-dirs: examples
 
 
--- Just a stub for now.  Leave it commented out.
+
+
+-- -- Tests
+
+-- Test-Suite seq-qc
+--     default-language: Haskell98
+--     build-depends: base, asm-tools, split, QuickCheck, template-haskell, array, ghcid
+--     type:       exitcode-stdio-1.0
+--     main-is:    seq-qc.hs
+--     hs-source-dirs: test
+
+-- Test-Suite seq-x
+--     default-language: Haskell98
+--     build-depends: base, containers, keys, array, asm-tools, split, template-haskell
+--     type:       exitcode-stdio-1.0
+--     main-is:    seq-x.hs
+--     hs-source-dirs: test
+
 -- Test-Suite sat
 --     default-language: Haskell98
---     build-depends: base, containers, mtl, mios, z3
+--     build-depends: base, containers, asm-tools, z3
 --     type:       exitcode-stdio-1.0
 --     main-is:    sat.hs
+--     hs-source-dirs: test
+
+-- Test-Suite pru
+--     default-language: Haskell98
+--     build-depends: base, containers, mtl, free, keys, asm-tools
+--     type:       exitcode-stdio-1.0
+--     main-is:    pru.hs
 --     build-depends: base
 --     hs-source-dirs: test
 
 
--- For this I only have proprietary test files, so leave commented out.
--- Test-Suite edif
---     build-depends: base, mtl, parsec, sqlite-simple, free, containers, asm-tools
---     type:       exitcode-stdio-1.0
---     main-is:    edif.hs
---     hs-source-dirs: test
+-- -- Just a stub for now.  Leave it commented out.
+-- -- Test-Suite sat
+-- --     default-language: Haskell98
+-- --     build-depends: base, containers, mtl, mios, z3
+-- --     type:       exitcode-stdio-1.0
+-- --     main-is:    sat.hs
+-- --     build-depends: base
+-- --     hs-source-dirs: test
+
+
+-- -- For this I only have proprietary test files, so leave commented out.
+-- -- Test-Suite edif
+-- --     build-depends: base, mtl, parsec, sqlite-simple, free, containers, asm-tools
+-- --     type:       exitcode-stdio-1.0
+-- --     main-is:    edif.hs
+-- --     hs-source-dirs: test
 
 
 

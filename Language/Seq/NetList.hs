@@ -2,7 +2,7 @@
 
 
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+--{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveAnyClass #-}
@@ -63,7 +63,7 @@ data Form n =
   deriving (Show, Functor, Foldable)
 
 data TypedForm n = TypedForm { typedFormType :: SSize, typedFormForm :: Form n }
-  deriving (Show, Show1, Functor, Foldable)
+  deriving (Show, Functor, Foldable)
 -- FIXME: Show1 is just to make a build error shut up.  It is probably not correct.
 
 
