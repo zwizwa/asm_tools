@@ -1,0 +1,37 @@
+name: asm-tools-seq
+version: 1.0.0
+cabal-version: >= 1.18
+build-type: Simple
+license: BSD3
+
+Library
+    default-language: Haskell98
+    build-depends:   base, containers, mtl, free, keys, set-extra,
+                     template-haskell, parsec, QuickCheck, array, split, 
+                     binary, bytestring, process, unix, network, temporary,
+                     system-argv0, system-filepath,
+                     asm-tools
+--                   ,mios
+    exposed-modules: Language.Seq
+                     Language.Seq.App
+                     Language.Seq.Arr
+                     Language.Seq.C
+                     Language.Seq.CPU
+                     Language.Seq.Emu
+                     Language.Seq.Expr
+                     Language.Seq.Forth
+                     Language.Seq.IfElse
+                     Language.Seq.Lib
+                     Language.Seq.MyHDL
+                     Language.Seq.MyHDLRun
+                     Language.Seq.Names
+                     Language.Seq.NetList
+                     Language.Seq.Prim
+                     Language.Seq.Static
+                     Language.Seq.Syntax
+                     Language.Seq.Term
+                     Language.Seq.Test.Tools
+                     Language.Seq.Test.Lib
+                     Language.Seq.TH
+                     Language.Seq.Verilog
+                     Language.Seq.VerilogRun

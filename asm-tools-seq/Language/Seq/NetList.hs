@@ -74,7 +74,7 @@ data TypedForm n = TypedForm { typedFormType :: SSize, typedFormForm :: Form n }
 convert ::
   ([SeqTerm.Op Vertex],
    [(Vertex, SeqTerm.Term (SeqTerm.Op Vertex))],
-   [(SeqTerm.Op Vertex, String)])
+   [(SeqTerm.Op Vertex, [String])])
   -> NetList Vertex
 
 -- Ports need to be ordered, but the bindings are treated as a graph,
@@ -90,12 +90,13 @@ type BindList n = [(n, TypedForm n)]
 newtype M t = M { unM :: WriterT CompOut (State CompState) t } deriving
     (Functor, Applicative, Monad, MonadState CompState, MonadWriter CompOut)
 
-convert (ports, bindings, probes) = NetList ports' (Map.fromList bindings') probes'  where
+convert (ports, bindings, hier_probes) = NetList ports' (Map.fromList bindings') probes'  where
+  
   init = 1 + (maximum $ map fst bindings)
   ((ports', bindings'), _)  = runState (runWriterT $ unM mconv) init
 
   probes' :: [(Vertex, String)]
-  probes' = catMaybes $ map probeType probes
+  probes' = catMaybes $ map probeType $ SeqTerm.flat_probes hier_probes
   probeType (op, name) = do
     n <- SeqTerm.opNode op
     return (n, name)
@@ -323,7 +324,6 @@ showSZ (Just n) = show n
 -- instance Show n => Show (TypedExpr n) where show _ = "Show TypedExpr"
 
                                             
-
 compileTerm = convert . SeqTerm.compileTerm
 
 

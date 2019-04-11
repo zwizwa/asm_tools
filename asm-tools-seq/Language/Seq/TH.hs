@@ -210,7 +210,7 @@ compile' selectProbe inSizes mf = exp where
     slice i (Just sz) 0
 
   (ports, bindings, hier_probes) = SeqTerm.compileTerm $ mf'
-  probes = map (\(k,v) -> (k, concat $ intersperse "_" v)) hier_probes
+  probes = flat_probes hier_probes
 
   probes' = filter (selectProbe . snd) probes
   exp = toExp (ports, bindings, probes')
