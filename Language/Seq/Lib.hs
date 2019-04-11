@@ -106,8 +106,8 @@ closeRegEn en = closeReg' $ updateIf en
 
 updateEnable :: forall m r. Seq m r => r S -> r S -> m ()
 updateEnable r v = do
-  env <- getEnv
-  case env ClockEnable of
+  (_, sig_env) <- getEnv
+  case sig_env ClockEnable of
     Nothing ->
       update r v
     Just en' ->
@@ -117,8 +117,9 @@ updateEnable r v = do
 -- use the outputs of the register, and not the input combinatorial
 -- networks!
 withClockEnable val m = do
-  let f _ ClockEnable = Just val
-      f env var = env var
+  let f (path, sig_env) = (path, sig_env') where
+        sig_env' ClockEnable = Just val
+        sig_env' var = sig_env var
   withEnv f m
 
 updateIf :: forall m r. Seq m r => r S -> r S -> r S -> m ()
@@ -958,9 +959,11 @@ index sel sigs = index' sel zeroExtend where
 
 
 
--- Convenient shortcut for test probe
+-- Convenient shortcut for test probe using local names.
 (<--) :: Seq m r => String -> r S -> m ()
-(<--) name val = do
+(<--) base_name val = do
+  (path, _) <- getEnv
+  let name = path ++ [base_name]
   probe name val
   updateProbe name val
   
@@ -971,16 +974,26 @@ index sel sigs = index' sel zeroExtend where
 -- This is for debug only as it imposes global constraints.
 
 withProbe str reg m = do
-  let f env var@(Probe str') =
-        case str == str' of
-          True  -> Just reg
-          False -> env var
-      f env var = env var
+  let f (path, sig_env) = (path, sig_env') where
+        sig_env' var@(Probe str') =
+          case str == str' of
+            True  -> Just reg
+            False -> sig_env var
+        sig_env' var = sig_env var
   withEnv f m
 
-updateProbe str val = do
-  env <- getEnv
-  case env (Probe str) of
+withPath sub_path m = do
+  let f (path, sig_env) = (sub_path ++ path, sig_env)
+  withEnv f m
+
+withAbsPath path m = do
+  let f (_, sig_env) = (path, sig_env)
+  withEnv f m
+
+updateProbe :: Seq m r => [String] -> r S -> m ()
+updateProbe abs_name val = do
+  (_path, sig_env) <- getEnv
+  case sig_env (Probe abs_name) of
     Nothing  -> return ()
     Just reg -> update reg val
 

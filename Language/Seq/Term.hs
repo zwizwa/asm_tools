@@ -125,7 +125,7 @@ newtype M t = M { unM ::
    MonadState CompState)
 
 data Binding n = Binding n (Term (Op n)) |
-                 Probe (Op n) String
+                 Probe (Op n) [String]
 type Bindings n = [Binding n]
 type CompState = NodeNum
 
@@ -281,7 +281,7 @@ driveNode n c = do
   tell [Binding n c]
 
 type CompileResult n =
-   ([Op n], [(n, Term (Op n))], [(Op n, String)])
+   ([Op n], [(n, Term (Op n))], [(Op n, [String])])
   
 compileTerm :: M [R Seq.S] -> CompileResult NodeNum
 compileTerm m = (map unR ports, cleanPorts nodes, probes) where
@@ -399,13 +399,17 @@ probeNames probes = probes' where
 hdl_postproc ::
   [String]
   -> [SType]
-  -> ([Op NodeNum], [(NodeNum, Term (Op NodeNum))], [(Op NodeNum, String)])
-  -> ([(String, Seq.NbBits)], ([Op String], [(String, Term (Op String))]))
+  -> ([Op NodeNum],
+      [(NodeNum, Term (Op NodeNum))],
+      [(Op NodeNum, [String])])
+  -> ([(String, Seq.NbBits)],
+      ([Op String], [(String, Term (Op String))]))
 
-hdl_postproc portNames portTypes (ports, bindings, probes) =
+hdl_postproc portNames portTypes (ports, bindings, hier_probes) =
   (portSpecs', (ports', bindings')) where
 
   -- 1) Assign names
+
   
   ports'    = (map . fmap) rename ports
   bindings' = mapBindings  rename bindings
@@ -416,6 +420,7 @@ hdl_postproc portNames portTypes (ports, bindings, probes) =
   namedNodes = Map.union namedPorts $ Map.fromList probeNames'  -- prefer port names
 
   probeNames' = probeNames probes
+  probes = map (\(k,v) -> (k, concat $ intersperse "_" v)) hier_probes
 
 
   -- 2) Propagate output types, following 'Connect'.
