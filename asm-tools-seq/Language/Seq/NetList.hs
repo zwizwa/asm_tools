@@ -2,10 +2,10 @@
 
 
 {-# LANGUAGE FlexibleContexts #-}
---{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE DeriveAnyClass #-}
+--{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NoMonadFailDesugaring #-}
 -- {-# LANGUAGE DerivingStrategies #-}
@@ -251,15 +251,41 @@ io bindings = (delays_in, delays_out, inputs, drives, rest) where
 -- annotations for intermediate nodes either.
 
 type TypedExpr' n = Free TypedForm n
-newtype TypedExpr n = TypedExpr (TypedExpr' n) deriving Show
 
---instance Show (TypedExpr n) where
---  show (TypedExpr e) = show e
+-- newtype TypedExpr n = TypedExpr (TypedExpr' n) deriving Show
+newtype TypedExpr n = TypedExpr (TypedExpr' n)
 
--- FIXME: Why doesn't "deriving Show" work any more?  I just need to
--- get it to build right now.
---instance Show (TypedExpr n) where
---  show _ = "FIXME: Show(TypedExpr n)"
+-- FIXME: This is a stub to just make it build.  The new Verilog
+-- generator is built on this, but main (closed source) app doesn't
+-- depend on that yet.
+-- http://hackage.haskell.org/package/base-4.12.0.0/docs/Data-Functor-Classes.html
+
+instance Show1 TypedForm where
+  liftShowsPrec _ = error "Netlist.hs: FIXME: Show1 TypedForm"
+
+-- newtype TypedExpr n = TypedExpr (TypedExpr' n)
+
+-- FIXME: I don't understand the error below, so I'm reverting to an
+-- explicit implementation of Show.
+
+-- Language/Seq/NetList.hs:247:57: error:
+--     • Could not deduce (Show1 TypedForm)
+--         arising from the first field of ‘TypedExpr’ (type ‘TypedExpr' n’)
+--       from the context: Show n
+--         bound by the deriving clause for ‘Show (TypedExpr n)’
+--         at Language/Seq/NetList.hs:247:57-60
+--       Possible fix:
+--         use a standalone 'deriving instance' declaration,
+--           so you can specify the instance context yourself
+--     • When deriving the instance for (Show (TypedExpr n))
+--     |
+-- 247 | newtype TypedExpr n = TypedExpr (TypedExpr' n) deriving Show
+--     |                                                         ^^^^
+
+
+instance Show n => Show (TypedExpr n) where
+  show (TypedExpr e) = "" --  show e
+
 
 
 inlined :: DG -> [(Vertex, TypedExpr Vertex)]
