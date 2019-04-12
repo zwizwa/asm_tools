@@ -155,7 +155,7 @@ class (Monad m, Num (r S)) => Seq m r | r -> m, m -> r where
   slice :: r S -> SSize -> NbBits -> m (r S)
 
 
-  -- Local environement.  Used e.g. for register update enable,
+  -- Local environment.  Used e.g. for register update enable,
   -- effectively defining local "clock rate".
   getEnv :: m (Env r)
   withEnv :: (Env r -> Env r) -> m t -> m t
@@ -172,7 +172,7 @@ class (Monad m, Num (r S)) => Seq m r | r -> m, m -> r where
   -- For testing it is convenient to expose internal signals, while it
   -- is very inconvenient to have those propagate through the design.
   -- So support is added inside the language.
-  probe :: String -> r S -> m ()
+  probe :: [String] -> r S -> m ()
 
   -- FIXME: add support for probing/tracing.  Production code will not
   -- generate it, but it would allow debug code to be traced without
@@ -234,13 +234,15 @@ if' = op3 IF
 
 -- Provide Env type and init as a convenience to implementations.
 -- getEnv,withEnv behave as ask,local specialized to Env.
-type Env r = EnvVar -> Maybe (r S)
-initEnv = const Nothing
+type PathEnv = [String]
+type SigEnv r = EnvVar -> Maybe (r S)
+type Env r = (PathEnv, SigEnv r)
+initEnv = ([], const Nothing)
 
 -- Seq uses local context for
 data EnvVar =
-  ClockEnable |  -- the "time base" of the local state machines.
-  Probe String   -- see SeqLib implementation of (<--)
+  ClockEnable   | -- the "time base" of the local state machines.
+  Probe [String]  -- see SeqLib implementation of (<--)
   deriving Show
 
 

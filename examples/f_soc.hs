@@ -20,6 +20,7 @@
 
 
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE NoMonadFailDesugaring #-}
 
 import Language.Seq
 import Language.Seq.Lib

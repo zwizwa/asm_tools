@@ -10,6 +10,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE NoMonadFailDesugaring #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module Language.Seq.Term where
@@ -124,7 +125,7 @@ newtype M t = M { unM ::
    MonadState CompState)
 
 data Binding n = Binding n (Term (Op n)) |
-                 Probe (Op n) String
+                 Probe (Op n) [String]
 type Bindings n = [Binding n]
 type CompState = NodeNum
 
@@ -280,7 +281,9 @@ driveNode n c = do
   tell [Binding n c]
 
 type CompileResult n =
-   ([Op n], [(n, Term (Op n))], [(Op n, String)])
+   ([Op n],
+    [(n, Term (Op n))],
+    [(Op n, [String])])
   
 compileTerm :: M [R Seq.S] -> CompileResult NodeNum
 compileTerm m = (map unR ports, cleanPorts nodes, probes) where
@@ -398,13 +401,23 @@ probeNames probes = probes' where
 hdl_postproc ::
   [String]
   -> [SType]
-  -> ([Op NodeNum], [(NodeNum, Term (Op NodeNum))], [(Op NodeNum, String)])
-  -> ([(String, Seq.NbBits)], ([Op String], [(String, Term (Op String))]))
+  -> ([Op NodeNum],
+      [(NodeNum, Term (Op NodeNum))],
+      [(Op NodeNum, [String])])
+  -> ([(String, Seq.NbBits)],
+      ([Op String], [(String, Term (Op String))]))
 
-hdl_postproc portNames portTypes (ports, bindings, probes) =
+-- Name hierarchy was introduced at some point to allow for
+-- "instantiation paths" to be unique.  Provide a flattening routine
+-- producing the old type.
+flat_probes :: [(n, [String])] -> [(n, String)]
+flat_probes = (map (\(k,v) -> (k, concat $ intersperse "_" v))) . reverse
+
+hdl_postproc portNames portTypes (ports, bindings, hier_probes) =
   (portSpecs', (ports', bindings')) where
 
   -- 1) Assign names
+
   
   ports'    = (map . fmap) rename ports
   bindings' = mapBindings  rename bindings
@@ -414,7 +427,7 @@ hdl_postproc portNames portTypes (ports, bindings, probes) =
   namedPorts = Map.fromList $ [(n, nm) | (Node _ n, nm) <- zip ports portNames]
   namedNodes = Map.union namedPorts $ Map.fromList probeNames'  -- prefer port names
 
-  probeNames' = probeNames probes
+  probeNames' = probeNames $ flat_probes hier_probes
 
 
   -- 2) Propagate output types, following 'Connect'.

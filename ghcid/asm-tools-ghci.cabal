@@ -1,0 +1,22 @@
+-- The purpose of this file is to generate a 'ghci' binary that has
+-- all libraries needed to run the haskell files that are linked into
+-- this directory in interpreted mode.
+
+name: asm-tools-ghci
+version: 1.0.0
+cabal-version: >= 1.18
+build-type: Simple
+license: BSD3
+
+executable this-is-for-deps-only
+    default-language: Haskell2010
+    build-depends:   base, mtl, containers, free, keys, set-extra,
+                     parsec, array, split, binary, bytestring, 
+                     network, directory, temporary,
+                     process, unix, system-argv0, system-filepath,
+                     QuickCheck, template-haskell
+
+    main-is:        main.hs
+    hs-source-dirs: .
+
+

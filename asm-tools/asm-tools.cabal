@@ -1,0 +1,26 @@
+name: asm-tools
+version: 1.0.0
+cabal-version: >= 1.18
+build-type: Simple
+license: BSD3
+
+Library
+    default-language: Haskell98
+    build-depends:   base, containers, mtl, free, keys, set-extra,
+                     template-haskell, parsec, QuickCheck, array, split, 
+                     binary, bytestring, process, unix, network, temporary,
+                     system-argv0, system-filepath
+--                   ,mios
+    exposed-modules: Data.AsmTools.CSV
+                     Data.AsmTools.EDIF
+                     Data.AsmTools.NetFun
+                     Data.AsmTools.Partition
+                     Data.AsmTools.PCF
+                     Data.AsmTools.Protel
+                     Data.AsmTools.SE
+                     Data.AsmTools.SetMap
+                     Data.AsmTools.VCD
+                     Data.AsmTools.DigiView
+                     Data.AsmTools.MT
+                     Data.AsmTools.Make
+

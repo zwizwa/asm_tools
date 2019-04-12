@@ -10,7 +10,8 @@ import Data.Char
 
 -- https://en.wikipedia.org/wiki/Value_change_dump
 tags :: [Char]
-tags = map toEnum [33..126]
+tags = map toEnum [37..126]
+-- tags = map toEnum [33..126]
 
 newtype VCD = VCD { unVCD :: String }
 instance Show VCD where show = unVCD

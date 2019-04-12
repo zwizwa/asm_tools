@@ -5,7 +5,10 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
+--{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE NoMonadFailDesugaring #-}
+-- {-# LANGUAGE DerivingStrategies #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module Language.Seq.NetList where
@@ -61,6 +64,9 @@ data Form n =
 
 data TypedForm n = TypedForm { typedFormType :: SSize, typedFormForm :: Form n }
   deriving (Show, Functor, Foldable)
+-- FIXME: Show1 is just to make a build error shut up.  It is probably not correct.
+
+
 
 
 -- Converting between Term.Term and this makes sense only at the level
@@ -68,7 +74,7 @@ data TypedForm n = TypedForm { typedFormType :: SSize, typedFormForm :: Form n }
 convert ::
   ([SeqTerm.Op Vertex],
    [(Vertex, SeqTerm.Term (SeqTerm.Op Vertex))],
-   [(SeqTerm.Op Vertex, String)])
+   [(SeqTerm.Op Vertex, [String])])
   -> NetList Vertex
 
 -- Ports need to be ordered, but the bindings are treated as a graph,
@@ -84,12 +90,13 @@ type BindList n = [(n, TypedForm n)]
 newtype M t = M { unM :: WriterT CompOut (State CompState) t } deriving
     (Functor, Applicative, Monad, MonadState CompState, MonadWriter CompOut)
 
-convert (ports, bindings, probes) = NetList ports' (Map.fromList bindings') probes'  where
+convert (ports, bindings, hier_probes) = NetList ports' (Map.fromList bindings') probes'  where
+  
   init = 1 + (maximum $ map fst bindings)
   ((ports', bindings'), _)  = runState (runWriterT $ unM mconv) init
 
   probes' :: [(Vertex, String)]
-  probes' = catMaybes $ map probeType probes
+  probes' = catMaybes $ map probeType $ SeqTerm.flat_probes hier_probes
   probeType (op, name) = do
     n <- SeqTerm.opNode op
     return (n, name)
@@ -244,7 +251,41 @@ io bindings = (delays_in, delays_out, inputs, drives, rest) where
 -- annotations for intermediate nodes either.
 
 type TypedExpr' n = Free TypedForm n
-newtype TypedExpr n = TypedExpr (TypedExpr' n) deriving Show
+
+-- newtype TypedExpr n = TypedExpr (TypedExpr' n) deriving Show
+newtype TypedExpr n = TypedExpr (TypedExpr' n)
+
+-- FIXME: This is a stub to just make it build.  The new Verilog
+-- generator is built on this, but main (closed source) app doesn't
+-- depend on that yet.
+-- http://hackage.haskell.org/package/base-4.12.0.0/docs/Data-Functor-Classes.html
+
+instance Show1 TypedForm where
+  liftShowsPrec _ = error "Netlist.hs: FIXME: Show1 TypedForm"
+
+-- newtype TypedExpr n = TypedExpr (TypedExpr' n)
+
+-- FIXME: I don't understand the error below, so I'm reverting to an
+-- explicit implementation of Show.
+
+-- Language/Seq/NetList.hs:247:57: error:
+--     • Could not deduce (Show1 TypedForm)
+--         arising from the first field of ‘TypedExpr’ (type ‘TypedExpr' n’)
+--       from the context: Show n
+--         bound by the deriving clause for ‘Show (TypedExpr n)’
+--         at Language/Seq/NetList.hs:247:57-60
+--       Possible fix:
+--         use a standalone 'deriving instance' declaration,
+--           so you can specify the instance context yourself
+--     • When deriving the instance for (Show (TypedExpr n))
+--     |
+-- 247 | newtype TypedExpr n = TypedExpr (TypedExpr' n) deriving Show
+--     |                                                         ^^^^
+
+
+instance Show n => Show (TypedExpr n) where
+  show (TypedExpr e) = "" --  show e
+
 
 
 inlined :: DG -> [(Vertex, TypedExpr Vertex)]
@@ -309,7 +350,6 @@ showSZ (Just n) = show n
 -- instance Show n => Show (TypedExpr n) where show _ = "Show TypedExpr"
 
                                             
-
 compileTerm = convert . SeqTerm.compileTerm
 
 

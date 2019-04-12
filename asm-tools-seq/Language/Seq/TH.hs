@@ -209,7 +209,9 @@ compile' selectProbe inSizes mf = exp where
     i <- input $ SInt (Just sz) 0
     slice i (Just sz) 0
 
-  (ports, bindings, probes) = SeqTerm.compileTerm $ mf'
+  (ports, bindings, hier_probes) = SeqTerm.compileTerm $ mf'
+  probes = flat_probes hier_probes
+
   probes' = filter (selectProbe . snd) probes
   exp = toExp (ports, bindings, probes')
 
