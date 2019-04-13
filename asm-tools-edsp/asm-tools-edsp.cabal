@@ -6,7 +6,7 @@ license: BSD3
 
 Library
     default-language: Haskell98
-    build-depends:   base, containers, mtl, free, keys, set-extra,
+    build-depends:   base, containers, mtl, free, keys, set-extra, text,
                      template-haskell, parsec, QuickCheck, array, split, 
                      binary, bytestring, process, unix, network, temporary,
                      llvm-hs, llvm-hs-pure, llvm-hs-pretty,
@@ -15,3 +15,5 @@ Library
     exposed-modules: 
                      Language.EDSP
                      Language.EDSP.Lib
+                     Language.EDSP.Test
+
