@@ -30,18 +30,18 @@ Some notes regarding Seq:
 
 - Seq does not represent bit vector size at the Haskell type level.  I
   believe this is a missed opportunity, but I did not know how to make
-  it work in the time I had available.  Fixing that likey requires to
+  it work in the time I had available.  Fixing that likely requires to
   create a version 2, and refactor the library.  This is not for now.
 
 - The Seq CPU is really simple.  It is definitely not general purpose.
-  However I do find it serves a purpose.  It does not seem to need
-  pipelining at the clock rates I'm using it at, and it is terribly
-  convenient to have function nesting and loops as opposed to writing
-  custom state machine sequencers.  Also, being able to express both
-  machine code and the instruction decoder, bus architecture etc.. in
-  the same Haskell module opens up a lot of possibilities.
-  Additionally, CPU programs can be used to write QuickCheck tests for
-  sequential logic peripherals.
+  However I do find it useful.  It does not seem to need pipelining at
+  the clock rates I'm using it at, and it is terribly convenient to
+  have function nesting and loops as opposed to writing custom state
+  machine sequencers.  Also, being able to express both machine code
+  and the instruction decoder, bus architecture etc.. in the same
+  Haskell module opens up a lot of possibilities.  Additionally, CPU
+  programs can be used to write QuickCheck tests for sequential logic
+  peripherals.
 
 In general I really like this approach, but it is definitely not
 finished.
