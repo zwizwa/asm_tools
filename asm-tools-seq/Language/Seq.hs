@@ -128,7 +128,7 @@ type InitVal = Int
 
 
 class (Monad m, Num (r S)) => Seq m r | r -> m, m -> r where
-
+   
   -- Register operation
   signal  :: SType -> m (r S)    -- Undriven signal
   update  :: r S -> r S -> m ()  -- Drive a register input
@@ -177,6 +177,12 @@ class (Monad m, Num (r S)) => Seq m r | r -> m, m -> r where
   -- FIXME: add support for probing/tracing.  Production code will not
   -- generate it, but it would allow debug code to be traced without
   -- the need to pass along a lot of debug information explicitly.
+
+
+
+
+
+
   
 -- Primitives
 
@@ -184,21 +190,24 @@ type SeqOp1 m r = r S -> m (r S)
 type SeqOp2 m r = r S -> r S -> m (r S)
 type SeqOp3 m r = r S -> r S -> r S -> m (r S)
 
-data Op1 = INV
+data Op1 = INV | NEG
   deriving Show
 
 inv :: forall m r. Seq m r => r S -> m (r S)
+neg :: forall m r. Seq m r => r S -> m (r S)
 inv = op1 INV
+neg = op1 NEG
+
 
 data Op2 =
-  ADD | SUB | MUL | AND | OR | XOR | SLL | SLR
+  ADD | SUB |
+  MUL | AND | OR | XOR | SLL | SLR
   | CONC
   | EQU
   deriving Show
 
 add  :: Seq m r => SeqOp2 m r 
 sub  :: Seq m r => SeqOp2 m r 
-mul  :: Seq m r => SeqOp2 m r
 band :: Seq m r => SeqOp2 m r
 bxor :: Seq m r => SeqOp2 m r
 bor  :: Seq m r => SeqOp2 m r
@@ -209,9 +218,10 @@ equ  :: Seq m r => SeqOp2 m r
 
 conc :: Seq m r => SeqOp2 m r
 
+
+
 add  = op2 ADD
 sub  = op2 SUB
-mul  = op2 MUL
 band = op2 AND
 bxor = op2 XOR
 bor  = op2 OR
@@ -221,6 +231,22 @@ slr  = op2 SLR
 conc = op2 CONC
 
 equ  = op2 EQU
+
+-- Note that Seq is intended to be multi-target.  E.g. some targets
+-- might support multipliers, others won't.  I currently don't see the
+-- point in creating too much granularity at the Seq interface type
+-- class level.  Basically, when an operation is not supported, just
+-- raise an error.  In general we're always running as a compilation
+-- step, so this is ok.  The implementor will always have to
+-- explicitly instantiate all implementations anyway.  Put class
+-- complexity in the instances.
+
+-- FIXME: It is likely not too late to define SeqMul explicitly.  It
+-- feels as if this is going to be important.
+
+mul :: Seq m r => SeqOp2 m r
+mul  = op2 MUL
+
 
 
 data Op3 = IF
