@@ -1,5 +1,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- I've split this up a bit:
 
@@ -79,10 +80,6 @@ instance Seq.Seq m r => A.Ring m (r S) where
 -- not a representation r, but the compiler doesn't know that.
 
 
-poing :: Ring m t => t -> t -> m (t, t)
-poing phasor state = do
-  next <- A.mul phasor state
-  return (next, next)
 
 
 -- FIXME: In practice, the Term.compileTerm context will fix the type
@@ -134,15 +131,31 @@ poing phasor state = do
 
 run = do
   putStrLn "Language.Seq.DSP.run"
+  test_poing
+  test_z
+
+test_z = do
+  -- how to test this?  currently feedback isn't defined yet, so do
+  -- that first.
+  return ()
+
+test_poing = do  
   let m = do
-        let typ = undefined
-        closeReg [typ] $
-          (\[s] -> do
+        let typ = Seq.SInt (Just 32) 0
+        closeReg [typ, typ] $
+          (\s -> do
               -- FIXME: I would need either fixed point mul or
               -- floating point types.
-              one' <- A.one
-              (s',o) <- poing one' s
-              return ([s'],[o]))
+
+              -- FIXME: The feedback really needs to be tucked away
+              -- deeper such that we don't have to mess with things
+              -- like complex numbers at the Seq level.
+
+              -- The question is then: should state be flattened, or
+              -- can we use things like complex numbers in state?
+              
+              (s',o) <- A.poing s
+              return (s',[o]))
       (outputs, bindings, probes) = Term.compileTerm m
   putStrLn $ C.compile "testfun" (outputs, bindings, probes)
   
