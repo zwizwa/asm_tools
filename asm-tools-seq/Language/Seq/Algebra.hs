@@ -10,7 +10,7 @@ module Language.Seq.Algebra where
 import Control.Monad
 
 import Data.Key(Zip(..),zipWith, zip)
-import Prelude hiding (zipWith, zip, exp, cos, sin, sqrt)
+import Prelude hiding (zipWith, zip, exp, cos, sin, sqrt, sum, div)
 
 
 
@@ -66,6 +66,7 @@ import Prelude hiding (zipWith, zip, exp, cos, sin, sqrt)
   
 
 
+-- Ring
   
 -- The basic substrate for all computations is the the Ring.  These
 -- can be composed into matrices, which we will represent abstractly
@@ -95,54 +96,62 @@ class Monad m => Ring m t where
   one   :: m t  -- multiplicative neutral 
 
 
+-- Field
+
+class Ring m t => Field m t where
+  div   :: t -> t -> m t
+  -- FIXME: inv
+
+
+
+-- Vector
+
 -- Note that Rings are important because they can be structured
 -- hierarchically, and are a way to structure computations.  Examples
 -- of composite rings: Complex and Normal numbers, matrics and
 -- polynomials.
 
--- FIXME: For composite rings it is currently not clear how to express
--- the operation of scaling by base ring (often field) scalars.  It
--- seems possible however to provide a lifting operation that maps
--- base ring scalars into field elements, and then use the ring's
--- multiplication.  Maybe that is more appropriate.  It works in
--- practice, but can possibly create a lot of spurious "times zero"
--- terms in generated code.  One thing thoug: many compositive rings
--- support a reducing operation such as a norm or a determinant, that
--- reduces an element to a scalar, often to be used as a denominator
--- in a division of the base field.
+-- It seems best to capture this compositionality as a vector
+-- structure, which in the Haskell world can be modeled as Functor
+-- that is Traversable with Zippable, together with a constraint on
+-- the elements that go in the functor (Ring elements).
 
--- The problem is: should we add the base ring type in the definition
--- of a Ring?  It might help type inferences, and we're going to need
--- it anyway.
+class (Ring m t, Traversable f, Zip f) => Vector m f t
 
+sum :: Vector m f t => f t -> m t
+sum a = do c0 <- zero ; foldM add c0 a
 
+inner :: Vector m f t => f t -> f t -> m t
+inner a b = sum =<< op2 mul a b
 
--- It is important to keep Ring structure and differentiable structure
--- separate.  Rings can be used to define composite rings: 
+scale :: Vector m f t => t -> f t -> m (f t)
+scale a v = traverse (mul a) v
 
+sum2 a = inner a a
+norm2 a = sqrt =<< sum2 a
 
 
--- Composite rings (FIXME: scale by base ring? (real or complex numbers)
+-- Polynomials
+
+-- Polynomials are vectors in this sense, augmented with an evaluation
+-- procedure.  For this we use Horner's method.
+-- TODO
 
 
 
+-- Functions
 
--- However, we're also going to need some non-linear functions to
--- build models that will then be linearized by automatic
--- differentiation.  It is OK to collect those in a single extra
--- class.
+-- It is important to keep Ring and Field structure separate from
+-- differentiable functions.  We put those in a separate class.
 
 -- Once way to think about it is that transcendental functions are
 -- always somehow defined at the meta level.  They are useful in code
 -- (specification) but will be ephemeral in implementation (i.e. used
 -- in autodiff at compile time to derive linearized update equations,
--- and replaced by polynomals or iterative systems in
+-- and replaced by polynomals or iterative evaluation systems in
 -- implementations).
 
--- FIXME: Find a good name for this.  Differentiable?  Transcendental?
-
-class Ring m t => Functions m t where
-  div  :: t -> t -> m t
+class Functions m t where
   sin  :: t -> m t
   cos  :: t -> m t
   exp  :: t -> m t
@@ -185,6 +194,9 @@ instance Ring m t => Ring m (C t) where
   zero = do zero' <- zero ;               return $ C zero' zero'
   one  = do zero' <- zero ; one' <- one ; return $ C one'  zero'
 
+instance Field m t => Field m (C t) where
+  div = undefined
+  
 instance (Ring m t, Functions m t) => Functions m (C t) where
   exp (C ar ai) = do
     r <- exp ar
@@ -193,7 +205,6 @@ instance (Ring m t, Functions m t) => Functions m (C t) where
     return $ C rc rs
   sin = undefined
   cos = undefined
-  div = undefined
   sqrt = undefined
 
 
@@ -217,6 +228,9 @@ instance Ring m t => Ring m (D t) where
   one  = do c0 <- zero ; c1 <- one ; return $ D c1 c0
 
 
+instance Field m t => Field m (D t) where
+  div = undefined
+
 instance (Ring m t, Functions m t) => Functions m (D t) where
   exp (D a da) = do
     expa  <- exp a
@@ -231,7 +245,6 @@ instance (Ring m t, Functions m t) => Functions m (D t) where
     dcosa <- mul da =<< sin a
     return $ D cosa dcosa
 
-  div = undefined
   sqrt = undefined
   
 
@@ -272,6 +285,8 @@ instance (Ring m t, Functions m t) => Functions m (D t) where
 
 -- Note that initial values are monadic as well.  They might need to
 -- be computed.
+
+-- FIXME: This might not be necessary.  Have to see in actual use.
 
 class Ring m t => System m t where
   -- system init update = closed.
@@ -336,8 +351,8 @@ class Ring m t => System m t where
 
 -- Tests
 
-poing :: Ring m t => [t] -> m ([t], t)
-poing [r, i] = do
+decay :: Ring m t => [t] -> m ([t], t)
+decay [r, i] = do
   phasor@(C (_ :: t) _) <- one  -- Use actual numbers?
   C r' i' <- mul phasor (C r i)
   return ([r', i'], r')

@@ -182,6 +182,43 @@ class (Monad m, Num (r S)) => Seq m r | r -> m, m -> r where
 
 
 
+-- Loops are basically transformations between space and time.
+--
+-- Seq has no concept of space; it contains just the machinery to
+-- express feedback over time (RTL).
+--
+-- SeqLoop uses these "time machines", and adds an abstract mechanism
+-- to execute them, tied to abstract input and output arrays, and
+-- accumulator inputs and outputs, implementing a combination of zip
+-- and fold.
+
+
+-- FIXME: bundle Zip+Traversable into Bus or something.  It is used
+-- all over the place.  These are essentially vectors without the
+-- computation constraint (See Algebra.hs Vector, which uses Ring
+-- constraints).
+
+class
+  (Seq m r,
+   -- Generalize [] grouping functors to a,i,o
+   Zip a, Traversable a,  -- accumulators
+   Zip i, Traversable i,  -- inputs
+   Zip o, Traversable o   -- outputs
+  ) =>
+
+  SeqLoop m r a i o where
+  
+  -- This implements the typicial "tagless-final" style where a
+  -- combinator "flips" representation (r) and collection (a,i,o) type
+  -- constructors, as such bridging the implementation and
+  -- specification.
+  zipfold ::
+    (a (r t) -> i (r t) -> (a (r t), o (r t))) ->
+    (r (a t) -> r (i t) -> (r (a t), r (o t)))
+
+  -- zipfold loopBody initAccus inputVectors = (outAccus, outputVectors)
+  
+
 
   
 -- Primitives

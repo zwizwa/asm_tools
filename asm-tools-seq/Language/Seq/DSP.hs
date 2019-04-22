@@ -131,15 +131,22 @@ instance Seq.Seq m r => A.Ring m (r S) where
 
 run = do
   putStrLn "Language.Seq.DSP.run"
-  test_poing
+  test_decay
+  test_loop
   test_z
 
 test_z = do
-  -- how to test this?  currently feedback isn't defined yet, so do
-  -- that first.
+  -- This first needs autodiff, and probably also target loops to
+  -- implement the matrix inverse.
   return ()
 
-test_poing = do  
+test_loop = do
+  -- This is the big one.  When this is solved, a lot of leverage is
+  -- created.  It will require a bit of work in C and Term.
+  return ()
+
+test_decay = do  
+  putStrLn "-- test_decay"
   let m = do
         let typ = Seq.SInt (Just 32) 0
         closeReg [typ, typ] $
@@ -154,7 +161,7 @@ test_poing = do
               -- The question is then: should state be flattened, or
               -- can we use things like complex numbers in state?
               
-              (s',o) <- A.poing s
+              (s',o) <- A.decay s
               return (s',[o]))
       (outputs, bindings, probes) = Term.compileTerm m
   putStrLn $ C.compile "testfun" (outputs, bindings, probes)

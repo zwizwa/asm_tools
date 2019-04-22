@@ -1,4 +1,12 @@
--- FIXME: Proof-of-concept stub
+-- History:
+--
+-- . Original driver was the need for a simple C code generator to
+--   generate some parameter conversions (2018/7?)
+-- . Seq was extended to include MUL
+-- . Later (2019/4) this code acts as a driver to add loops
+
+{-# LANGUAGE TypeSynonymInstances #-}
+
 module Language.Seq.C where
 
 import Language.Seq
@@ -23,6 +31,8 @@ partition' bindings t = map snd $ filter ((t ==) . fst) tagged where
   p _              = Exprs
 
 
+-- compile :: (ArrayLoop n, Show n) => String -> CompileResult n -> String
+compile :: Show n => String -> CompileResult n -> String
 compile funName (outputs, bindings, _) = code where
   part = partition' bindings
   inputs = part Inputs
@@ -35,8 +45,13 @@ compile funName (outputs, bindings, _) = code where
   reg  n = "r"  ++ show n
   oreg i = "o[" ++ show i ++ "]"
 
-  cInputDecl (n, Input (SInt _ _)) = intType ++ " " ++ reg n
+  -- Recursive binding for loops over arrays is implemented abstractly
+  -- using the ArrayLoop typeclass.  This way it can be embedded in
+  -- node types.
+  
   cBinding (n, e) = "\t" ++ intType ++ " " ++ reg n ++ " = " ++ cExpr e ++ ";\n"
+
+  cInputDecl (n, Input (SInt _ _)) = intType ++ " " ++ reg n
   cExpr (Comb2 _ op a b) = cPrim (show op) [a,b]
   cOperand (Const (SInt _ v)) = show v
   cOperand (Node _ n) = reg n
@@ -62,3 +77,8 @@ instance Show C where
   -- show (C (outputs, bindings)) = (showL outputs) ++ (showL bindings)
   show (C (funName, ct)) = compile funName ct
 
+
+-- FIXME: Loops are expressed as a recursive extension to the basic
+-- flat Term structure.
+--class ArrayLoop n
+--instance ArrayLoop NodeNum
