@@ -209,9 +209,8 @@ class
   SeqLoop m r a i o where
   
   -- This implements the typicial "tagless-final" style where a
-  -- combinator "flips" representation (r) and collection (a,i,o) type
-  -- constructors, as such bridging the implementation and
-  -- specification.
+  -- combinator flips the nesting of representation (r) and collection
+  -- (a,i,o) type constructors.
   zipfold ::
     (a (r t) -> i (r t) -> (a (r t), o (r t))) ->
     (r (a t) -> r (i t) -> (r (a t), r (o t)))
