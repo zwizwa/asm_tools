@@ -2,3 +2,12 @@ default.nix
 dist/
 *~
 result
+*.d
+*.bin
+*.elf
+*.pcf
+nixpkgs
+f_soc.v
+*.env
+__pycache__
+
