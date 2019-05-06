@@ -238,6 +238,7 @@ mTerm (Delay _ a)        = mOp a
 mTerm (Connect _ a)      = mOp a
 mTerm (Input _)          = call "INPUT" [] -- not reached, matched earlier
 mTerm (Comb1 _ INV a)    = (tell "~") >> mOp a
+mTerm (Comb1 _ NEG a)    = (tell "-") >> mOp a
 mTerm (Comb2 _ CONC a b) = prfx "concat" $ map mOp [a,b]
 mTerm (Comb2 _ o a b)    = infx o (mOp a) (mOp b)
 mTerm (Comb3 _ IF c x y) = do

@@ -1,0 +1,6 @@
+Note: this might not need to be a separate project.
+
+I'm evaluating how to make a "recursive" Seq.  E.g. have Seq contain
+multipliers, and have those multipliers be implemented in Seq.
+
+

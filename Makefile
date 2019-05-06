@@ -10,7 +10,10 @@
 # does not support incremental builds.  See cabal.sh for notes on how
 # incremental devlopment builds are implemented on top of "nix shell".
 
-all: compile
+# all: compile
+
+all:
+	@echo "FIXME: This has been split into separate modules."
 
 .SECONDARY:
 
