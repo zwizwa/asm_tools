@@ -557,3 +557,13 @@ hdl_compile portNames portTypes mod = (portSpecs', (ports', bindings')) where
 --   | Connect SType n
 --   | Input   SType -- Externally driven node
 --   deriving (Show, Functor, Foldable)
+
+
+
+-- TermLoop
+
+-- Loops are implemented as contexts in which array indices are
+-- defined.  Loops can be nested.  Code is generated in a "dumb" way
+-- first.  Some loop transformations can be employed later on to
+-- increase sharing.
+
