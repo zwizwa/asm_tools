@@ -198,6 +198,12 @@ class (Monad m, Num (r S)) => Seq m r | r -> m, m -> r where
 -- computation constraint (See Algebra.hs Vector, which uses Ring
 -- constraints).
 
+-- FIXME: Is there a canonical name for this iteration pattern?  The
+-- point is that it does _both_ accumulation and mapping.  Maybe what
+-- I'm missing is a good way to factor this out into primitive
+-- operations, but it appears the core representation is going to need
+-- this fused approach.
+
 class
   (Seq m r,
    -- Generalize [] grouping functors to a,i,o
