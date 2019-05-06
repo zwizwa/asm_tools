@@ -10,4 +10,5 @@ nixpkgs
 f_soc.v
 *.env
 __pycache__
+out.list
 
