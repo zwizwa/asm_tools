@@ -73,6 +73,8 @@ form.
 TODO:
 - Create an ANF expression compiler
 - Parameterize "hole creation"
+- Unify the resulting language with operations defined on Grid.LTA
+
 
 -}
 
@@ -91,38 +93,40 @@ instance Show n => Show (Expr n) where
 
 -- A central player is the binding, which associates a storage node to
 -- the result of primitive expression evaluation.
-data Binding e n = Binding n (e n)
+data Let e n = Let n (e n)
 
-instance (Show n, Show (e n)) => Show (Binding e n) where
-  show (Binding n e) = show n ++ " = " ++ show e
+instance (Show n, Show (e n)) => Show (Let e n) where
+  show (Let n e) = show n ++ " = " ++ show e
 
-
-data Array = Array String
-instance Show Array where
-  show (Array a) = a
+data Arr = Arr String
+instance Show Arr where
+  show (Arr a) = a
 
 -- An array slot.  For now index and value have the same type.
-data ArrayRef n = ArrayRef Array n
-instance Show n => Show (ArrayRef n) where
-  show (ArrayRef a i) = show a ++ "[" ++ show i ++ "]"
+data Ref n = Ref Arr n
+instance Show n => Show (Ref n) where
+  show (Ref a i) = show a ++ "[" ++ show i ++ "]"
+
 
 
 -- A Grid expression is parameterized by an expression language e.
-data Grid e n = Loop Array ArrayIndex [Binding e (ArrayRef n)]
+data Grid e n = Loop Int [Arr] Idx [Let e (Ref n)]
 
-instance (Show n, (Show (e (ArrayRef n)))) => Show (Grid e n) where
-  show (Loop a i bs)  =
-    "for(int " ++ show i ++ "=0; " ++ show i ++ "< nb_el(" ++ show a ++ "); " ++ show i ++ "++){\n"
+instance (Show n, (Show (e (Ref n)))) => Show (Grid e n) where
+  show (Loop n as i bs)  =
+    concat (map declaration as)
+    ++ "for(int " ++ show i ++ "=0; " ++ show i ++ "< " ++ show n ++ "; " ++ show i ++ "++){\n"
     ++ concat (map binding bs) ++ "}\n"
     where
       binding b = "\t" ++ show b ++ "\n"
+      declaration a = "T " ++ show a ++ "[" ++ show n ++ "];\n"
 
 
 -- Loop variables
-data ArrayIndex = ArrayIndex String
+data Idx = Idx String
 
-instance Show ArrayIndex where
-  show (ArrayIndex i) = i
+instance Show Idx where
+  show (Idx i) = i
 
 
 
@@ -132,19 +136,14 @@ instance Show ArrayIndex where
 
 
 
+-- This expresses the construction of the array "c", but what I want
+-- is the construction of the intermediates as well.  Essentially, the
+-- Grid language needs to create all primtiive outputs, including
+-- intermediates.
 
-
-val :: Grid Expr ArrayIndex
-val = Loop (Array "c") (ArrayIndex "i")
-  [Binding (ArrayRef (Array "c") i)
-    (Op (ArrayRef (Array "a") i)
-        (ArrayRef (Array "b") i))]
-  where i = (ArrayIndex "i")
-
-
-run_test = do
-  appendFile "/home/tom/exo/ghcid/output.log" $ (show val) ++ "\n"
-
-
-
+test_val :: Grid Expr Idx
+test_val = Loop 100 [Arr "c", Arr "d"]  i
+  [Let (Ref (Arr "c") i) (Op (Ref (Arr "a") i) (Ref (Arr "b") i)),
+   Let (Ref (Arr "d") i) (Op (Ref (Arr "c") i) (Ref (Arr "c") i))]
+  where i = (Idx "i")
 
