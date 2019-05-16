@@ -24,7 +24,7 @@ i:
    Ci <- Bi
 
    
-- LOCALIZE:
+- ELIMINATE:
 
 i:
    Ci <- Ai Bi
@@ -62,16 +62,53 @@ j:
 
 module Language.Grid.LTA where
 
+-- The central data type: nested loops of ANF sections.
+data Form = LetPrim Cell [Cell]
+          | LetLoop Index [Form]
+
+-- Leaf nodes
 type Index = String
 type Array = String
-
-data Form = LoopLet Loop | PrimLet Let
-data Loop = Loop Index Program
-data Program = Program [Form]
-
-
-data Let = Let Cell [Cell]
 data Cell = Cell Array [Index]
+
+-- Just a behavioral wrapper for [] for external interfacing
+-- (e.g. Show).  The 'Form' type uses [] directly to reduce
+-- constructor wrapping clutter.
+newtype Program = Program [Form]
+
+
+-- The mutually recursive type is associated to mutually recursive
+-- folds.  Express this by expressing both legs separately,
+-- one parameterized by the other.
+
+-- The first fold is primtiive and thus needs destructuring
+foldForm :: ([Form] -> a')          -- foldList
+         -> (Cell -> [Cell] -> a)   -- letPrim
+         -> (Index -> a' -> a)      -- letLoop
+         -> (Form -> a)
+foldForm foldList letPrim letLoop = form where
+  form (LetPrim c cs) = letPrim c cs
+  form (LetLoop i fs) = letLoop i $ foldList fs
+
+-- The second fold is just a modified list foldr
+foldFormList :: (Form -> a')      -- foldForm
+             -> (a' -> a -> a)    -- cons
+             -> a                 -- nil
+             -> [Form] -> a
+foldFormList foldForm cons = foldr cons' where
+  cons' h = cons (foldForm h)
+
+
+-- These then combine through mutual recursion to create a fold that
+-- treats all levels the same.
+foldProgram letPrim letLoop cons nil (Program p) = foldFL p where
+  foldFL = foldFormList foldF  cons nil
+  foldF  = foldForm     foldFL letPrim letLoop 
+
+
+
+  
+
 
 
 instance Show Program where
@@ -83,45 +120,24 @@ class ShowP t where
 
 tabs 0 = ""
 tabs n = "  " ++ (tabs $ n-1)
+
 instance ShowP Cell where
   showp _ (Cell a is) = a ++ concat is
 
-instance ShowP Let where
-  showp n (Let c cs) =
-    tabs n ++
-    showp n c ++ " <-" ++ (concat $ map ((" " ++) . (showp n)) cs)
-instance ShowP Loop where
-  showp n (Loop i p) =
+instance ShowP Form where
+  showp n (LetLoop i p) =
     tabs n ++
     i ++ ":\n" ++
-    showp (n+1) p
-    -- ++ tabs n ++ "end " ++ i ++ "\n"
-instance ShowP Form where
-  showp n (LoopLet f) = showp n f
-  showp n (PrimLet f) = showp n f ++ "\n"
+    showp (n+1) (Program p)
+  showp n (LetPrim c cs) =
+    tabs n ++
+    showp n c ++ " <-" ++ (concat $ map ((" " ++) . (showp n)) cs)
+    ++ "\n"
+  
 instance ShowP Program where
   showp n (Program fs) = concat $ map (showp n) fs
 
 
-test_val' =
-  Program $
-  [LoopLet $
-   Loop "i" $
-   Program $
-    [LoopLet $
-     Loop "j" $
-     Program $
-     [PrimLet $ Let (Cell "C" ["i"]) [(Cell "A" ["i"]), (Cell "B" ["i"])],
-      PrimLet $ Let (Cell "D" ["i"]) [(Cell "C" ["i"]), (Cell "C" ["i"])]]],
-   LoopLet $
-   Loop "i" $
-   Program $
-    [LoopLet $
-     Loop "j" $
-     Program $
-     [PrimLet $ Let (Cell "E" ["i"]) [(Cell "C" ["i"]), (Cell "D" ["i"])]]]    
-
-    ]
     
 -- 1. language type class
 -- 2. examples: nested "map" expressions
@@ -143,25 +159,68 @@ a2 a i j = Cell a [i,j]
 i = "i"
 j = "j"
 
-loop' i fs = LoopLet $ Loop i $ Program fs
-let' c a b = PrimLet $ Let c [a,b]
+loop' i fs = LetLoop i fs
+let' c a b = LetPrim c [a,b]
 
-test_val =
+test_val' =
   Program $
   [loop' i [loop' j [let' (c i j) (a i j) (b i j)]],
    loop' i [loop' j [let' (d i j) (a i j) (c i j)]]]
   where [a,b,c,d] = map a2 ["A","B","C","D"]
 
+test_val = fuse' $ fuse' test_val'
 
--- Next: create an example for each transformation.
+-- Transformations.
 
-fuse (LoopLet (Loop i  (Program as)))
-     (LoopLet (Loop i0 (Program bs))) =
+-- FUSE
+--
+
+-- Split into element-wise comparison and an iteration mechanism.
+-- Note that this implicitly uses the name of the index parameter to
+-- identify a particular loop range.
+
+fuse (Program fs) =
+  -- Note that this does only one level.  Split out multi-level
+  -- transformations in a more traditional recursive fold.
+  Program $ fuse_list fuse_forms fs
+
+fuse_forms fa@(LetLoop i  as)
+           fb@(LetLoop i0 bs) =
   case i == i0 of
-    True  -> Just (LoopLet (Loop i (Program (as ++ bs))))
+    True  -> Just (LetLoop i (as ++ bs))
     False -> Nothing
+fuse_forms fa fb = Nothing
 
-interchange (LoopLet (Loop i (Program [LoopLet (Loop j p)]))) =
-  (LoopLet (Loop j (Program [LoopLet (Loop i p)])))
+
+fuse' p = Program $ foldProgram LetPrim LetLoop cons [] p where
+  cons h@(LetLoop i as) t@((LetLoop i0 bs):t') =
+    case i == i0 of
+      True  -> (LetLoop i (as ++ bs)) : t'
+      False -> h:t
+  cons a b = a:b
+
+
+interchange (LetLoop i [LetLoop j p]) =
+  (LetLoop j [LetLoop i p])
       
       
+-- eliminate is the difficult one, because it requires information
+-- that is not local!
+
+
+-- Iteration patterns
+
+
+-- Elimination needs escape analysis.  In the current form
+
+
+-- Generic iteration patterns.
+
+fuse_list f = fuse where
+  fuse (e1:e2:es) =
+    case f e1 e2 of
+      Just e  -> fuse (e:es)
+      Nothing -> e1 : fuse (e2:es)
+  fuse es = es
+
+
