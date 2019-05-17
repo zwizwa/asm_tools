@@ -194,7 +194,9 @@ test_val' =
 
 -- test_val = fuse $ fuse test_val'
 -- test_val = toList test_val'
-test_val = annotate test_val'
+
+
+test_val = annotate' test_val'
 
 -- Transformations.
 
@@ -223,64 +225,99 @@ interchange l = l
 
 
 
--- Annotate Functor elements with their path.  Note that this is an
--- operation that cannot be expressed by generic fold nor
--- Functor/Traversable.
-
-annotate :: Program b -> Program ([Index], b)
-annotate (Program fs) = Program $ forms [] fs where
-  forms is fs = map (form is) fs
-  form is (LetPrim b)    = LetPrim (is, b)
-  form is (LetLoop i fs) = LetLoop i $ forms (i:is) fs
-
-
--- This can likely be expressed as a monadic traversal with a reader
--- constrant on the monad.  Is it necessary?
-
-
 -- ELIMINATE
 
 -- Eliminate requires escape analysis, which is non-local information.
--- Note that when we create the form, it is known exactly which of the
--- arrays are output and which are not.  However, when we start fusing
--- loops, this information is no longer accurate, as an output might
--- become an intermediate value.  So we do not bother tracking the
--- original information and reconstruct it instead.
+-- Note that when we create single form, it is known exactly which of
+-- the arrays are output and which are temporary.  However, when we
+-- start fusing loops, this information is no longer accurate, as an
+-- output might become an intermediate value.  So we do not bother
+-- tracking the original information and reconstruct it instead.
 
--- An array A escapes a loop if it is referenced after the loop has
--- finished executing.  The make a decision about an array, we need to
--- look only at what happens in the future.
 
--- This can be done by 1) annotating each node with a zipper-style
--- (future) context, and 2) searching that future context for
--- references
 
--- To annotate, use a Reader monad. 
 
-type Ctx b = ([Index],[[Form b]])
-annotateZipper :: Program b -> Program (Ctx b, b)
-annotateZipper (Program fs) = Program $ runReader (forms fs) ([],[]) where
 
-  -- Use a composite context, because loop index nesting and form
-  -- traversal nesting are updated independently.
-  pushfs fs  = withReader (\(is, fss) -> (is, fs:fss))
-  pushi  i   = withReader (\(is, fss) -> (i:is, fss))
-  
-  form (LetPrim b) = do
+-- ESCAPE ANALYSIS
+
+-- Note that there is no context available in the
+-- Functor/Foldable/Traversable instances.  Since the standard
+-- container view is so convenient, we stick to it as the main
+-- abstraction, and implement annotation on a per-element basis:
+annotate :: Program b -> Program (Context b, b)
+
+-- Here each element has two pieces of information attached: the loop
+-- nesting context describing the current cell to be updated in the
+-- current block, and the "execution stack" which describes the future
+-- of the sequential execution.  
+type Context b = ([Index],[[Form b]])
+
+-- Note that it is more convenient to just define a single traversal
+-- routine that annotates both pieces of information, and define some
+-- projections that strip away the unneeded data, e.g.
+annotate' = (fmap (\((i,_),b) -> (i,b))) . annotate
+
+
+-- To implement the annotation, a Reader is used to contain the
+-- current context during traversal.  The traversal itself is the
+-- mutual recursion pattern associated with the 4 constructors,
+-- sprinkled with pushi, pushfs to accumulate context data that is
+-- then picked up by primitives.
+
+-- The code is split up into the concrete annotation routine..
+annotate p = traverse' f p where
+  f b = do
     ctx <- ask
-    return $ LetPrim (ctx, b)
+    return (ctx, b)
 
-  form (LetLoop i fs) = do
-    fs' <- pushi i $ forms fs
-    return $ (LetLoop i) fs'
+
+-- ..and the abstract traversal.
+traverse' f (Program p) = Program p' where
+
+  p' = runReader (forms p) ([],[]) 
+
+  pushp p = withReader (\(is, ps) -> (is, p:ps))
+  pushi i = withReader (\(is, ps) -> (i:is, ps))
+
+  form (LetPrim b) = do
+    b' <- f b
+    return $ LetPrim b'
+
+  form (LetLoop i p) = do
+    p' <- pushi i $ forms p
+    return $ LetLoop i p'
 
   forms [] = do
     return []
 
   forms (f:fs) = do
-    f'  <- pushfs fs $ form f
+    f'  <- pushp fs $ form f
     fs' <- forms fs
     return (f':fs')
-    
+
+
+-- Given (Context Let, Let) at each binding site, the context can be
+-- used to perform escape analysis.
+
+-- An array escapes the current block if it is referenced after the
+-- current block has finished executing.  This can be expressed in
+-- terms of the execution stack.
+escapes :: Context Let -> Array -> Bool
+escapes (_,(_:future_after_current)) a =
+  referenced a $ concat future_after_current
+
+-- To check referencing, check each primtive.  Note that this has
+-- quadratic complexity for the most common case, which is the
+-- non-escaping intermediate value, as the entire future needs to be
+-- traversed.
+referenced :: Array -> [Form Let] -> Bool
+referenced a fs = or $ map checkPrim prims where
+  prims = toList $ Program $ fs
+  checkPrim (Let _ cs) = or $ map checkCell cs
+  checkCell (Cell a' _) = a' == a
+
+
+
+
 
 
