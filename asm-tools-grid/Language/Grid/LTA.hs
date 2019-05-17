@@ -69,28 +69,31 @@ j:
 module Language.Grid.LTA where
 
 import Data.Foldable
+import Data.Maybe
 import Control.Monad.Reader
 import Control.Monad.State
 
 -- The central data type: nested loops of ANF / SSA sections.
-type Form' = Form Let
+type Form' = Form Let'
 
 -- The representation is split into container,,
 data Form b = LetPrim b
             | LetLoop Index [Form b]
             deriving (Functor, Foldable, Traversable)
 
--- .. and contained type..
-data Let = Let Cell [Cell]
+-- .. and contained type, which itself is split into a container of
+-- cell references.
+data Let c = Let c [c] deriving (Functor, Foldable, Traversable)
+type Let' = Let Cell
 
--- such that it fits in a convenient type class hierarchy, which
--- simplifies substitution and analysos code.
-
--- The leaf nodes of the language are cells inside a multi-dimensional
--- tensor/grid.
+-- .. and a cell type.
 data Cell = Cell Grid [Index]
 type Index = String
 type Grid  = String
+
+
+-- This makes it all fit in a convenient type class hierarchy, which
+-- simplifies substitution and analysiscode.
 
 
 -- For convenience, add a wrapper to a bundle a complete a collection
@@ -138,10 +141,10 @@ foldProgram letPrim letLoop cons nil (Program p) = foldFL p where
 -- A Show instace to produce the notation used in the comments above.
 
 instance ShowP b => Show (Program b)     where show p = showp 0 p
-instance Show Let                        where show p = showp 0 p
+instance Show c => Show (Let c)          where show p = showp 0 p
 instance ShowP (Form b) => Show (Form b) where show p = showp 0 p
 
-instance Show t => ShowP (t, Let)        where showp _ p = show p
+instance (Show t, Show c) => ShowP (t, Let c)  where showp _ p = show p
 
 class ShowP t where
   showp :: Int -> t -> String
@@ -149,8 +152,8 @@ class ShowP t where
 tabs 0 = ""
 tabs n = "  " ++ (tabs $ n-1)
 
-instance ShowP Cell where
-  showp _ (Cell a is) = a ++ concat is
+instance Show Cell where
+  show (Cell a is) = a ++ concat is
 
 instance ShowP b => ShowP (Form b) where
   showp n (LetLoop i p) =
@@ -160,9 +163,9 @@ instance ShowP b => ShowP (Form b) where
   showp n (LetPrim b) =
     tabs n ++ showp n b ++ "\n"
 
-instance ShowP Let where
+instance Show c => ShowP (Let c) where
   showp n (Let c cs) =
-    showp n c ++ " <-" ++ (concat $ map ((" " ++) . (showp n)) cs)
+    show c ++ " <-" ++ (concat $ map ((" " ++) . show) cs)
   
 instance ShowP b =>  ShowP (Program b) where
   showp n (Program fs) = concat $ map (showp n) fs
@@ -200,19 +203,30 @@ interchange l = l
 -- ELIMINATE
 
 -- Eliminate requires escape analysis, which is non-local information.
--- Note that when we create single form, it is known exactly which of
--- the arrays are output and which are temporary.  However, when we
--- start fusing loops, this information is no longer accurate, as an
--- output might become an intermediate value.  So we do not bother
--- tracking the original information and reconstruct it instead.
+-- Note that when we create a single form from a high level
+-- description, it is known exactly which of the arrays are output and
+-- which are temporary.  However, when we start fusing loops, this
+-- information is no longer accurate, as an output of one state might
+-- be fed into another state and become an intermediate value.  So we
+-- do not bother tracking the original information and reconstruct it
+-- instead.
 
-eliminate p = fmap eliminate' $ annotate p where
-  eliminate' (ctx, l@(Let c@(Cell a is) cs)) =
-    -- FIXME: This needs to replace all references, not just the binding.
+-- Elimination works in two steps.  Create the elimination list..
+intermediates p = catMaybes $ toList $ fmap intermediate' $ annotate p where
+  intermediate' (ctx, l@(Let c@(Cell a is) cs)) =
     case escapes a ctx of
-      False -> (Let (Cell a []) cs)
-      True  -> l
-    
+      False -> Just a
+      True  -> Nothing
+
+-- .. then modify the array dimensionality in a next step.
+eliminate p = fmap (fmap txCell) p where
+  isIntermediate a = elem a $ intermediates p
+  txCell c@(Cell a is) =
+    if isIntermediate a then (Cell a []) else c
+
+
+-- FIXME: It's probably possible to do that circularly instead of in
+-- two passes.
 
 
 -- ESCAPE ANALYSIS
@@ -280,7 +294,7 @@ annotate' pushi pushp f (Program p) = fmap Program $ forms p where
 -- An array escapes the current block if it is referenced after the
 -- current block has finished executing.  This can be expressed in
 -- terms of the execution stack.
-escapes :: Grid -> Context Let -> Bool
+escapes :: Grid -> Context Let' -> Bool
 escapes a (_,(_:future_after_current)) =
   referenced a $ concat future_after_current
 
@@ -289,7 +303,7 @@ escapes a (_,(_:future_after_current)) =
 -- temporary, non-escaping binding, as the entire future needs to be
 -- traversed to determine that there are no references.  Is there a
 -- better way?
-referenced :: Grid -> [Form Let] -> Bool
+referenced :: Grid -> [Form Let'] -> Bool
 referenced a fs = or $ map checkPrim prims where
   prims = toList $ Program $ fs
   checkPrim (Let _ cs) = or $ map checkCell cs
@@ -325,5 +339,5 @@ test_val' =
 
 
 -- test_val = annotate_i test_val'
+-- test_val = intermediates test_val'
 test_val = eliminate test_val'
-
