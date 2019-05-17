@@ -10,7 +10,8 @@ loop/grid sizes.
 These can then be lifted to langauges with more annotation.
 
 These are the (bi-directional) operations in the notation developed in
-rtl.txt, in reducting order.
+rtl.txt, presented in the direction that is most common (i.e. is
+actually an optimization).
 
 - FUSE
 
@@ -71,37 +72,42 @@ import Data.Foldable
 import Control.Monad.Reader
 import Control.Monad.State
 
--- The central data type: nested loops of ANF sections.
+-- The central data type: nested loops of ANF / SSA sections.
 type Form' = Form Let
 
--- The default binding type.  This is abstracted such that the Form
--- type can be a functor of bindings.
-data Let = Let Cell [Cell]
-
+-- The representation is split into container,,
 data Form b = LetPrim b
             | LetLoop Index [Form b]
             deriving (Functor, Foldable, Traversable)
 
+-- .. and contained type..
+data Let = Let Cell [Cell]
 
+-- such that it fits in a convenient type class hierarchy, which
+-- simplifies substitution and analysos code.
 
-
--- Leaf nodes
+-- The leaf nodes of the language are cells inside a multi-dimensional
+-- tensor/grid.
+data Cell = Cell Grid [Index]
 type Index = String
-type Array = String
-data Cell = Cell Array [Index]
+type Grid  = String
 
--- Just a behavioral wrapper for [] for external interfacing
--- (e.g. Show).  The 'Form' type uses [] directly to reduce
--- constructor wrapping clutter.
+
+-- For convenience, add a wrapper to a bundle a complete a collection
+-- of forms into a program.
 data Program b = Program [Form b]
   deriving (Functor, Foldable, Traversable)
 
--- Generalized Fold (subsitute constructors).  Note that this is not
--- the same as Foldable, which uses the Functor structure of Form.
 
--- The mutually recursive type is associated to mutually recursive
--- folds.  Express this by expressing both legs separately,
--- one parameterized by the other.
+
+-- The generalized fold associated to the data type.  Note that this
+-- is not the same as Foldable, which uses the list-like structure in
+-- the Functor.  The generalized fold maps constructors to functions.
+
+
+-- The type is a composition of two types: the prim/loop distinction
+-- and use of [] to represent a sequence of bindings.  Implement
+-- generalized folds for both components separately.
 
 -- The first fold is primitive and thus needs destructuring
 foldForm :: ([Form b] -> a')    -- foldList
@@ -129,13 +135,14 @@ foldProgram letPrim letLoop cons nil (Program p) = foldFL p where
 
 
 
+-- A Show instace to produce the notation used in the comments above.
+
 instance ShowP b => Show (Program b)     where show p = showp 0 p
 instance Show Let                        where show p = showp 0 p
 instance ShowP (Form b) => Show (Form b) where show p = showp 0 p
 
 instance Show t => ShowP (t, Let)        where showp _ p = show p
 
--- Just use parameter passing for indentation.
 class ShowP t where
   showp :: Int -> t -> String
 
@@ -156,57 +163,20 @@ instance ShowP b => ShowP (Form b) where
 instance ShowP Let where
   showp n (Let c cs) =
     showp n c ++ " <-" ++ (concat $ map ((" " ++) . (showp n)) cs)
-    
   
 instance ShowP b =>  ShowP (Program b) where
   showp n (Program fs) = concat $ map (showp n) fs
 
 
-    
--- 1. language type class
--- 2. examples: nested "map" expressions
--- 3. processors on those expressions
 
+-- The transoformations explained in the comments above.
 
--- m: code gen monad
--- s: symbol type
--- a: array type
---class Monad m => LTA m a s where
---  op ::
-
--- NOTE: Before doing the generic thing, first make a concrete
--- implementation, then generalize.
-
-a1 a o   = Cell a [i]
-a2 a i j = Cell a [i,j]
-
-i = "i"
-j = "j"
-
-loop' i fs = LetLoop i fs
-let' c a b = LetPrim $ Let c [a,b]
-
-test_val' =
-  Program $
-  [loop' i [loop' j [let' (c i j) (a i j) (b i j),
-                     let' (d i j) (c i j) (a i j)]],
-   loop' i [loop' j [let' (e i j) (a i j) (d i j)]]]
-  where [a,b,c,d,e] = map a2 ["A","B","C","D","E"]
-
--- test_val = fuse $ fuse test_val'
--- test_val = toList test_val'
-
-
--- test_val = annotate_i test_val'
-test_val = eliminate test_val'
-
--- Transformations.
 
 -- FUSE
 --
--- Can be implemented as a generalized fold operation, where only the
--- list constructor is modified.  Note that this works bottom up, so
--- needs to be run multiple times to perform nested fusing.
+-- Fuse can be implemented as a generalized fold operation, where only
+-- the list constructor is modified.  Note that this works bottom up,
+-- so needs to be run multiple times to perform nested fusing.
 --
 fuse p = Program $ foldProgram LetPrim LetLoop cons [] p where
   cons h@(LetLoop i1 fs1) t@((LetLoop i2 fs2):t') =
@@ -236,32 +206,33 @@ interchange l = l
 -- output might become an intermediate value.  So we do not bother
 -- tracking the original information and reconstruct it instead.
 
-
 eliminate p = fmap eliminate' $ annotate p where
   eliminate' (ctx, l@(Let c@(Cell a is) cs)) =
+    -- FIXME: This needs to replace all references, not just the binding.
     case escapes a ctx of
       False -> (Let (Cell a []) cs)
       True  -> l
     
 
 
-
 -- ESCAPE ANALYSIS
 
--- Note that there is no context available in the
--- Functor/Foldable/Traversable instances.  Since the standard
--- container view is so convenient, we stick to it as the main
--- abstraction, and implement annotation on a per-element basis:
+-- Note that there is no context available in the Functor / Foldable /
+-- Traversable instances.  Since the standard container view is so
+-- convenient, we stick to it as the main abstraction, and implement a
+-- single annotation function that tags each element with its context.
 annotate :: Program b -> Program (Context b, b)
 
--- Here each element has two pieces of information attached: the loop
+-- Each element has two pieces of information attached: the loop
 -- nesting context describing the current cell to be updated in the
--- current block, and the "execution stack" which describes the future
--- of the sequential execution.  
-type Context b = ([Index],[[Form b]])
+-- current block and the order in which the loops are nested, and the
+-- "execution stack" which describes the future of the sequential
+-- execution.
+type Stack b   = [[Form b]]
+type Context b = ([Index],Stack b)
 
--- Note that it is more convenient to just define a single traversal
--- routine that annotates both pieces of information, and define some
+-- Note that it is more convenient to define a single traversal
+-- routine that annotates both pieces of information, and define
 -- projections that strip away the unneeded data, e.g.
 annotate_i = (fmap (\((i,_),b) -> (i,b))) . annotate
 annotate_s = (fmap (\((_,s),b) -> (s,b))) . annotate
@@ -281,9 +252,9 @@ annotate p = p' where
     return (ctx, b)
 
 -- ..and the abstract traversal.  The traversal itself is the mutual
--- recursion pattern associated with the 4 constructors, sprinkled
--- with pushi, pushfs to accumulate context data that is then picked
--- up by primitives.
+-- recursion pattern associated directly with the 4 constructors,
+-- sprinkled with pushi, pushp to accumulate context data that can then
+-- picked up by f.
 annotate' pushi pushp f (Program p) = fmap Program $ forms p where
 
   form (LetPrim b) = do
@@ -309,15 +280,16 @@ annotate' pushi pushp f (Program p) = fmap Program $ forms p where
 -- An array escapes the current block if it is referenced after the
 -- current block has finished executing.  This can be expressed in
 -- terms of the execution stack.
-escapes :: Array -> Context Let -> Bool
+escapes :: Grid -> Context Let -> Bool
 escapes a (_,(_:future_after_current)) =
   referenced a $ concat future_after_current
 
--- To check referencing, check each primtive.  Note that this has
--- quadratic complexity in the most commmon case: a temporary,
--- non-escaping binding, as the entire future needs to be traversed to
--- determine that there are no references.  Is there a better way?
-referenced :: Array -> [Form Let] -> Bool
+-- To check referencing, check each primtive's dependency list.  Note
+-- that this has quadratic complexity in the most commmon case: a
+-- temporary, non-escaping binding, as the entire future needs to be
+-- traversed to determine that there are no references.  Is there a
+-- better way?
+referenced :: Grid -> [Form Let] -> Bool
 referenced a fs = or $ map checkPrim prims where
   prims = toList $ Program $ fs
   checkPrim (Let _ cs) = or $ map checkCell cs
@@ -328,4 +300,30 @@ referenced a fs = or $ map checkPrim prims where
 
 
 
+
+
+-- TEST
+
+a1 a o   = Cell a [i]
+a2 a i j = Cell a [i,j]
+
+i = "i"
+j = "j"
+
+loop' i fs = LetLoop i fs
+let' c a b = LetPrim $ Let c [a,b]
+
+test_val' =
+  Program $
+  [loop' i [loop' j [let' (c i j) (a i j) (b i j),
+                     let' (d i j) (c i j) (a i j)]],
+   loop' i [loop' j [let' (e i j) (a i j) (d i j)]]]
+  where [a,b,c,d,e] = map a2 ["A","B","C","D","E"]
+
+-- test_val = fuse $ fuse test_val'
+-- test_val = toList test_val'
+
+
+-- test_val = annotate_i test_val'
+test_val = eliminate test_val'
 
