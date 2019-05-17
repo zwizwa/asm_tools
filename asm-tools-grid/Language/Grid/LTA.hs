@@ -59,12 +59,31 @@ j:
 
 -}
 
+{-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
+
 
 module Language.Grid.LTA where
 
+import Data.Foldable
+import Control.Monad.Reader
+import Control.Monad.State
+
 -- The central data type: nested loops of ANF sections.
-data Form = LetPrim Cell [Cell]
-          | LetLoop Index [Form]
+type Form' = Form Let
+
+-- The default binding type.  This is abstracted such that the Form
+-- type can be a functor of bindings.
+data Let = Let Cell [Cell]
+
+data Form b = LetPrim b
+            | LetLoop Index [Form b]
+            deriving (Functor, Foldable, Traversable)
+
+
+
 
 -- Leaf nodes
 type Index = String
@@ -74,45 +93,47 @@ data Cell = Cell Array [Index]
 -- Just a behavioral wrapper for [] for external interfacing
 -- (e.g. Show).  The 'Form' type uses [] directly to reduce
 -- constructor wrapping clutter.
-newtype Program = Program [Form]
+data Program b = Program [Form b]
+  deriving (Functor, Foldable, Traversable)
 
+-- Generalized Fold (subsitute constructors).  Note that this is not
+-- the same as Foldable, which uses the Functor structure of Form.
 
 -- The mutually recursive type is associated to mutually recursive
 -- folds.  Express this by expressing both legs separately,
 -- one parameterized by the other.
 
--- The first fold is primtiive and thus needs destructuring
-foldForm :: ([Form] -> a')          -- foldList
-         -> (Cell -> [Cell] -> a)   -- letPrim
-         -> (Index -> a' -> a)      -- letLoop
-         -> (Form -> a)
+-- The first fold is primitive and thus needs destructuring
+foldForm :: ([Form b] -> a')    -- foldList
+         -> (b -> a)            -- letPrim
+         -> (Index -> a' -> a)  -- letLoop
+         -> (Form b -> a)
 foldForm foldList letPrim letLoop = form where
-  form (LetPrim c cs) = letPrim c cs
-  form (LetLoop i fs) = letLoop i $ foldList fs
+  form (LetPrim p)     = letPrim p
+  form (LetLoop i fs)  = letLoop i $ foldList fs
 
--- The second fold is just a modified list foldr
-foldFormList :: (Form -> a')      -- foldForm
+-- The second fold is a modified list foldr
+foldFormList :: (Form b -> a')    -- foldForm
              -> (a' -> a -> a)    -- cons
              -> a                 -- nil
-             -> [Form] -> a
+             -> [Form b] -> a
 foldFormList foldForm cons = foldr cons' where
   cons' h = cons (foldForm h)
 
 
--- These then combine through mutual recursion to create a fold that
--- treats all levels the same.
+-- These then combine through mutual recursion.
 foldProgram letPrim letLoop cons nil (Program p) = foldFL p where
   foldFL = foldFormList foldF  cons nil
   foldF  = foldForm     foldFL letPrim letLoop 
 
 
 
-  
 
+instance ShowP b => Show (Program b)     where show p = showp 0 p
+instance Show Let                        where show p = showp 0 p
+instance ShowP (Form b) => Show (Form b) where show p = showp 0 p
 
-
-instance Show Program where
-  show p = showp 0 p
+instance Show t => ShowP (t, Let)        where showp _ p = show p
 
 -- Just use parameter passing for indentation.
 class ShowP t where
@@ -124,17 +145,20 @@ tabs n = "  " ++ (tabs $ n-1)
 instance ShowP Cell where
   showp _ (Cell a is) = a ++ concat is
 
-instance ShowP Form where
+instance ShowP b => ShowP (Form b) where
   showp n (LetLoop i p) =
     tabs n ++
     i ++ ":\n" ++
     showp (n+1) (Program p)
-  showp n (LetPrim c cs) =
-    tabs n ++
+  showp n (LetPrim b) =
+    tabs n ++ showp n b ++ "\n"
+
+instance ShowP Let where
+  showp n (Let c cs) =
     showp n c ++ " <-" ++ (concat $ map ((" " ++) . (showp n)) cs)
-    ++ "\n"
+    
   
-instance ShowP Program where
+instance ShowP b =>  ShowP (Program b) where
   showp n (Program fs) = concat $ map (showp n) fs
 
 
@@ -160,7 +184,7 @@ i = "i"
 j = "j"
 
 loop' i fs = LetLoop i fs
-let' c a b = LetPrim c [a,b]
+let' c a b = LetPrim $ Let c [a,b]
 
 test_val' =
   Program $
@@ -168,59 +192,126 @@ test_val' =
    loop' i [loop' j [let' (d i j) (a i j) (c i j)]]]
   where [a,b,c,d] = map a2 ["A","B","C","D"]
 
-test_val = fuse' $ fuse' test_val'
+-- test_val = fuse $ fuse test_val'
+-- test_val = toList test_val'
+test_val = annotate test_val'
 
 -- Transformations.
 
 -- FUSE
 --
-
--- Split into element-wise comparison and an iteration mechanism.
--- Note that this implicitly uses the name of the index parameter to
--- identify a particular loop range.
-
-fuse (Program fs) =
-  -- Note that this does only one level.  Split out multi-level
-  -- transformations in a more traditional recursive fold.
-  Program $ fuse_list fuse_forms fs
-
-fuse_forms fa@(LetLoop i  as)
-           fb@(LetLoop i0 bs) =
-  case i == i0 of
-    True  -> Just (LetLoop i (as ++ bs))
-    False -> Nothing
-fuse_forms fa fb = Nothing
-
-
-fuse' p = Program $ foldProgram LetPrim LetLoop cons [] p where
-  cons h@(LetLoop i as) t@((LetLoop i0 bs):t') =
-    case i == i0 of
-      True  -> (LetLoop i (as ++ bs)) : t'
+-- Can be implemented as a generalized fold operation, where only the
+-- list constructor is modified.  Note that this works bottom up, so
+-- needs to be run multiple times to perform nested fusing.
+--
+fuse p = Program $ foldProgram LetPrim LetLoop cons [] p where
+  cons h@(LetLoop i1 fs1) t@((LetLoop i2 fs2):t') =
+    case i1 == i2 of
+      True  -> (LetLoop i (fs1 ++ fs2)) : t'
       False -> h:t
   cons a b = a:b
 
 
-interchange (LetLoop i [LetLoop j p]) =
-  (LetLoop j [LetLoop i p])
-      
-      
--- eliminate is the difficult one, because it requires information
--- that is not local!
+-- INTERCHANGE
+--
+-- This is focused on a particular loop.  It needs some more context
+-- to be applied properly.
+--
+interchange (LetLoop i [LetLoop j p]) = (LetLoop j [LetLoop i p])
+interchange l = l
 
 
--- Iteration patterns
 
 
--- Elimination needs escape analysis.  In the current form
+-- Annotate Functor elements with their path.  Note that this is an
+-- operation that cannot be expressed by generic fold nor
+-- Functor/Traversable.
+
+annotate :: Program b -> Program ([Index], b)
+annotate (Program fs) = Program $ forms [] fs where
+  forms is fs = map (form is) fs
+  form is (LetPrim b)    = LetPrim (is, b)
+  form is (LetLoop i fs) = LetLoop i $ forms (i:is) fs
 
 
--- Generic iteration patterns.
+-- This can likely be expressed as a monadic traversal with a reader
+-- constrant on the monad.  Is it necessary?
 
-fuse_list f = fuse where
-  fuse (e1:e2:es) =
-    case f e1 e2 of
-      Just e  -> fuse (e:es)
-      Nothing -> e1 : fuse (e2:es)
-  fuse es = es
 
+-- ELIMINATE
+
+-- Eliminate requires escape analysis, which is non-local information.
+-- Note that when we create the form, it is known exactly which of the
+-- arrays are output and which are not.  However, when we start fusing
+-- loops, this information is no longer accurate, as an output might
+-- become an intermediate value.  So we do not bother tracking the
+-- original information and reconstruct it instead.
+
+-- An array A escapes a loop if it is referenced after the loop has
+-- finished executing.  The make a decision about an array, we need to
+-- look only at what happens in the future.
+
+-- This can be done by reifing the execution context as a zipper-style
+-- data structure, while searching for references in the future
+-- context.  This takes the form of an interpreter that executes the
+-- nested Form structure and keeps track of the execution context.
+
+
+-- data Ctx b = Ctx { ctxStack :: [[Form b]],
+--                    ctxCode  :: [Form b] }
+
+-- -- FIXME: Return type?  What about not bothering and making the
+-- -- traversal monadic?
+
+-- zip_next (Ctx (fs:fss) []) = zip_next (Ctx fss fs)  -- pop context
+-- zip_next (Ctx [] []) = ()  -- end
+
+-- zip_next (Ctx fss ((LetPrim b):fs)) = zip_next (Ctx fss fs) -- skip
+-- zip_next (Ctx fss ((LetLoop i fs'):fs)) = zip_next (Ctx (fs:fss) fs') -- push
+
+
+-- https://wiki.haskell.org/Zipper
+-- http://okmij.org/ftp/continuations/zipper.html
+
+-- So do annotate, but instead of just tracking environment, use a
+-- state monad to thread the zipper state.
+
+-- Use two separate states to track both loop nesting and form
+-- nesting.
+
+-- This is clumsy.  It probably just needs a Reader.
+
+type Next b = ([Index],[[Form b]])
+annotateZipper :: Program b -> Program (Next b, b)
+annotateZipper (Program fs) = Program $ evalState (traverse' fs) ([],[]) where
+
+  m1 f = modify (\(a, b) -> (f a, b))
+  m2 f = modify (\(a, b) -> (a, f b))
+  
+  pushf fs  = m2 (fs:)
+  dropf     = m2 tail
+
+  pushi i   = m1 (i:)
+  dropi     = m1 tail
+  
+  form (LetPrim b) = do
+    ctx <- get
+    return $ LetPrim (ctx, b)
+
+  form (LetLoop i fs) = do
+    pushi i
+    fs' <- traverse' fs
+    dropi
+    return $ (LetLoop i) fs'
+
+  traverse' [] = do
+    return []
+
+  traverse' (f:fs) = do
+    pushf fs
+    f' <- form f
+    dropf
+    fs' <- traverse' fs
+    return (f':fs')
+    
 
