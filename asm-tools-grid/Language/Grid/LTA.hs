@@ -188,15 +188,17 @@ let' c a b = LetPrim $ Let c [a,b]
 
 test_val' =
   Program $
-  [loop' i [loop' j [let' (c i j) (a i j) (b i j)]],
-   loop' i [loop' j [let' (d i j) (a i j) (c i j)]]]
-  where [a,b,c,d] = map a2 ["A","B","C","D"]
+  [loop' i [loop' j [let' (c i j) (a i j) (b i j),
+                     let' (d i j) (c i j) (a i j)]],
+   loop' i [loop' j [let' (e i j) (a i j) (d i j)]]]
+  where [a,b,c,d,e] = map a2 ["A","B","C","D","E"]
 
 -- test_val = fuse $ fuse test_val'
 -- test_val = toList test_val'
 
 
-test_val = annotate' test_val'
+-- test_val = annotate_i test_val'
+test_val = eliminate test_val'
 
 -- Transformations.
 
@@ -235,6 +237,12 @@ interchange l = l
 -- tracking the original information and reconstruct it instead.
 
 
+eliminate p = fmap eliminate' $ annotate p where
+  eliminate' (ctx, l@(Let c@(Cell a is) cs)) =
+    case escapes a ctx of
+      False -> (Let (Cell a []) cs)
+      True  -> l
+    
 
 
 
@@ -255,29 +263,28 @@ type Context b = ([Index],[[Form b]])
 -- Note that it is more convenient to just define a single traversal
 -- routine that annotates both pieces of information, and define some
 -- projections that strip away the unneeded data, e.g.
-annotate' = (fmap (\((i,_),b) -> (i,b))) . annotate
+annotate_i = (fmap (\((i,_),b) -> (i,b))) . annotate
+annotate_s = (fmap (\((_,s),b) -> (s,b))) . annotate
 
 
 -- To implement the annotation, a Reader is used to contain the
--- current context during traversal.  The traversal itself is the
--- mutual recursion pattern associated with the 4 constructors,
--- sprinkled with pushi, pushfs to accumulate context data that is
--- then picked up by primitives.
-
--- The code is split up into the concrete annotation routine..
-annotate p = traverse' f p where
-  f b = do
-    ctx <- ask
-    return (ctx, b)
-
-
--- ..and the abstract traversal.
-traverse' f (Program p) = Program p' where
-
-  p' = runReader (forms p) ([],[]) 
+-- current context during traversal.  The code is split up into the
+-- concrete annotation wrapper..
+annotate p = p' where
+  p' = runReader (annotate' pushi pushp add_context p) ([],[]) 
 
   pushp p = withReader (\(is, ps) -> (is, p:ps))
   pushi i = withReader (\(is, ps) -> (i:is, ps))
+
+  add_context b = do
+    ctx <- ask
+    return (ctx, b)
+
+-- ..and the abstract traversal.  The traversal itself is the mutual
+-- recursion pattern associated with the 4 constructors, sprinkled
+-- with pushi, pushfs to accumulate context data that is then picked
+-- up by primitives.
+annotate' pushi pushp f (Program p) = fmap Program $ forms p where
 
   form (LetPrim b) = do
     b' <- f b
@@ -302,19 +309,20 @@ traverse' f (Program p) = Program p' where
 -- An array escapes the current block if it is referenced after the
 -- current block has finished executing.  This can be expressed in
 -- terms of the execution stack.
-escapes :: Context Let -> Array -> Bool
-escapes (_,(_:future_after_current)) a =
+escapes :: Array -> Context Let -> Bool
+escapes a (_,(_:future_after_current)) =
   referenced a $ concat future_after_current
 
 -- To check referencing, check each primtive.  Note that this has
--- quadratic complexity for the most common case, which is the
--- non-escaping intermediate value, as the entire future needs to be
--- traversed.
+-- quadratic complexity in the most commmon case: a temporary,
+-- non-escaping binding, as the entire future needs to be traversed to
+-- determine that there are no references.  Is there a better way?
 referenced :: Array -> [Form Let] -> Bool
 referenced a fs = or $ map checkPrim prims where
   prims = toList $ Program $ fs
   checkPrim (Let _ cs) = or $ map checkCell cs
   checkCell (Cell a' _) = a' == a
+
 
 
 
