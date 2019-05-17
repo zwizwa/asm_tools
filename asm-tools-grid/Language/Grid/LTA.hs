@@ -251,67 +251,36 @@ annotate (Program fs) = Program $ forms [] fs where
 -- finished executing.  The make a decision about an array, we need to
 -- look only at what happens in the future.
 
--- This can be done by reifing the execution context as a zipper-style
--- data structure, while searching for references in the future
--- context.  This takes the form of an interpreter that executes the
--- nested Form structure and keeps track of the execution context.
+-- This can be done by 1) annotating each node with a zipper-style
+-- (future) context, and 2) searching that future context for
+-- references
 
+-- To annotate, use a Reader monad. 
 
--- data Ctx b = Ctx { ctxStack :: [[Form b]],
---                    ctxCode  :: [Form b] }
+type Ctx b = ([Index],[[Form b]])
+annotateZipper :: Program b -> Program (Ctx b, b)
+annotateZipper (Program fs) = Program $ runReader (forms fs) ([],[]) where
 
--- -- FIXME: Return type?  What about not bothering and making the
--- -- traversal monadic?
-
--- zip_next (Ctx (fs:fss) []) = zip_next (Ctx fss fs)  -- pop context
--- zip_next (Ctx [] []) = ()  -- end
-
--- zip_next (Ctx fss ((LetPrim b):fs)) = zip_next (Ctx fss fs) -- skip
--- zip_next (Ctx fss ((LetLoop i fs'):fs)) = zip_next (Ctx (fs:fss) fs') -- push
-
-
--- https://wiki.haskell.org/Zipper
--- http://okmij.org/ftp/continuations/zipper.html
-
--- So do annotate, but instead of just tracking environment, use a
--- state monad to thread the zipper state.
-
--- Use two separate states to track both loop nesting and form
--- nesting.
-
--- This is clumsy.  It probably just needs a Reader.
-
-type Next b = ([Index],[[Form b]])
-annotateZipper :: Program b -> Program (Next b, b)
-annotateZipper (Program fs) = Program $ evalState (traverse' fs) ([],[]) where
-
-  m1 f = modify (\(a, b) -> (f a, b))
-  m2 f = modify (\(a, b) -> (a, f b))
-  
-  pushf fs  = m2 (fs:)
-  dropf     = m2 tail
-
-  pushi i   = m1 (i:)
-  dropi     = m1 tail
+  -- Use a composite context, because loop index nesting and form
+  -- traversal nesting are updated independently.
+  pushfs fs  = withReader (\(is, fss) -> (is, fs:fss))
+  pushi  i   = withReader (\(is, fss) -> (i:is, fss))
   
   form (LetPrim b) = do
-    ctx <- get
+    ctx <- ask
     return $ LetPrim (ctx, b)
 
   form (LetLoop i fs) = do
-    pushi i
-    fs' <- traverse' fs
-    dropi
+    fs' <- pushi i $ forms fs
     return $ (LetLoop i) fs'
 
-  traverse' [] = do
+  forms [] = do
     return []
 
-  traverse' (f:fs) = do
-    pushf fs
-    f' <- form f
-    dropf
-    fs' <- traverse' fs
+  forms (f:fs) = do
+    f'  <- pushfs fs $ form f
+    fs' <- forms fs
     return (f':fs')
     
+
 
