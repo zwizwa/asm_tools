@@ -190,10 +190,10 @@ instance ShowP b => ShowP (Form b) where
     tabs n ++ showp n b ++ "\n"
 
 instance Show c => ShowP (Let c) where
-  showp n (Ret cs) =
-    "ret" ++ (concat $ map ((" " ++) . show) cs)
-  showp n (Let c cs) =
-    show c ++ " <-" ++ (concat $ map ((" " ++) . show) cs)
+  showp n (Ret cs)   =  "ret" ++ showArgs cs
+  showp n (Let c cs) =  show c ++ " <-" ++ showArgs cs
+
+showArgs cs = concat $ map ((" " ++) . show) cs
   
 instance ShowP b =>  ShowP (Program b) where
   showp n (Program fs) = concat $ map (showp n) fs
@@ -425,10 +425,10 @@ index = SC comp where
 -- .. and the nesting primitive.  FIXME: This forks state.  There is
 -- currently no way around that.
 loop' i (SC comp) = SC comp' where
-  comp' s k = (LetLoop i fs : k s v) where
+  comp' s k = (LetLoop i fs : k s vs) where
     fs = comp s k'
-    k' _ as = [LetPrim $ Ret as]
-    v = []
+    k' s v = [LetPrim $ Ret v]
+    (LetPrim (Ret vs) : _) = reverse fs
 
 loop f = do
   i <- index
@@ -448,7 +448,7 @@ p a b = do
       d <- op [a,c]
       return [d]
   loop $ \j -> do
-    c <- op [a,b]
+    c <- op e
     d <- op [a,c]
     return e
 
