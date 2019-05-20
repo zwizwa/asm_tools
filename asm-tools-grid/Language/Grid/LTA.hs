@@ -7,7 +7,7 @@ This is a mini-language used to illustrate loop transformations,
 stripped from all non-essentials such as primtive operations and
 loop/grid sizes.
 
-These can then be lifted to langauges with more annotation.
+These can then be lifted to languages with more annotation.
 
 These are the (bi-directional) operations in the notation developed in
 rtl.txt, presented in the direction that is most common (i.e. is
@@ -64,14 +64,17 @@ j:
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
-
+{-# OPTIONS_GHC -Werror -fwarn-incomplete-patterns #-}
 
 module Language.Grid.LTA where
 
 import Data.Foldable
 import Data.Maybe
+import Data.Char
 import Control.Monad.Reader
-import Control.Monad.State
+-- import Control.Monad.State
+
+import Language.Grid.StateCont
 
 -- The central data type: nested loops of ANF / SSA sections.
 type Form' = Form Let'
@@ -83,13 +86,26 @@ data Form b = LetPrim b
 
 -- .. and contained type, which itself is split into a container of
 -- cell references.
-data Let c = Let c [c] deriving (Functor, Foldable, Traversable)
+data Let c = Let c [c]
+           | Ret [c]
+  deriving (Functor, Foldable, Traversable)
 type Let' = Let Cell
 
 -- .. and a cell type.
-data Cell = Cell Grid [Index]
-type Index = String
-type Grid  = String
+data Cell = Cell Grid [Ref]
+
+
+-- Distinguish the variable from the index operation (derived from
+-- variable).
+data Index = Index Int deriving Eq
+data Ref = Ref     Index
+         | BackRef Index -- Backwards reference for accumulators
+
+-- Note that only delay=1 accumulators are supported, but the code is
+-- structured to later add full triangle coverage.
+
+
+data Grid = Grid Int deriving Eq
 
 
 -- This makes it all fit in a convenient type class hierarchy, which
@@ -113,8 +129,8 @@ data Program b = Program [Form b]
 -- generalized folds for both components separately.
 
 -- The first fold is primitive and thus needs destructuring
-foldForm :: ([Form b] -> a')    -- foldList
-         -> (b -> a)            -- letPrim
+foldForm :: ([Form b] -> a')       -- foldList
+         -> (b -> a)               -- letPrim
          -> (Index -> a' -> a)  -- letLoop
          -> (Form b -> a)
 foldForm foldList letPrim letLoop = form where
@@ -153,17 +169,29 @@ tabs 0 = ""
 tabs n = "  " ++ (tabs $ n-1)
 
 instance Show Cell where
-  show (Cell a is) = a ++ concat is
+  show (Cell a is) = show a ++ (concat $ map show is)
+
+instance Show Index where
+  show (Index i) = [chr (ord 'i' + i)]
+
+instance Show Grid where
+  show (Grid n) = [chr (ord 'A' + n)]
+
+instance Show Ref where
+  show (Ref v) = show v
+  show (BackRef v) = show v ++ "'"
 
 instance ShowP b => ShowP (Form b) where
   showp n (LetLoop i p) =
     tabs n ++
-    i ++ ":\n" ++
+    show i ++ ":\n" ++
     showp (n+1) (Program p)
   showp n (LetPrim b) =
     tabs n ++ showp n b ++ "\n"
 
 instance Show c => ShowP (Let c) where
+  showp n (Ret cs) =
+    "ret" ++ (concat $ map ((" " ++) . show) cs)
   showp n (Let c cs) =
     show c ++ " <-" ++ (concat $ map ((" " ++) . show) cs)
   
@@ -213,10 +241,12 @@ interchange l = l
 
 -- Elimination works in two steps.  Create the elimination list..
 intermediates p = catMaybes $ toList $ fmap intermediate' $ annotate p where
-  intermediate' (ctx, l@(Let c@(Cell a is) cs)) =
+  intermediate' (ctx, Let c@(Cell a is) cs) =
     case escapes a ctx of
       False -> Just a
       True  -> Nothing
+  intermediate' (ctx, Ret _) = Nothing
+
 
 -- .. then modify the array dimensionality in a next step.
 eliminate p = fmap (fmap txCell) p where
@@ -229,34 +259,35 @@ eliminate p = fmap (fmap txCell) p where
 -- two passes.
 
 
--- ESCAPE ANALYSIS
+
+-- CONTEXT ANNOTATION
 
 -- Note that there is no context available in the Functor / Foldable /
 -- Traversable instances.  Since the standard container view is so
--- convenient, we stick to it as the main abstraction, and implement a
--- single annotation function that tags each element with its context.
+-- convenient, we stick to it as the main abstraction, and provide a
+-- mechanism that tags each element with its context.
 annotate :: Program b -> Program (Context b, b)
 
--- Each element has two pieces of information attached: the loop
--- nesting context describing the current cell to be updated in the
--- current block and the order in which the loops are nested, and the
--- "execution stack" which describes the future of the sequential
--- execution.
+-- Each element has two pieces of information attached: 1) the loop
+-- nesting context, and 2) the "stack" associated to the sequential
+-- exeuction context, describing what happens next.
 type Stack b   = [[Form b]]
 type Context b = ([Index],Stack b)
 
 -- Note that it is more convenient to define a single traversal
--- routine that annotates both pieces of information, and define
--- projections that strip away the unneeded data, e.g.
-annotate_i = (fmap (\((i,_),b) -> (i,b))) . annotate
-annotate_s = (fmap (\((_,s),b) -> (s,b))) . annotate
+-- routine that annotates everything we know, and define projections
+-- that strip away the unneeded data, e.g.
+annotate' proj p = (fmap (\(a,b) -> (proj a, b))) . annotate
+annotate_i = annotate' fst
+annotate_s = annotate' snd
+
 
 
 -- To implement the annotation, a Reader is used to contain the
 -- current context during traversal.  The code is split up into the
 -- concrete annotation wrapper..
 annotate p = p' where
-  p' = runReader (annotate' pushi pushp add_context p) ([],[]) 
+  p' = runReader (annotateM pushi pushp add_context p) ([],[]) 
 
   pushp p = withReader (\(is, ps) -> (is, p:ps))
   pushi i = withReader (\(is, ps) -> (i:is, ps))
@@ -269,10 +300,11 @@ annotate p = p' where
 -- recursion pattern associated directly with the 4 constructors,
 -- sprinkled with pushi, pushp to accumulate context data that can then
 -- picked up by f.
-annotate' pushi pushp f (Program p) = fmap Program $ forms p where
-
+annotateM pushi pushp add_context (Program p) =
+  fmap Program $ forms p where
+  
   form (LetPrim b) = do
-    b' <- f b
+    b' <- add_context b
     return $ LetPrim b'
 
   form (LetLoop i p) = do
@@ -288,6 +320,8 @@ annotate' pushi pushp f (Program p) = fmap Program $ forms p where
     return (f':fs')
 
 
+-- ESCAPE ANALYSIS
+
 -- Given (Context Let, Let) at each binding site, the context can be
 -- used to perform escape analysis.
 
@@ -297,6 +331,7 @@ annotate' pushi pushp f (Program p) = fmap Program $ forms p where
 escapes :: Grid -> Context Let' -> Bool
 escapes a (_,(_:future_after_current)) =
   referenced a $ concat future_after_current
+escapes _ _ = error "escapes: empty stack"
 
 -- To check referencing, check each primtive's dependency list.  Note
 -- that this has quadratic complexity in the most commmon case: a
@@ -306,33 +341,163 @@ escapes a (_,(_:future_after_current)) =
 referenced :: Grid -> [Form Let'] -> Bool
 referenced a fs = or $ map checkPrim prims where
   prims = toList $ Program $ fs
-  checkPrim (Let _ cs) = or $ map checkCell cs
+  checkPrim p = or $ map checkCell $ refs p
   checkCell (Cell a' _) = a' == a
+  refs (Let _ cs) = cs
+  refs (Ret cs) = cs
+
+
+-- ACCUMULATOR DISCOVERY
+
+-- Similar to how escape analysis can identify grid dimensions that
+-- can be flattened into a local variable, accumulator discovery
+-- identifies dimensions in escaping variables that can be flattened
+-- because they are used only as accumulators.
+
+
+-- ...
 
 
 
 
+-- MONAD FORM
+
+-- Represent the language in Monad form.
+
+-- The state-continuation monad is a good model for language with
+-- nested scope and sharing.  However, like any abstraction based on
+-- continuations, it takes some getting used to.
+
+-- The continuation component allows the abstraction of the variable
+-- binding mechanism, while the state component allows threading of a
+-- dictionary.
+
+-- See StateCont.hs for a direct implementation (not using monad
+-- transformers).  SC takes 3 parameters.  The "user interface" is
+-- just the monadic type:
+type M t = SC S R t
+
+-- The threaded state S is bookkeeping state used by the compiler.  In
+-- our case, just the register allocator count for grids and loop
+-- variables.
+type S = (Int,Int)
+
+-- and the return type is the value of the top level monadic
+-- expression, which is a compiled program.
+type R = [Form']
+
+
+-- Converting the monadic form to a program then boils down to
+-- providing the root continuation, and a seed for the state.
+runSC (SC comp) = Program $ comp (0,0) k where
+  k s v = [LetPrim $ Ret v]
 
 
 
+-- Primitives then need to be implemented in CPS form
 
+
+-- To implement variable binding we implement variable allocation and
+-- binding insertion separately.  Variable allocation is
+-- straightforward...
+grid = SC comp where
+  comp (g, i) k = k s' r where
+    r = Cell (Grid g) []  -- Allocate a new grid register
+    s' = (g + 1, i)       -- Update the allocator state
+
+-- .. but let insertion is the tricky bit, as it uses the continuation
+-- in a non-trivial way.
+let' r args = SC comp where
+  comp s k = (LetPrim $ Let r args) : k s r 
+
+-- These two then combine into the user interface.
+op args = do
+  r <- grid
+  let' r args
+
+ 
+-- Similar for loop nesting there is loop variable allocation..
+index = SC comp where
+  comp (g, i) k = k s' r where
+    r = Index i       -- Allocate a new grid register
+    s' = (g, i + 1)   -- Update the allocator state
+
+-- .. and the nesting primitive.  FIXME: This forks state.  There is
+-- currently no way around that.
+loop' i (SC comp) = SC comp' where
+  comp' s k = (LetLoop i fs : k s v) where
+    fs = comp s k'
+    k' _ as = [LetPrim $ Ret as]
+    v = []
+
+loop f = do
+  i <- index
+  loop' i $ f i
+
+get = SC comp where
+  comp s k = k s s
+
+
+
+-- Example
+p :: Cell -> Cell -> M [Cell]
+p a b = do
+  e <- loop $ \i -> do
+    loop $ \j -> do
+      c <- op [a,b]
+      d <- op [a,c]
+      return [d]
+  loop $ \j -> do
+    c <- op [a,b]
+    d <- op [a,c]
+    return e
+
+testSC =
+  runSC $ do
+  a <- grid
+  b <- grid
+  p a b
+
+  
+        
 -- TEST
 
-a1 a o   = Cell a [i]
-a2 a i j = Cell a [i,j]
 
-i = "i"
-j = "j"
 
-loop' i fs = LetLoop i fs
-let' c a b = LetPrim $ Let c [a,b]
+
+
+-- Some notational shortcuts.  The data structures are optimized for
+-- analysis, not necessarily for creating examples.
+
+-- Notation: make it monadic, such that <- can be used for bindings.
+
+ref  a is = Cell (Grid a) $ map Ref is
+ref' a is = Cell (Grid a) $ map BackRef is
+
+[a,b,c,d,e] = map ref [0,1,2,3,4]
+[a'] = map ref' [0]
+
+
+i  = Index 0
+j  = Index 1
+
+loop_ i fs = LetLoop i fs
+let_ c a b = LetPrim $ Let c [a,b]
 
 test_val' =
   Program $
-  [loop' i [loop' j [let' (c i j) (a i j) (b i j),
-                     let' (d i j) (c i j) (a i j)]],
-   loop' i [loop' j [let' (e i j) (a i j) (d i j)]]]
-  where [a,b,c,d,e] = map a2 ["A","B","C","D","E"]
+  [loop_ i [loop_ j [let_ (c[i,j]) (a[i,j]) (b[i,j]),
+                     let_ (d[i,j]) (c[i,j]) (a[i,j])]],
+   loop_ i [loop_ j [let_ (e[i,j]) (a[i,j]) (d[i,j])]]]
+
+
+test_val'' =
+  Program $
+  [loop_ i [let_ (a[i]) (a'[i]) (b[i])],
+   loop_ j [let_ (d[j]) (a[i])  (c[j])]]
+
+
+
 
 -- test_val = fuse $ fuse test_val'
 -- test_val = toList test_val'
@@ -340,4 +505,9 @@ test_val' =
 
 -- test_val = annotate_i test_val'
 -- test_val = intermediates test_val'
-test_val = eliminate test_val'
+-- test_val = eliminate test_val'
+
+-- test_val = test_val''
+
+
+test_val = testSC
