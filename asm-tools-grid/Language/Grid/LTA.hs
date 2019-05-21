@@ -60,7 +60,10 @@ j:
 
 -}
 
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+--{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -71,8 +74,9 @@ module Language.Grid.LTA where
 import Data.Foldable
 import Data.Maybe
 import Data.Char
+import Control.Monad.Writer
 import Control.Monad.Reader
--- import Control.Monad.State
+import Control.Monad.State
 
 import Language.Grid.StateCont
 
@@ -364,83 +368,46 @@ referenced a fs = or $ map checkPrim prims where
 
 -- Represent the language in Monad form.
 
--- The state-continuation monad is a good model for language with
--- nested scope and sharing.  However, like any abstraction based on
--- continuations, it takes some getting used to.
+-- Keep it simple and build up the data structure using a combination
+-- of Reader, Writer and State.
 
--- The continuation component allows the abstraction of the variable
--- binding mechanism, while the state component allows threading of a
--- dictionary.
+type E  = [Index]    -- Loop nesting environment
+type Bs = [Form']    -- Current bindings list
+type S  = (Int,Int)  -- Grid and Index allocator state
 
--- See StateCont.hs for a direct implementation (not using monad
--- transformers).  SC takes 3 parameters.  The "user interface" is
--- just the monadic type:
-type M t = SC S R t
+newtype M t = M { unM :: ReaderT E (WriterT Bs (State S)) t } deriving
+  (Functor, Applicative, Monad,
+   MonadReader E,
+   MonadWriter Bs,
+   MonadState  S)
 
--- The threaded state S is bookkeeping state used by the compiler.  In
--- our case, just the register allocator count for grids and loop
--- variables.
-type S = (Int,Int)
+runM :: M t -> E -> S -> ((t, Bs), S)
+runM m env state = runState (runWriterT (runReaderT (unM m) env)) state
 
--- and the return type is the value of the top level monadic
--- expression, which is a compiled program.
-type R = [Form']
+runM' m = Program $ fs where
+  ((out,fs),state') = runM m [] (0,0)
+  
 
+grid :: M Cell
+grid  = do (g,i) <- get; put (g+1, i); return $ Cell (Grid g) []
+index = do (g,i) <- get; put (g, i+1); return $ Index i
 
--- Converting the monadic form to a program then boils down to
--- providing the root continuation, and a seed for the state.
-runSC (SC comp) = Program $ comp (0,0) k where
-  k s v = [LetPrim $ Ret v]
-
-
-
--- Primitives then need to be implemented in CPS form
-
-
--- To implement variable binding we implement variable allocation and
--- binding insertion separately.  Variable allocation is
--- straightforward...
-grid = SC comp where
-  comp (g, i) k = k s' r where
-    r = Cell (Grid g) []  -- Allocate a new grid register
-    s' = (g + 1, i)       -- Update the allocator state
-
--- .. but let insertion is the tricky bit, as it uses the continuation
--- in a non-trivial way.
-let' r args = SC comp where
-  comp s k = (LetPrim $ Let r args) : k s r 
-
--- These two then combine into the user interface.
 op args = do
   r <- grid
-  let' r args
-
- 
--- Similar for loop nesting there is loop variable allocation..
-index = SC comp where
-  comp (g, i) k = k s' r where
-    r = Index i       -- Allocate a new grid register
-    s' = (g, i + 1)   -- Update the allocator state
-
--- .. and the nesting primitive.  FIXME: This forks state.  There is
--- currently no way around that.
-loop' i (SC comp) = SC comp' where
-  comp' s k = (LetLoop i fs : k s vs) where
-    fs = comp s k'
-    k' s v = [LetPrim $ Ret v]
-    (LetPrim (Ret vs) : _) = reverse fs
+  tell $ [LetPrim $ Let r args]
+  return r
 
 loop f = do
-  i <- index
-  loop' i $ f i
-
-get = SC comp where
-  comp s k = k s s
-
-
+  -- Run the subform, threading state and augmenting environment.
+  i <- index ; is <- ask ; state <- get
+  let ((out, fs), state') = runM (f i) (i:is) state
+  -- Rethread the state and save the compiled form.
+  put state'
+  tell $ [LetLoop i fs]
+  return out
 
 -- Example
-p :: Cell -> Cell -> M [Cell]
+-- p :: Cell -> Cell -> M' r [Cell]
 p a b = do
   e <- loop $ \i -> do
     loop $ \j -> do
@@ -452,13 +419,11 @@ p a b = do
     d <- op [a,c]
     return e
 
-testSC =
-  runSC $ do
+
+testM = runM' $ do
   a <- grid
   b <- grid
   p a b
-
-  
         
 -- TEST
 
@@ -510,4 +475,4 @@ test_val'' =
 -- test_val = test_val''
 
 
-test_val = testSC
+test_val = testM
