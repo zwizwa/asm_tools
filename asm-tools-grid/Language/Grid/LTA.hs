@@ -71,6 +71,7 @@ j:
 
 module Language.Grid.LTA where
 
+import Data.Functor.Identity
 import Data.Foldable
 import Data.Maybe
 import Data.Char
@@ -84,27 +85,43 @@ import Language.Grid.StateCont
 type Form' = Form Let'
 
 -- The representation is split into container,,
-data Form b = LetPrim b
-            | LetLoop Index [Form b]
-            deriving (Functor, Foldable, Traversable)
+-- b is binding type
+data Form b =
+  LetPrim b
+  | LetLoop Index [Form b]
+  deriving (Functor, Foldable, Traversable)
 
 -- .. and contained type, which itself is split into a container of
 -- cell references.
-data Let c = Let c [c]
-           | Ret [c]
+-- Fixme: binding and reference are not the same
+
+-- i is grid index type
+data Let i = Let (DefCell i) [RefCell i]
+           | Ret [RefCell i]
   deriving (Functor, Foldable, Traversable)
-type Let' = Let Cell
+type Let' = Let Index
 
--- .. and a cell type.
-data Cell = Cell Grid [Ref]
+-- .. and a cell type.  This I found tricky to derive: it links the
+-- Grid entity (e.g. grid name), to the index variable type, and the
+-- type of transformation perfomed on the index.
 
+data Cell t i = Cell Grid [t i] deriving (Functor, Foldable, Traversable)
+type DefCell  = Cell Def
+type RefCell  = Cell Ref
+
+-- A definition always uses unadulterated index variables.  I.e. you
+-- can't just arbitrarily write into an array.  Note that this is just
+-- the Identity functor with some printing attached to it.
+data Def t = Def t deriving (Functor, Foldable, Traversable)
 
 -- Distinguish the variable from the index operation (derived from
 -- variable).
 data Index = Index Int deriving Eq
-data Ref = Ref     Index
-         | BackRef Index -- Backwards reference for accumulators
+type Ref'  = Ref Index
 
+data Ref i = Ref i
+           | BackRef i -- Backwards reference for accumulators
+           deriving (Functor, Foldable, Traversable)
 -- Note that only delay=1 accumulators are supported, but the code is
 -- structured to later add full triangle coverage.
 
@@ -172,7 +189,7 @@ class ShowP t where
 tabs 0 = ""
 tabs n = "  " ++ (tabs $ n-1)
 
-instance Show Cell where
+instance Show (t i) => Show (Cell t i) where
   show (Cell a is) = show a ++ (concat $ map show is)
 
 instance Show Index where
@@ -181,9 +198,13 @@ instance Show Index where
 instance Show Grid where
   show (Grid n) = [chr (ord 'A' + n)]
 
-instance Show Ref where
+instance Show i => Show (Ref i) where
   show (Ref v) = show v
   show (BackRef v) = show v ++ "'"
+
+instance Show i => Show (Def i) where
+  show (Def v) = show v
+
 
 instance ShowP b => ShowP (Form b) where
   showp n (LetLoop i p) =
@@ -253,11 +274,11 @@ intermediates p = catMaybes $ toList $ fmap intermediate' $ annotate p where
 
 
 -- .. then modify the array dimensionality in a next step.
-eliminate p = fmap (fmap txCell) p where
-  isIntermediate a = elem a $ intermediates p
-  txCell c@(Cell a is) =
-    if isIntermediate a then (Cell a []) else c
-
+-- eliminate p = fmap (fmap txCell) p where
+--   isIntermediate a = elem a $ intermediates p
+--   txCell c@(Cell a is) =
+--     if isIntermediate a then (Cell a []) else c
+eliminate = undefined
 
 -- FIXME: It's probably possible to do that circularly instead of in
 -- two passes.
@@ -343,12 +364,15 @@ escapes _ _ = error "escapes: empty stack"
 -- traversed to determine that there are no references.  Is there a
 -- better way?
 referenced :: Grid -> [Form Let'] -> Bool
-referenced a fs = or $ map checkPrim prims where
-  prims = toList $ Program $ fs
-  checkPrim p = or $ map checkCell $ refs p
-  checkCell (Cell a' _) = a' == a
-  refs (Let _ cs) = cs
-  refs (Ret cs) = cs
+-- referenced a fs = or $ map checkPrim prims where
+--   prims = toList $ Program $ fs
+--   checkPrim p = or $ map checkCell $ map unref $ refs p
+--   checkCell (Cell a' _) = a' == a
+--   refs (Let _ cs) = cs
+--   refs (Ret cs)   = cs
+--   unref (Ref c) = c
+--   unref (BackRef c) = c
+referenced = undefined  
 
 
 -- ACCUMULATOR DISCOVERY
@@ -388,14 +412,17 @@ runM' m = Program $ fs where
   ((out,fs),state') = runM m [] (0,0)
   
 
-grid :: M Cell
-grid  = do (g,i) <- get; put (g+1, i); return $ Cell (Grid g) []
+grid  = do (g,i) <- get; put (g+1, i); return $ Grid g
 index = do (g,i) <- get; put (g, i+1); return $ Index i
 
 op args = do
-  r <- grid
-  tell $ [LetPrim $ Let r args]
-  return r
+  g <- grid
+  e <- ask
+  -- Store the definition in the dictionary,...
+  let r t = Cell g $ map t $ reverse e
+  tell $ [LetPrim $ Let (r Def) args]
+  -- ... but provide a reference to the program.
+  return $ r Ref
 
 loop f = do
   -- Run the subform, threading state and augmenting environment.
@@ -405,6 +432,7 @@ loop f = do
   put state'
   tell $ [LetLoop i fs]
   return out
+
 
 -- Example
 -- p :: Cell -> Cell -> M' r [Cell]
@@ -423,7 +451,7 @@ p a b = do
 testM = runM' $ do
   a <- grid
   b <- grid
-  p a b
+  p (Cell a []) (Cell b [])
         
 -- TEST
 
@@ -449,17 +477,17 @@ j  = Index 1
 loop_ i fs = LetLoop i fs
 let_ c a b = LetPrim $ Let c [a,b]
 
-test_val' =
-  Program $
-  [loop_ i [loop_ j [let_ (c[i,j]) (a[i,j]) (b[i,j]),
-                     let_ (d[i,j]) (c[i,j]) (a[i,j])]],
-   loop_ i [loop_ j [let_ (e[i,j]) (a[i,j]) (d[i,j])]]]
+-- test_val' =
+--   Program $
+--   [loop_ i [loop_ j [let_ (c[i,j]) (a[i,j]) (b[i,j]),
+--                      let_ (d[i,j]) (c[i,j]) (a[i,j])]],
+--    loop_ i [loop_ j [let_ (e[i,j]) (a[i,j]) (d[i,j])]]]
 
 
-test_val'' =
-  Program $
-  [loop_ i [let_ (a[i]) (a'[i]) (b[i])],
-   loop_ j [let_ (d[j]) (a[i])  (c[j])]]
+-- test_val'' =
+--   Program $
+--   [loop_ i [let_ (a[i]) (a'[i]) (b[i])],
+--    loop_ j [let_ (d[j]) (a[i])  (c[j])]]
 
 
 
@@ -469,7 +497,20 @@ test_val'' =
 
 
 -- test_val = annotate_i test_val'
--- test_val = intermediates test_val'
+-- test_val = intermediates test_val'test_val' =
+--   Program $
+--   [loop_ i [loop_ j [let_ (c[i,j]) (a[i,j]) (b[i,j]),
+--                      let_ (d[i,j]) (c[i,j]) (a[i,j])]],
+--    loop_ i [loop_ j [let_ (e[i,j]) (a[i,j]) (d[i,j])]]]
+
+
+-- test_val'' =
+--   Program $
+--   [loop_ i [let_ (a[i]) (a'[i]) (b[i])],
+--    loop_ j [let_ (d[j]) (a[i])  (c[j])]]
+
+
+
 -- test_val = eliminate test_val'
 
 -- test_val = test_val''
