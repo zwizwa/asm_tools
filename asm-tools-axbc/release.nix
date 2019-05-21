@@ -3,10 +3,8 @@ let
     packageOverrides = pkgs: rec {
       haskellPackages = pkgs.haskellPackages.override {
         overrides = haskellPackagesNew: haskellPackagesOld: rec {
-          asm-tools-edsp =
+          asm-tools-axbc =
             haskellPackagesNew.callPackage ./default.nix { };
-          asm-tools =
-            haskellPackagesNew.callPackage ./../asm-tools/default.nix { };
         };
       };
     };
@@ -15,5 +13,5 @@ let
   pkgs = import ../nixpkgs { inherit config; };
 
 in
-  pkgs.haskellPackages.asm-tools-edsp
+  pkgs.haskellPackages.asm-tools-axbc
 

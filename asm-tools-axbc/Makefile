@@ -4,7 +4,7 @@ all: release
 clean:
 	rm -rf dist default.nix
 
-default.nix: asm-tools-edsp.cabal
+default.nix: asm-tools-axbc.cabal
 	cabal2nix . >$@
 
 shell: default.nix
