@@ -274,15 +274,16 @@ intermediates p = catMaybes $ toList $ fmap intermediate' $ annotate p where
 
 
 -- .. then modify the array dimensionality in a next step.
+-- FIXME: This broke when refactoring types, but will no longer be
+-- used in favor of gathering an indirect per array annotation
+-- dictionary.
 -- eliminate p = fmap (fmap txCell) p where
 --   isIntermediate a = elem a $ intermediates p
 --   txCell c@(Cell a is) =
 --     if isIntermediate a then (Cell a []) else c
 eliminate = undefined
 
--- FIXME: It's probably possible to do that circularly instead of in
--- two passes.
-
+-- 
 
 
 -- CONTEXT ANNOTATION
@@ -364,16 +365,13 @@ escapes _ _ = error "escapes: empty stack"
 -- traversed to determine that there are no references.  Is there a
 -- better way?
 referenced :: Grid -> [Form Let'] -> Bool
--- referenced a fs = or $ map checkPrim prims where
---   prims = toList $ Program $ fs
---   checkPrim p = or $ map checkCell $ map unref $ refs p
---   checkCell (Cell a' _) = a' == a
---   refs (Let _ cs) = cs
---   refs (Ret cs)   = cs
---   unref (Ref c) = c
---   unref (BackRef c) = c
-referenced = undefined  
-
+referenced a fs = or $ map checkPrim prims where
+  prims = toList $ Program $ fs
+  checkPrim p = or $ map checkCell $ cells p
+  checkCell (Cell a' _) = a' == a
+  cells (Ret rs)   = rs
+  cells (Let _ rs) = rs
+  
 
 -- ACCUMULATOR DISCOVERY
 
@@ -421,7 +419,8 @@ op args = do
   -- Store the definition in the dictionary,...
   let r t = Cell g $ map t $ reverse e
   tell $ [LetPrim $ Let (r Def) args]
-  -- ... but provide a reference to the program.
+  -- ... but provide a reference to the program.  This allows
+  -- operators on references to be used.
   return $ r Ref
 
 loop f = do
@@ -442,16 +441,19 @@ p a b = do
       c <- op [a,b]
       d <- op [a,c]
       return [d]
-  loop $ \j -> do
-    c <- op e
-    d <- op [a,c]
-    return e
+  loop $ \i -> do
+    loop $ \j -> do
+      c <- op e
+      d <- op [a,c]
+      return e
 
 
 testM = runM' $ do
+  i <- fmap Ref index
+  j <- fmap Ref index
   a <- grid
   b <- grid
-  p (Cell a []) (Cell b [])
+  p (Cell a [i,j]) (Cell b [i,j])
         
 -- TEST
 
