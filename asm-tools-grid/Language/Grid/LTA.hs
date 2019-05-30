@@ -78,6 +78,7 @@ import Data.Char
 import Control.Monad.Writer
 import Control.Monad.Reader
 import Control.Monad.State
+import Control.Monad.Fail
 
 import Language.Grid.StateCont
 
@@ -95,8 +96,10 @@ data Form b =
 -- cell references.
 -- Fixme: binding and reference are not the same
 
+type Opcode = String
+
 -- i is grid index type
-data Let i = Let (DefCell i) [RefCell i]
+data Let i = Let (DefCell i) String [RefCell i]
            | Ret [RefCell i]
   deriving (Functor, Foldable, Traversable)
 type Let' = Let Index
@@ -216,7 +219,7 @@ instance ShowP b => ShowP (Form b) where
 
 instance Show c => ShowP (Let c) where
   showp n (Ret cs)   =  "ret" ++ showArgs cs
-  showp n (Let c cs) =  show c ++ " <-" ++ showArgs cs
+  showp n (Let c opc cs) =  show c ++ " <- " ++ opc ++ showArgs cs
 
 showArgs cs = concat $ map ((" " ++) . show) cs
   
@@ -237,7 +240,7 @@ instance ShowP b =>  ShowP (Program b) where
 fuse p = Program $ foldProgram LetPrim LetLoop cons [] p where
   cons h@(LetLoop i1 fs1) t@((LetLoop i2 fs2):t') =
     case i1 == i2 of
-      True  -> (LetLoop i (fs1 ++ fs2)) : t'
+      True  -> (LetLoop i1 (fs1 ++ fs2)) : t'
       False -> h:t
   cons a b = a:b
 
@@ -266,7 +269,7 @@ interchange l = l
 
 -- Elimination works in two steps.  Create the elimination list..
 intermediates p = catMaybes $ toList $ fmap intermediate' $ annotate p where
-  intermediate' (ctx, Let c@(Cell a is) cs) =
+  intermediate' (ctx, Let c@(Cell a is) _ cs) =
     case escapes a ctx of
       False -> Just a
       True  -> Nothing
@@ -370,7 +373,7 @@ referenced a fs = or $ map checkPrim prims where
   checkPrim p = or $ map checkCell $ cells p
   checkCell (Cell a' _) = a' == a
   cells (Ret rs)   = rs
-  cells (Let _ rs) = rs
+  cells (Let _ _ rs) = rs
   
 
 -- ACCUMULATOR DISCOVERY
@@ -403,6 +406,9 @@ newtype M t = M { unM :: ReaderT E (WriterT Bs (State S)) t } deriving
    MonadWriter Bs,
    MonadState  S)
 
+instance MonadFail M where
+  fail str = error $ "LTA.M match error: " ++ str
+
 runM :: M t -> E -> S -> ((t, Bs), S)
 runM m env state = runState (runWriterT (runReaderT (unM m) env)) state
 
@@ -413,16 +419,20 @@ runM' m = Program $ fs where
 grid  = do (g,i) <- get; put (g+1, i); return $ Grid g
 index = do (g,i) <- get; put (g, i+1); return $ Index i
 
-op args = do
+op opc args = do
   g <- grid
   e <- ask
   -- Store the definition in the dictionary,...
   let r t = Cell g $ map t $ reverse e
-  tell $ [LetPrim $ Let (r Def) args]
+  tell $ [LetPrim $ Let (r Def) opc args]
   -- ... but provide a reference to the program.  This allows
   -- operators on references to be used.
   return $ r Ref
 
+-- FIXME: The important part here is really the return type of the
+-- loop.  It should likely be a phantom type.
+
+loop :: (Index -> M [()]) -> M [()]
 loop f = do
   -- Run the subform, threading state and augmenting environment.
   i <- index ; is <- ask ; state <- get
@@ -432,20 +442,22 @@ loop f = do
   tell $ [LetLoop i fs]
   return out
 
+ref _ = return ()
+op2 _ _ _ = return ()
 
 -- Example
 -- p :: Cell -> Cell -> M' r [Cell]
 p a b = do
-  e <- loop $ \i -> do
+  [d] <- loop $ \i -> do
     loop $ \j -> do
-      c <- op [a,b]
-      d <- op [a,c]
+      c <- op2 "mul" (ref a [i, j]) (ref b [i, j])
+      d <- op2 "mul" (ref a [i, j]) (ref c [i, j])
       return [d]
   loop $ \i -> do
     loop $ \j -> do
-      c <- op e
-      d <- op [a,c]
-      return e
+      c <- op2 "mul" (ref d [i, j]) (ref d [i, j])
+      d <- op2 "mul" (ref c [i, j]) (ref c [i, j])
+      return [d]
 
 
 testM = runM' $ do
@@ -466,18 +478,18 @@ testM = runM' $ do
 
 -- Notation: make it monadic, such that <- can be used for bindings.
 
-ref  a is = Cell (Grid a) $ map Ref is
-ref' a is = Cell (Grid a) $ map BackRef is
+--ref  a is = Cell (Grid a) $ map Ref is
+--ref' a is = Cell (Grid a) $ map BackRef is
 
-[a,b,c,d,e] = map ref [0,1,2,3,4]
-[a'] = map ref' [0]
+--[a,b,c,d,e] = map ref [0,1,2,3,4]
+--[a'] = map ref' [0]
 
 
-i  = Index 0
-j  = Index 1
+--i  = Index 0
+--j  = Index 1
 
-loop_ i fs = LetLoop i fs
-let_ c a b = LetPrim $ Let c [a,b]
+--loop_ i fs = LetLoop i fs
+--let_ c a b = LetPrim $ Let c [a,b]
 
 -- test_val' =
 --   Program $
@@ -519,3 +531,4 @@ let_ c a b = LetPrim $ Let c [a,b]
 
 
 test_val = testM
+
