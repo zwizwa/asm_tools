@@ -67,6 +67,7 @@ j:
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Werror -fwarn-incomplete-patterns #-}
 
 module Language.Grid.LTA where
@@ -80,7 +81,6 @@ import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Fail
 
-import Language.Grid.StateCont
 
 -- The central data type: nested loops of ANF / SSA sections.
 type Form' = Form Let'
@@ -105,7 +105,7 @@ data Let i = Let (DefCell i) String [RefCell i]
 type Let' = Let Index
 
 -- .. and a cell type.  This I found tricky to derive: it links the
--- Grid entity (e.g. grid name), to the index variable type, and the
+-- Grid entity (e.g. grid name), tp[o the index variable type, and the
 -- type of transformation perfomed on the index.
 
 data Cell t i = Cell Grid [t i] deriving (Functor, Foldable, Traversable)
@@ -388,147 +388,26 @@ referenced a fs = or $ map checkPrim prims where
 
 
 
+-- Tests
 
--- MONAD FORM
+-- Note: 2019/6/2: Taking out the wrappers to generate the language.
+-- For documentation purposes, it makes more sense to use the
+-- constructors directly.
 
--- Represent the language in Monad form.
+-- See Loop.hs for the parallel development of the monadic Language,
+-- which currently needs to diverge structure-wise from what is in
+-- here.
 
--- Keep it simple and build up the data structure using a combination
--- of Reader, Writer and State.
-
-type E  = [Index]    -- Loop nesting environment
-type Bs = [Form']    -- Current bindings list
-type S  = (Int,Int)  -- Grid and Index allocator state
-
-newtype M t = M { unM :: ReaderT E (WriterT Bs (State S)) t } deriving
-  (Functor, Applicative, Monad,
-   MonadReader E,
-   MonadWriter Bs,
-   MonadState  S)
-
-instance MonadFail M where
-  fail str = error $ "LTA.M match error: " ++ str
-
-runM :: M t -> E -> S -> ((t, Bs), S)
-runM m env state = runState (runWriterT (runReaderT (unM m) env)) state
-
-runM' m = Program $ fs where
-  ((out,fs),state') = runM m [] (0,0)
+test_val =
+  Program $
+  [LetLoop (Index 0) $
+   [LetPrim $
+    Let (Cell (Grid 2) [Def $ Index 0])
+    "opc"
+    [Cell (Grid 0) [Ref $ Index 0],
+     Cell (Grid 1) [Ref $ Index 0]
+    ],
+    LetPrim $
+    Ret $ [Cell (Grid 2) [Ref $ Index 0]]
+    ]]
   
-
-grid  = do (g,i) <- get; put (g+1, i); return $ Grid g
-index = do (g,i) <- get; put (g, i+1); return $ Index i
-
-op opc args = do
-  g <- grid
-  e <- ask
-  -- Store the definition in the dictionary,...
-  let r t = Cell g $ map t $ reverse e
-  tell $ [LetPrim $ Let (r Def) opc args]
-  -- ... but provide a reference to the program.  This allows
-  -- operators on references to be used.
-  return $ r Ref
-
--- FIXME: The important part here is really the return type of the
--- loop.  It should likely be a phantom type.
-
-loop :: (Index -> M [()]) -> M [()]
-loop f = do
-  -- Run the subform, threading state and augmenting environment.
-  i <- index ; is <- ask ; state <- get
-  let ((out, fs), state') = runM (f i) (i:is) state
-  -- Rethread the state and save the compiled form.
-  put state'
-  tell $ [LetLoop i fs]
-  return out
-
-ref _ = return ()
-op2 _ _ _ = return ()
-
--- Example
--- p :: Cell -> Cell -> M' r [Cell]
-p a b = do
-  [d] <- loop $ \i -> do
-    loop $ \j -> do
-      c <- op2 "mul" (ref a [i, j]) (ref b [i, j])
-      d <- op2 "mul" (ref a [i, j]) (ref c [i, j])
-      return [d]
-  loop $ \i -> do
-    loop $ \j -> do
-      c <- op2 "mul" (ref d [i, j]) (ref d [i, j])
-      d <- op2 "mul" (ref c [i, j]) (ref c [i, j])
-      return [d]
-
-
-testM = runM' $ do
-  i <- fmap Ref index
-  j <- fmap Ref index
-  a <- grid
-  b <- grid
-  p (Cell a [i,j]) (Cell b [i,j])
-        
--- TEST
-
-
-
-
-
--- Some notational shortcuts.  The data structures are optimized for
--- analysis, not necessarily for creating examples.
-
--- Notation: make it monadic, such that <- can be used for bindings.
-
---ref  a is = Cell (Grid a) $ map Ref is
---ref' a is = Cell (Grid a) $ map BackRef is
-
---[a,b,c,d,e] = map ref [0,1,2,3,4]
---[a'] = map ref' [0]
-
-
---i  = Index 0
---j  = Index 1
-
---loop_ i fs = LetLoop i fs
---let_ c a b = LetPrim $ Let c [a,b]
-
--- test_val' =
---   Program $
---   [loop_ i [loop_ j [let_ (c[i,j]) (a[i,j]) (b[i,j]),
---                      let_ (d[i,j]) (c[i,j]) (a[i,j])]],
---    loop_ i [loop_ j [let_ (e[i,j]) (a[i,j]) (d[i,j])]]]
-
-
--- test_val'' =
---   Program $
---   [loop_ i [let_ (a[i]) (a'[i]) (b[i])],
---    loop_ j [let_ (d[j]) (a[i])  (c[j])]]
-
-
-
-
--- test_val = fuse $ fuse test_val'
--- test_val = toList test_val'
-
-
--- test_val = annotate_i test_val'
--- test_val = intermediates test_val'test_val' =
---   Program $
---   [loop_ i [loop_ j [let_ (c[i,j]) (a[i,j]) (b[i,j]),
---                      let_ (d[i,j]) (c[i,j]) (a[i,j])]],
---    loop_ i [loop_ j [let_ (e[i,j]) (a[i,j]) (d[i,j])]]]
-
-
--- test_val'' =
---   Program $
---   [loop_ i [let_ (a[i]) (a'[i]) (b[i])],
---    loop_ j [let_ (d[j]) (a[i])  (c[j])]]
-
-
-
--- test_val = eliminate test_val'
-
--- test_val = test_val''
-
-
-test_val = testM
-
