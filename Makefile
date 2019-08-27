@@ -1,3 +1,6 @@
+# FIXME: Get rid of this in favor of ExoFile incremental approach.
+
+
 # Wrapper Makefile.
 # See https://github.com/Gabriel439/haskell-nix
 # This needs nix, cabal2nix, nix-prefetch-git:

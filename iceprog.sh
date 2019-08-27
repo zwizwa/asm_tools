@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# See updated version in ~/exo/ghcid/fpga/iceprog.sh
+
 # Small wrapper for zwizwa.
 # FIXME: Find a better way to standardize this.
 

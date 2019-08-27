@@ -6,7 +6,7 @@ let
           asm-tools-seq =
             haskellPackagesNew.callPackage ./default.nix { };
           asm-tools =
-            haskellPackagesNew.callPackage ./../asm-tools/default.nix { };
+            haskellPackagesNew.callPackage ../asm-tools/default.nix { };
         };
       };
     };

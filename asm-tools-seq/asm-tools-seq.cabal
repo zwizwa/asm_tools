@@ -30,8 +30,9 @@ Library
                      Language.Seq.Static
                      Language.Seq.Syntax
                      Language.Seq.Term
-                     Language.Seq.Test.Tools
-                     Language.Seq.Test.Lib
                      Language.Seq.TH
                      Language.Seq.Verilog
                      Language.Seq.VerilogRun
+                     Language.Seq.Test.Tools
+                     Language.Seq.Test.Lib
+                     Language.Seq.Examples.FSoc

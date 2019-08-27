@@ -269,13 +269,16 @@ writeProgram :: String -> Forth.Program -> IO ()
 writeProgram name lst = do
   ByteString.writeFile name $ packProgram lst
 
+
+
 -- packProgram returns binary data, encoded such that it can be sent
 -- over SPI using an 8-bit transfer, most significant bit sent
 -- first. (D7-D0, the most common configuration and what is used by
 -- iCE40 boot).  The SPI receiver is implemented as 16-bit, most
 -- significant bit first.  This means the data inside the binary is
 -- 16bit big endian.
-  
+
+packProgram :: Forth.Program -> ByteString.ByteString
 packProgram = toLazyByteString . mconcat . (map (putWord16be . fromIntegral))
 
 -- Undo packProgram to recover the word list.

@@ -54,15 +54,29 @@ import Control.Monad hiding (forever)
 
 f_soc_v = Verilog.fpgaVerilog "f_soc" f_soc
 
+f_soc_pcf csv = do
+  board <- CSV.readTagged id csv
+  let pin = CSV.ff (\[k,_,v,_] -> (k,v)) board
+  return $ Verilog.fpgaPCF f_soc pin
+
+
+busywait = do for' 101 $ for' 255 $ for' 255 $ nop
+
+f_soc_prog3_ram = packProgram $ Forth.compile prog3
+
+prog3  =
+  forever $ do
+    push 0x55 ; write dbg_addr ; busywait
+    push 0xAA ; write dbg_addr ; busywait
+
 targets =
   let 
     writePCF ([pcf], [csv]) = do
-      board <- CSV.readTagged id csv
-      let pin = CSV.ff (\[k,_,v,_] -> (k,v)) board
-      writeFile pcf $ show $ Verilog.fpgaPCF f_soc pin
+      ob <- f_soc_pcf csv
+      writeFile pcf $ show ob
+      
     writeProg file  = (writeProgram file) . Forth.compile
 
-    busywait = do for' 100 $ for' 255 $ for' 255 $ nop
 
   in [
     ((["f_soc.v"], []),
@@ -80,9 +94,7 @@ targets =
         begin ; push 0 ; again),
 
     ((["f_soc.prog3.bin"], []), 
-      \([f],[]) -> writeProg f $ forever $ do
-        push 0x55 ; write dbg_addr ; busywait
-        push 0xAA ; write dbg_addr ; busywait)
+      \([f],[]) -> writeProg f prog3)
     ]
 
 -- FIXME: .py
@@ -110,7 +122,7 @@ f_soc =
 
       -- Baud rate generator.
       -- Bit size is set here to work around a Verilog.hs bug
-      let tx_bc = 1
+      let tx_bc = 2
       -- Instantiate the SOC with dbg probe.  FIXME:
 
       -- FIXME: Probably ok for debug, but these are
