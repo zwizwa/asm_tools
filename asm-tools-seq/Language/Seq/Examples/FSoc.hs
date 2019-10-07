@@ -60,14 +60,21 @@ f_soc_pcf csv = do
   return $ Verilog.fpgaPCF f_soc pin
 
 
-busywait = do for' 101 $ for' 255 $ for' 255 $ nop
+busywait = do for' 50 $ for' 255 $ for' 255 $ nop
 
 f_soc_prog3_ram = packProgram $ Forth.compile prog3
+f_soc_prog4_ram = packProgram $ Forth.compile prog4
 
 prog3  =
   forever $ do
     push 0x55 ; write dbg_addr ; busywait
     push 0xAA ; write dbg_addr ; busywait
+
+prog4  =
+  forever $ do
+    push 0x55 ; write dbg_addr ; busywait ; busywait
+    push 0xAA ; write dbg_addr ; busywait ; busywait
+
 
 targets =
   let 
@@ -122,7 +129,7 @@ f_soc =
 
       -- Baud rate generator.
       -- Bit size is set here to work around a Verilog.hs bug
-      let tx_bc = 2
+      let tx_bc = 1
       -- Instantiate the SOC with dbg probe.  FIXME:
 
       -- FIXME: Probably ok for debug, but these are

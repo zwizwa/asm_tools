@@ -24,6 +24,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE QuasiQuotes #-}
 
+module Language.Seq.Test.SeqQC where
+
 import Language.Seq
 import Language.Seq.Lib
 import Language.Seq.CPU
@@ -48,7 +50,8 @@ import Test.QuickCheck hiding ((.&.),(.|.),again)
 import Test.QuickCheck.Gen hiding (bitSize, getLine)
 import Language.Haskell.TH
 
-main = do
+test :: IO ()
+test = do
 
   -- print $ toWord [1,0,0,0]
   -- print $ toBitList 4 8
@@ -687,6 +690,3 @@ printProbe columns (names, signals) = do
       showcol = zipWith ($) (map showProbe columns)
   putStr $ showSignals' True columns $ map showcol signals'
 
-
-
-  
