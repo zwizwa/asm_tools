@@ -87,7 +87,6 @@ uartBits factor str = samps where
 -- Terminology is the one used in the Linux kernel.
 -- See also SeqLib.hs
 
-
 spiBits :: SeqLib.SpiMode -> [Int] -> [(Int,Int)]
 spiBits _ [] = [] -- degenerate QC case
 spiBits mode bits@(bit0:_) = p $ SeqLib.spi_mode mode where
@@ -103,7 +102,6 @@ spiBits mode bits@(bit0:_) = p $ SeqLib.spi_mode mode where
   p (1,1) = zip _10 _xbb
   
 
-  
 -- Bus sequences.
 
 -- To keep things simple, use [] as signal container for input and

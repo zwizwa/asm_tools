@@ -10,9 +10,9 @@ This is work in progress.  Functionality is added as needed.
 - A 'tagless final' Sequential Logic (RTL) language.  Targets Verilog
   directly, and MyHDL, which translates to Verilog, VHDL.  A fast
   Template Haskell + Strict State Threads step is included for
-  QuickCheck-based simulation.
+  QuickCheck-based simulation.  A C target is availbl as well.
 
-- A stack CPU + embedded Forth/Assembler hybrid
+- A stack CPU + embedded Forth/Assembler hybrid implemented in Seq
 
 - Misc tools  (VCD, netlists)
 
@@ -21,17 +21,19 @@ This is work in progress.  Functionality is added as needed.
 Some notes regarding Seq:
 
 - It is sequential, i.e. has implicit clocks.  I am aware that in
-  general this is not what you want, due to there often being
-  different clock domains.  However, the application that is driving
-  the requirements for Seq is relatively simple and has only a single
-  clock domain.  The intention is to later put a layer inbetween HDL
-  output and Seq that does allow representation of explicit clocks and
-  asynchronous logic.
+  general this is not what you want for digital logic, due to there
+  often being different clock domains.  However, the application that
+  is driving the requirements for Seq is relatively simple and has
+  only a single clock domain.  The intention is to later put a layer
+  inbetween HDL output and Seq that does allow representation of
+  explicit clocks and asynchronous logic.
 
-- Seq does not represent bit vector size at the Haskell type level.  I
-  believe this is a missed opportunity, but I did not know how to make
-  it work in the time I had available.  Fixing that likely requires to
-  create a version 2, and refactor the library.  This is not for now.
+- Seq does not represent bit vector size at the Haskell type level.
+  While at times this feels like a missed opportunity, I did not have
+  the skill or the time to make that work.  It is (was) my assessment
+  that the machinery necessary to do so is just too heavyweight for
+  encoding just bit vectors.  Better encoding can be done for
+  abstractions built on top of Seq.
 
 - The Seq CPU is really simple.  It is definitely not general purpose.
   However I do find it useful.  It does not seem to need pipelining at
@@ -42,6 +44,7 @@ Some notes regarding Seq:
   Haskell module opens up a lot of possibilities.  Additionally, CPU
   programs can be used to write QuickCheck tests for sequential logic
   peripherals.
+
 
 In general I really like this approach, but it is definitely not
 finished.

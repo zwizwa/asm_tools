@@ -30,8 +30,25 @@ d_stack i@[push,pop,wd] = do
   return (rd:i)
 
 
-d_spi mode bits [cs, sclk,sdata] = do
+d_spi mode bits [cs,sclk,sdata] = do
   sync_receive mode bits cs sclk sdata
+  return []
+
+-- Note that for SPI it makes sense to sample the clock, for RMII the
+-- clock is already at 50MHz and it makes sense to run all the logic
+-- at the same rate, so no explicit clock signal.
+d_rmii bits [crs_dv, rxd0, rxd1] = do
+
+  let rxreg = undefined
+  
+  -- FIXME: logic!
+  -- test probes
+  "crs_dv" <-- crs_dv
+  "rxd0"   <-- rxd0
+  "rxd1"   <-- rxd1
+
+  "rxreg"  <-- rxreg
+  
   return []
 
 

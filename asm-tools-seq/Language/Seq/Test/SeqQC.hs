@@ -297,6 +297,32 @@ p_spi = forAll vars $ fst . e_spi where
     return (mode, bytes)
 
 
+-- rmii
+
+-- Start with generating a signal.
+
+t_rmii i = $(compile allProbe [1,1,1] $ d_rmii 8) memZero $ TestInput i
+
+e_rmii bytes  = (bytes == bytes', (bytes', table)) where
+  ins    = [[1,0,0]] ++
+           [[0,rxd0,rxd1] | [rxd0,rxd1] <- bitPairs] ++
+           [[1,0,0]]
+
+  bitPairs  = chunksOf 2 $ concat $ map (toBitList 8) bytes
+  bytes' = bytes -- FIXME
+  table@(probes, (_, outs)) = t_rmii ins
+
+x_rmii = do
+  let bytes = [4,5]
+      (_, (bytes', (probes, (_, outs)))) = e_rmii bytes
+
+  putStrLn "-- x_rmii"
+  print bytes
+  print bytes'
+  printProbe ["crs_dv","rxd0","rxd1","rxreg"] $ (probes, outs)
+
+
+
 
 -- mem
 
