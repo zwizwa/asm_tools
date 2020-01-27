@@ -37,17 +37,23 @@ d_spi mode bits [cs,sclk,sdata] = do
 -- Note that for SPI it makes sense to sample the clock, for RMII the
 -- clock is already at 50MHz and it makes sense to run all the logic
 -- at the same rate, so no explicit clock signal.
+
+-- This is Test.Lib which should first
+
+
 d_rmii bits [crs_dv, rxd0, rxd1] = do
 
-  let rxreg = undefined
+  --let rxreg = undefined
   
   -- FIXME: logic!
   -- test probes
   "crs_dv" <-- crs_dv
   "rxd0"   <-- rxd0
   "rxd1"   <-- rxd1
-
+  -- FIXME: check bit order and direction
+  (rxwc, rxreg) <- rmii_receive crs_dv rxd1 rxd0
   "rxreg"  <-- rxreg
+  "rxwc"   <-- rxwc
   
   return []
 

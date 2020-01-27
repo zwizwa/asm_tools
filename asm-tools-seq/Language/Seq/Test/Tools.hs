@@ -22,8 +22,16 @@ import Language.Haskell.TH
 -- Defaults use "natural bit order", which places MSB on the left,
 -- which makes list form, scope display and normal digit display.
 
-toBitList :: Int -> Int -> [Int]
-toBitList nb_bits val = map ((.&. 1) . (shiftR val)) $ reverse [0..nb_bits-1]
+toBitList' :: BitOrder -> Int -> Int -> [Int]
+toBitList' b nb_bits val = map ((.&. 1) . (shiftR val)) $ bitOrder b nb_bits
+
+toBitList = toBitList' MSBFirst
+
+data BitOrder = LSBFirst | MSBFirst
+
+bitOrder LSBFirst nb_bits = [0..nb_bits-1]
+bitOrder MSBFirst nb_bits = reverse $ bitOrder LSBFirst nb_bits
+
 
 toWord :: [Int] -> Int
 toWord bits = foldr f 0 $ reverse bits where

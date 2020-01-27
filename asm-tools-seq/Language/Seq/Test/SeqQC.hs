@@ -308,18 +308,20 @@ e_rmii bytes  = (bytes == bytes', (bytes', table)) where
            [[0,rxd0,rxd1] | [rxd0,rxd1] <- bitPairs] ++
            [[1,0,0]]
 
-  bitPairs  = chunksOf 2 $ concat $ map (toBitList 8) bytes
-  bytes' = bytes -- FIXME
+  toBits = toBitList' LSBFirst 8
+
+  bitPairs  = chunksOf 2 $ concat $ map toBits bytes
+  bytes' = downSampleCD $ selectSignals ["rxwc","rxreg"] probes outs
   table@(probes, (_, outs)) = t_rmii ins
 
 x_rmii = do
-  let bytes = [4,5]
+  let bytes = [0,1,2,3,4,5,6,7]
       (_, (bytes', (probes, (_, outs)))) = e_rmii bytes
 
   putStrLn "-- x_rmii"
   print bytes
   print bytes'
-  printProbe ["crs_dv","rxd0","rxd1","rxreg"] $ (probes, outs)
+  printProbe ["crs_dv","rxd0","rxd1","rxwc","rxreg"] $ (probes, outs)
 
 
 

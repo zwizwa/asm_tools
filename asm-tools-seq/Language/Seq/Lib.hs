@@ -783,6 +783,23 @@ async_transmit bitClock (wordClock, txData) = do
       return ([shiftReg', cnt'], (out, done))
 
 
+-- RMII
+
+-- Data are sampled at the falling edge of the 50MHz clock.
+-- Since clock rate is relatively high, we only build a synchronous circuit.
+-- Data is sent LSB first, so were doing right shifts.
+
+-- rmiiUpdate rxd1 rxd0 =
+--   closeReg [bits 8] $ \[s] -> do
+--     rxd10 <- conc rxd1 rxd0
+--     s' <- shiftUpdate ShiftRight s rxd10
+--     return ([s'],s')
+
+rmii_receive dv rxd1 rxd0 = do
+  rxd10 <- conc rxd1 rxd0
+  let rst = dv       -- 0 = data valid, same polarity as deser expects
+  let bc  = cbit 1   -- always 1, running at synchronous rate
+  deser ShiftRight 8 rst bc rxd10
 
 -- SPI
 
@@ -814,8 +831,10 @@ deser :: Seq m r => ShiftDir -> Int -> r S -> r S -> r S -> m (r S, r S)
 deser dir sr_bits rst bc b = do
   -- Use carry trick to obtain word clock. The trick is then to
   -- properly initialize the counter.
+  b_bits <- sbits b
   let cnt_bits  = nb_bits cnt_init'
-      cnt_init' = sr_bits - 1
+      nb_shifts = sr_bits `div` b_bits
+      cnt_init' = nb_shifts - 1
       cnt_init  = cbits cnt_bits $ cnt_init'
   closeReg [bits' cnt_bits cnt_init',
             bits sr_bits] $
