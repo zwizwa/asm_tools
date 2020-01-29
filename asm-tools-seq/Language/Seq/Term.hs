@@ -22,6 +22,7 @@ import Control.Monad.State
 import Control.Monad.Writer
 import Control.Monad.Reader
 import Control.Monad.Free
+import Control.Monad.Fail
 import Data.List
 import Data.Maybe
 import Data.Map.Strict (Map, (!))
@@ -232,6 +233,11 @@ num2 f (R (Const (SInt sa a))) (R (Const (SInt sb b))) =
   R $ Const $ SInt (mergeSize [sa,sb]) $ f a b
 num2 _ _ _ = error $ "num2: bad argument"
 
+
+-- FIXME: Working around some pattern matching issues that are
+-- currently not handled at the type level.
+instance MonadFail M where
+  fail = undefined 
 
 -- Note that this only works for combinatorial results, which do not
 -- have an initial value, but do have a bit width.  Another indication

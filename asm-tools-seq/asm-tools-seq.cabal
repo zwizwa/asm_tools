@@ -33,6 +33,7 @@ Library
                      Language.Seq.TH
                      Language.Seq.Verilog
                      Language.Seq.VerilogRun
-                     Language.Seq.Test.Tools
-                     Language.Seq.Test.Lib
+                     Language.Seq.Test.SeqQC
+                     Language.Seq.Test.TestTools
+                     Language.Seq.Test.TestLib
                      Language.Seq.Examples.FSoc

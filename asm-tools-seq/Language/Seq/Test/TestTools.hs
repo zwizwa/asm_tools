@@ -1,7 +1,7 @@
 {-# LANGUAGE Rank2Types #-}
 
 -- Misc collection of sequence testing tools.
-module Language.Seq.Test.Tools where
+module Language.Seq.Test.TestTools where
 
 import qualified Language.Seq as Seq
 import qualified Language.Seq.Term as SeqTerm

@@ -28,7 +28,7 @@ import qualified Language.Seq.Emu as SeqEmu
 import Language.Seq.Term(Op(..),Term(..),NodeNum,Bindings)
 import Language.Seq.Expr(Expr,Term')
 import Data.AsmTools.PCF
-import qualified Language.Seq.Test.Tools as TestTools
+import qualified Language.Seq.Test.TestTools as TestTools
 
 import Control.Monad.State
 import Control.Monad.Writer

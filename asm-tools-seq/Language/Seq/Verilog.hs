@@ -31,7 +31,7 @@ import qualified Language.Seq.NetList as SeqNetList
 import qualified Language.Seq.Term as SeqTerm
 import qualified Language.Seq.Lib as SeqLib
 import Data.AsmTools.PCF
-import qualified Language.Seq.Test.Tools as TestTools
+import qualified Language.Seq.Test.TestTools as TestTools
 
 import Data.List hiding (partition)
 import Numeric (showHex, showIntAtBase)

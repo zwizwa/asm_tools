@@ -28,7 +28,7 @@ import Language.Seq
 import Language.Seq.Lib
 import Language.Seq.CPU
 import Language.Seq.Names
-import Language.Seq.Test.Tools
+import Language.Seq.Test.TestTools
 import qualified Language.Seq.Forth as Forth
 import qualified Language.Seq.MyHDL as MyHDL
 import qualified Language.Seq.Verilog as Verilog

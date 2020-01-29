@@ -31,8 +31,8 @@ import Language.Seq.Lib
 import Language.Seq.CPU
 import Language.Seq.Emu
 import Language.Seq.Prim
-import Language.Seq.Test.Lib  -- for staging
-import Language.Seq.Test.Tools
+import Language.Seq.Test.TestLib  -- for staging
+import Language.Seq.Test.TestTools
 
 import qualified Language.Seq.Forth as Forth
 
@@ -72,6 +72,7 @@ test = do
   qc "p_deser" p_deser
   qc "p_async_receive" p_async_receive
   qc "p_spi" p_spi
+  qc "p_rmii_rx" p_rmii_rx
   qc "p_fifo" p_fifo
 
   qc "p_soc_fun" p_soc_fun
@@ -81,12 +82,16 @@ test = do
 
   x_stack
   x_spi
+  x_rmii_rx                               
   x_mod_counter
   x_soc
   x_soc_boot
   x_deser
 
   x_st_testbench
+
+  x_sync_ex0
+  x_sync_ex1
 
   -- x_sync_mod
   qc "p_sync_mod" p_sync_mod
@@ -299,11 +304,9 @@ p_spi = forAll vars $ fst . e_spi where
 
 -- rmii
 
--- Start with generating a signal.
+t_rmii_rx i = $(compile allProbe [1,1,1] $ d_rmii_rx 8) memZero $ TestInput i
 
-t_rmii i = $(compile allProbe [1,1,1] $ d_rmii 8) memZero $ TestInput i
-
-e_rmii bytes  = (bytes == bytes', (bytes', table)) where
+e_rmii_rx bytes  = (bytes == bytes', (bytes', table)) where
   ins    = [[1,0,0]] ++
            [[0,rxd0,rxd1] | [rxd0,rxd1] <- bitPairs] ++
            [[1,0,0]]
@@ -312,18 +315,42 @@ e_rmii bytes  = (bytes == bytes', (bytes', table)) where
 
   bitPairs  = chunksOf 2 $ concat $ map toBits bytes
   bytes' = downSampleCD $ selectSignals ["rxwc","rxreg"] probes outs
-  table@(probes, (_, outs)) = t_rmii ins
+  table@(probes, (_, outs)) = t_rmii_rx ins
 
-x_rmii = do
+x_rmii_rx = do
   let bytes = [0,1,2,3,4,5,6,7]
-      (_, (bytes', (probes, (_, outs)))) = e_rmii bytes
+      (_, (bytes', (probes, (_, outs)))) = e_rmii_rx bytes
 
-  putStrLn "-- x_rmii"
+  putStrLn "-- x_rmii_rx"
   print bytes
   print bytes'
-  printProbe ["crs_dv","rxd0","rxd1","rxwc","rxreg"] $ (probes, outs)
+  printProbe ["crs_dv","rxd0","rxd1","rxreg","rxwc","rxaddr"] $ (probes, outs)
 
 
+p_rmii_rx = forAll vars $ fst . e_rmii_rx where
+  vars = listOf $ word 8
+
+
+-- sync
+
+t_sync_ex0 i = $(compile allProbe [1] d_sync_ex0) memZero $ TestInput i
+t_sync_ex1 i = $(compile allProbe [1] d_sync_ex1) memZero $ TestInput i
+
+e_sync_rx t_sync_ex ext_sync = (True, table) where
+  ins = [[e] | e <- ext_sync]
+  table@(probes, (_, outs)) = t_sync_ex ins
+
+x_sync_ex0 = do
+  let ext_sync = pulse 5 20
+      (_, (probes, (_, outs))) = e_sync_rx t_sync_ex0 ext_sync
+  putStrLn "-- x_sync_ex0"
+  printProbe ["ext","rdy","ack","d_ack"] $ (probes, outs)
+
+x_sync_ex1 = do
+  let ext_sync = pulse 10 10 ++ pulse 10 10
+      (_, (probes, (_, outs))) = e_sync_rx t_sync_ex1 ext_sync
+  putStrLn "-- x_sync_ex1"
+  printProbe ["ext","rdy","ack","cnt","d_ack"] $ (probes, outs)
 
 
 -- mem
@@ -703,6 +730,8 @@ trace_b_b f is = map head $ f' $ transpose [is] where
 trace_bb_b f as bs = map head $ map f' $ transpose [as, bs] where
   f' = trace [1,1] $ \[a,b] -> do o <- f a b; return [o]
 
+rep n = concat . (replicate n)
+pulse pre post = rep pre [0] ++ [1] ++ rep post [0]
 
 data ShowProbe = ShowInt Int | ShowIW Int
 instance Show (ShowProbe) where
