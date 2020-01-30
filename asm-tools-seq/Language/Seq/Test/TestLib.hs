@@ -81,13 +81,13 @@ d_rmii_rx bits [crs_dv, rxd0, rxd1] = do
 -- might be cycles with no response), an writer sees the delayed ACK
 -- in the next cycle where it can decide to produce a new value.
 --
-
 -- Illustrate with some examples.
+--
 -- ex0: Only do handshake.  Writer only writes once.
 -- Writer has 3 states:
 -- . wait for read to happen
 -- . idle
--- The cross-wiring delays ack.
+-- The cross-wiring is done using ack delay
 sync_ex0_write ack = do
   let rdy0 = 1  -- Start out with write ready
   closeReg [bits' 1 rdy0] $ \[rdy] -> do
@@ -97,7 +97,7 @@ sync_ex0_write ack = do
     return ([rdy'],rdy')
 
 sync_ex0_read ext rdy = do
-  next <- ext `band` rdy
+  next  <- ext `band` rdy
   [ack] <- cond
     [(next, [cbit 1])]
     [cbit 0]
@@ -111,14 +111,15 @@ d_sync_ex0 [ext] =
     "rdy"   <-- rdy    -- combinatorial rdy
     "ack"   <-- ack    -- combinatorial ack
     "d_ack" <-- d_ack  -- delayed ack
+    "cnt"   <-- cbit 0 -- dummy value
     return ([ack],[])
 
--- Driving this circuit from a single pulse on ext gives the following
--- trace.  First line is writer rdy, waiting for read, second line is
--- ext signal causing a read to happen, producing combinatorial ack,
--- and third line is that combinatorial ack causing the writer to
--- transition, which in this case is idle (not rdy) state.  The ack
--- pulse is only 1 wide.
+-- Controlling this circuit from a single pulse on ext gives the
+-- following trace.  First line is writer rdy, waiting for ack, second
+-- line is ext signal causing a read to happen, producing
+-- combinatorial ack, and third line is the delayed ack causing the
+-- writer to transition, which in this case is a finle idle (not rdy)
+-- state.  The ack pulse is only 1 wide.
 --
 -- ext rdy ack d_ack
 -- -----------------
@@ -132,21 +133,49 @@ d_sync_ex0 [ext] =
 
 -- ex1: also transfer some data
 --
--- 1. writer is a counter that writes out the next state.  To make it
--- a bit more interesting, only write out values that have bit 2 set
--- and let the state machine continue without writing when bit is not
--- set.  E.g. 4 will be the first written output.
-sync_ex1_write d_ack = do
-  closeReg [bits 4] $ \[cnt] -> do
+-- 1. Writer is a counter that writes out the next state.  To make it
+-- a bit more interesting, only write out values that have bit 2 set,
+-- e.g. 4,5,6,7,12,14,14,15,...
+--
+-- Due to the strong interaction between past and current state this
+-- is surprisingly tricky to get right by manual factoring into a
+-- chain of logic operations.  So we use a truth table instead.
+--
 
-    cnti   <- cnt `add` 1
-    wr_rdy <- slice' cnt 3 2
-    
-    [cnt'] <- cond
-      [(d_ack,  [cnti]), -- ack always advances machine
-       (wr_rdy, [cnt])]  -- when writing, wait for ack
-      [cnti]             -- not writing, no ack: continue count
-    return ([cnt'], (wr_rdy, cnt'))
+sync_ex1_write d_ack = do
+  closeReg [bits 1, bits 4] $ \[d_rdy,d_out] -> do
+
+    -- Regarding the write there are essentially 3 cases:
+    -- WAIT  d_rdy=1, d_ack=0  unacknowledged write  -> rdy=1, no stat change
+    -- NEXT  d_rdy=1, d_ack=1  acknowledged write    -> rdy=? dep on state change
+    -- IDLE  d_rdy=0, d_ack=x  no write, ignore ack
+    --
+    -- To complete the machine, one more piece of information is
+    -- necesary: do we have data ready to send out.  It turns out to
+    -- be simplest to just delay the output value, and use that to
+    -- compute the possible next state of the counter, and then use
+    -- that update to determine if we can write out the new value.
+    cnt1 <- d_out `add` 1
+    have <- slice' cnt1 3 2
+
+    -- With this extra state update constraint we get the truth table.
+    -- Some intermediate values are used to make it easier to factor.
+    --
+    -- IN                 INTERM  OUT
+    -- d_rdy d_ack have   wait    rdy out     
+    -- ------------------------------------
+    -- 1     0     x      1       1   d_out
+    -- 1     1     1      0       1   cnt1
+    -- 1     1     0      0       0   cnt1
+    -- 0     x     0      0       0   cnt1
+    -- 0     x     1      0       1   cnt1
+
+    n_d_ack   <- inv d_ack
+    wait      <- d_rdy `band` n_d_ack
+    out       <- if' wait d_out cnt1
+    rdy       <- wait `bor` have
+
+    return ([rdy,out],(rdy,out))
 
 -- 2. reader is synchronized to an external pulse.  if the writer is
 -- ready when that pulse arrives, reader will send an ack.

@@ -74,6 +74,7 @@ test = do
   qc "p_spi" p_spi
   qc "p_rmii_rx" p_rmii_rx
   qc "p_fifo" p_fifo
+  qc "p_sync_ex" p_sync_ex
 
   qc "p_soc_fun" p_soc_fun
 
@@ -331,27 +332,43 @@ p_rmii_rx = forAll vars $ fst . e_rmii_rx where
   vars = listOf $ word 8
 
 
--- sync
+-- sync_ex
+
+-- d_sync_ex* illustrate the use of the read/write handshake pattern.
+-- See comments in TestLib.hs for more information.  We feed the
+-- circuit with an external pulse to drive the reader, and we probe
+-- the data going into the reader (ack,cnt).
 
 t_sync_ex0 i = $(compile allProbe [1] d_sync_ex0) memZero $ TestInput i
 t_sync_ex1 i = $(compile allProbe [1] d_sync_ex1) memZero $ TestInput i
 
-e_sync_rx t_sync_ex ext_sync = (True, table) where
+e_sync_rx t_sync_ex (n_pulse,pulse_sep) = (ok, (expected, stream, table)) where
+  ext_sync = rep n_pulse $ pulse pulse_sep pulse_sep
   ins = [[e] | e <- ext_sync]
   table@(probes, (_, outs)) = t_sync_ex ins
+  stream = downSampleCD $ selectSignals ["ack","cnt"] probes outs
+  -- If pulse_sep gets small, some ext pulses will get missed so there
+  -- will be less stream elements than n_pulse
+  expected = take (length stream) $ cycle [4,5,6,7,12,13,14,15]
+  ok = stream == expected
 
-x_sync_ex0 = do
-  let ext_sync = pulse 5 20
-      (_, (probes, (_, outs))) = e_sync_rx t_sync_ex0 ext_sync
+x_sync_ex t_sync_ex spec = do
+  let (ok, (expected, stream, (probes, (_, outs)))) = e_sync_rx t_sync_ex spec
   putStrLn "-- x_sync_ex0"
-  printProbe ["ext","rdy","ack","d_ack"] $ (probes, outs)
-
-x_sync_ex1 = do
-  let ext_sync = pulse 10 10 ++ pulse 10 10
-      (_, (probes, (_, outs))) = e_sync_rx t_sync_ex1 ext_sync
-  putStrLn "-- x_sync_ex1"
+  print ok
+  print expected
+  print stream
   printProbe ["ext","rdy","ack","cnt","d_ack"] $ (probes, outs)
 
+x_sync_ex0 = x_sync_ex t_sync_ex0 (1,10)  -- note: cnt output is dummy '0' for ex0
+x_sync_ex1 = x_sync_ex t_sync_ex1 (16,4)  -- FIXME: This is incorrect!
+-- x_sync_ex1 = x_sync_ex t_sync_ex1 (15,1)
+
+p_sync_ex = forAll spec $ fst . (e_sync_rx t_sync_ex1) where
+  spec = do
+    n_pulse   <- choose (0,16)
+    pulse_sep <- choose (0,10)
+    return (n_pulse, pulse_sep)
 
 -- mem
 
