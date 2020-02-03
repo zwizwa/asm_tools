@@ -341,14 +341,18 @@ p_rmii_rx = forAll vars $ fst . e_rmii_rx where
 
 t_sync_ex0 i = $(compile allProbe [1] d_sync_ex0) memZero $ TestInput i
 t_sync_ex1 i = $(compile allProbe [1] d_sync_ex1) memZero $ TestInput i
+t_sync_ex2 i = $(compile allProbe [1] d_sync_ex2) memZero $ TestInput i
+t_sync_ex3 i = $(compile allProbe [1] d_sync_ex3) memZero $ TestInput i
 
 e_sync_rx t_sync_ex (n_pulse,pulse_sep) = (ok, (expected, stream, table)) where
   ext_sync = rep n_pulse $ pulse pulse_sep pulse_sep
   ins = [[e] | e <- ext_sync]
   table@(probes, (_, outs)) = t_sync_ex ins
   stream = downSampleCD $ selectSignals ["ack","cnt"] probes outs
-  -- If pulse_sep gets small, some ext pulses will get missed so there
-  -- will be less stream elements than n_pulse
+  -- If pulse_sep gets small, some ext pulses will get missed because
+  -- the writer is not ready to write yet, so here we just check that
+  -- the sequence is correct, but not that there are enough elements.
+  -- FIXME
   expected = take (length stream) $ cycle [4,5,6,7,12,13,14,15]
   ok = stream == expected
 
@@ -361,14 +365,42 @@ x_sync_ex t_sync_ex spec = do
   printProbe ["ext","rdy","ack","cnt","d_ack"] $ (probes, outs)
 
 x_sync_ex0 = x_sync_ex t_sync_ex0 (1,10)  -- note: cnt output is dummy '0' for ex0
-x_sync_ex1 = x_sync_ex t_sync_ex1 (16,4)  -- FIXME: This is incorrect!
+x_sync_ex1 = x_sync_ex t_sync_ex1 (16,4)
+x_sync_ex2 = x_sync_ex t_sync_ex2 (16,4)
 -- x_sync_ex1 = x_sync_ex t_sync_ex1 (15,1)
 
-p_sync_ex = forAll spec $ fst . (e_sync_rx t_sync_ex1) where
+p_sync_ex = forAll spec $ fst . (e_sync_rx t_sync_ex2) where
   spec = do
     n_pulse   <- choose (0,16)
     pulse_sep <- choose (0,10)
     return (n_pulse, pulse_sep)
+
+-- uart_dma_tx
+
+-- d_uart_dma_tx* illustrate the use of the read/write handshake pattern.
+-- See comments in TestLib.hs for more information.  We feed the
+-- circuit with an external pulse to drive the reader, and we probe
+-- the data going into the reader (ack,cnt).
+
+t_uart_dma_tx i = $(compile allProbe [1] d_uart_dma_tx) memZero $ TestInput i
+
+e_uart_dma_tx = (True, (expected, stream, table)) where
+  ins = rep 100 [[1]] -- Bit clock is tested elsewhere, so just max it here.
+  table@(probes, (_, outs)) = t_uart_dma_tx ins
+  expected = []
+  stream   = downSampleCD $ selectSignals ["tx_wc","tx_in"] probes outs
+
+
+x_uart_dma_tx = do
+  let (ok, (expected, stream, (probes, (_, outs)))) = e_uart_dma_tx
+  putStrLn "-- x_uart_dma_tx0"
+  print ok
+  print stream
+  printProbe ["tx_bc","tx_wc","tx_in","tx_done"] $ (probes, outs)
+
+
+
+
 
 -- mem
 

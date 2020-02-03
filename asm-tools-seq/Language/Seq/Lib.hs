@@ -742,7 +742,11 @@ async_receive nb_bits i = do
 -- . it is allowed to clock in a new word during the stop bit.  to
 --   make this work, the output should not change.
 
+-- . Create a combinatorial path from wordClock->1 to done->0 so that
+--   it can be used in a channel style connection, where wordclock is
+--   the 'ack' response to the 'rdy' signal.
 
+-- . Lift the previous test out of the other tree
 
 async_transmit bitClock (wordClock, txData) = do
   n <- sbits txData
@@ -781,6 +785,109 @@ async_transmit bitClock (wordClock, txData) = do
       --          wordClock, bitClock, shiftReg', cnt'])
 
       return ([shiftReg', cnt'], (out, done))
+
+
+-- Have the UART "pull" a fast producer by producing a word clock.
+-- Can be used with a fast state machine or a memory read (dma).
+--
+-- See test on how to close wc->d_wc over producer and consumer
+--
+-- A typical way to do this is to feed wc back to d_wc as long as
+-- there is data.  When data is done, break that connection.  When new
+-- data is available, start the transfer with a pulse.
+--
+async_transmit_pull bc (d_wc, dat) = do
+    -- The word clock depends on done so we have to delay it.
+    (ser_out, done) <- async_transmit bc (d_wc, dat)
+    wc <- posedge done
+    return (wc, ser_out)
+
+
+
+
+-- CHANNEL
+--
+-- A channel synchronization combinator to glue a reader and a writer,
+-- each producing a sync signal to indicate it is ready to transact,
+-- and taking in a sync signal that indicates the peer is ready to
+-- transact.
+--
+-- This is a CSP rendez-vous style channel: both reader and writer
+-- need to agree before a transaction takes place.
+--
+-- This is tricky because
+--
+-- 1) the transaction is in essence symmetric, but
+--
+-- 2) asymmetry needs to be introduced to break the combinatorial loop
+--    by inserting delays
+--
+-- Let's explore the design space.
+--
+-- To respect the idea that there is symmetry, we use the name 'sync'
+-- for the synchronization signal.  Usually signals of this kind use
+-- asymmetric naming, e.g. "ready" and "strobe".  In the view we take
+-- here, the meaning is irrelevant, it is the communication pattern
+-- that counts.
+--
+-- So let's use frontend/backend terminology corresponding to the
+-- asymmetry in the connection diagram determined by the location of
+-- the loop-breaking delay.  The frontend sits at the start of the
+-- combinatorial chain, right after the decoupleing delay, and the
+-- backend takes in frontend signals and feeds into the decoupling
+-- delay.
+--
+-- The lines below show the sync signals as combinatorial paths.  The
+-- synchronization loop needs to contain at least one delay.
+--
+--   /--------------------<---------------------\
+--   \-->--[D]-->--[frontend]-->--[backend]-->--/
+--
+-- The frontend expects a delayed sync input while the backend takes a
+-- combinatorial signal from the frontend.
+--
+-- We didn't say anything about data yet, so lets add a data stream in
+-- both directions.  For one of them there needs to be a delay in the
+-- data as well to break the combinatorial path.
+--
+--   /--------------------<---------------------\
+--   \-->--[D]-->--[frontend]-->--[backend]-->--/
+--                   |  \------>-----/  |
+--                   \-----[D]-<--------/
+--
+-- Since we only want a unidirectional channel, the flow direction
+-- without the additional delay is the most natural.
+--
+-- Another way to put this is that we break symmetry based on the
+-- requirement to not have a data delay as part of the loop closing
+-- operation.  This makes frontend=write, backend=read.
+--
+--   /-------------------<----------------------\
+--   \-->--[D]-->--[f:write]---->--[b:read]-->--/
+--                    \--------->-----/
+--
+-- This brings us to the following implementation.
+closeChannel writer reader = do
+  closeReg [bits 1] $ \[d_rd_sync] -> do
+    (wr_sync, wr_data, wr_out) <- writer d_rd_sync
+    (rd_sync, rd_out)          <- reader wr_sync wr_data
+    "d_rd_sync" <-- d_rd_sync
+    "rd_sync"   <-- rd_sync
+    "wr_sync"   <-- wr_sync
+    "wr_data"   <-- wr_data
+    -- wr_out, rd_out: other state machine outputs not necessarily
+    -- related to channel communication.
+    return ([rd_sync],(wr_out,rd_out))
+
+-- Breaking symmetry the other way around would interchange frontend
+-- and backand and look like this, which is we deem to be suboptimal:
+--
+--   /--------------<----------------------\
+--   \-->--[b:write]--[D]-->--[f:read]-->--/
+--            \-------[D]-->-----/
+--
+
+    
 
 
 -- RMII

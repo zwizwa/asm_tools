@@ -14,26 +14,54 @@ This is work in progress.  Functionality is added as needed.
 
 - A stack CPU + embedded Forth/Assembler hybrid implemented in Seq
 
+- A CSP-style channel API
+
 - Misc tools  (VCD, netlists)
 
 
 
 Some notes regarding Seq:
 
-- It is sequential, i.e. has implicit clocks.  I am aware that in
+- Seq uses applicative style: state machines are modeled as operators
+  (monadic functions) that take inputs to outputs, with internal
+  register loops hidden from the user.  Seq operators can be thought
+  of as pure functions over sequences.
+  
+  Compared to the traditional port style approach where you "set" an
+  output port, the applicative style has about half the notiational
+  overhead as outputs do not need to be named.
+  
+  This makes fine-grained abstraction moch more concise, but comes at
+  a price.  Any operation that defines a state machine will also need
+  to be written in applicative style where the combinatorial update
+  function is structured as a function from register outputs to
+  register inputs.  A state machine is then constructed by an explicit
+  "close" operator, which essentially hides the registers from view.
+  
+  This tends to shift the forces that drive modularization: it makes
+  it really easy to create lots of simple modules as they all just
+  look like functions, but it can make it harder to create "ball of
+  mud" state machines that have update functions spanning a large
+  number of registers in a way that is not easy to factor into a
+  combination of smaller state machines.  In some way the language
+  forces you to modularize to a much finer degree.  Up to now I have
+  found this to be a net plus, but it takes some getting used to.
+
+- Seq is sequential, i.e. has implicit clocks.  I am aware that in
   general this is not what you want for digital logic, due to there
   often being different clock domains.  However, the application that
   is driving the requirements for Seq is relatively simple and has
   only a single clock domain.  The intention is to later put a layer
   inbetween HDL output and Seq that does allow representation of
-  explicit clocks and asynchronous logic.
+  explicit clocks and asynchronous logic.  This layer is likely going
+  to be based on Verilog directly, orchestrated by FuseSoC.
 
 - Seq does not represent bit vector size at the Haskell type level.
   While at times this feels like a missed opportunity, I did not have
   the skill or the time to make that work.  It is (was) my assessment
   that the machinery necessary to do so is just too heavyweight for
   encoding just bit vectors.  Better encoding can be done for
-  abstractions built on top of Seq.
+  abstractions built on top of Seq using ad hoc phantom types.
 
 - The Seq CPU is really simple.  It is definitely not general purpose.
   However I do find it useful.  It does not seem to need pipelining at
@@ -44,10 +72,10 @@ Some notes regarding Seq:
   Haskell module opens up a lot of possibilities.  Additionally, CPU
   programs can be used to write QuickCheck tests for sequential logic
   peripherals.
+  
+  
 
 
-In general I really like this approach, but it is definitely not
-finished.
 
 
 

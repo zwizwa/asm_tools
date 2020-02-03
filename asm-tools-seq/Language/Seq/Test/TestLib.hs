@@ -69,19 +69,25 @@ d_rmii_rx bits [crs_dv, rxd0, rxd1] = do
 -- delay in the sync path: RDY -> ACK -> RDY.  To do this, we express
 -- the reading and writing end as combinatorial...
 --
--- Writer: comb path from ACK -> RDY
--- Reader: comb path from RDY -> ACK
+-- Writer: ACK -> RDY
+-- Reader: RDY -> ACK
 --
--- ... and glue the two together by breacking the circular path on the
--- ACK, meaing that the writer assumes the incoming ack refers to the
--- previous cycle.
+-- This introduces a cycle that needs to be broken when the two
+-- machines are combined.  It seems most convenient to do that on the
+-- ack, e.g. writer sees the ack generated in the previous cycle.
 --
--- In words: writer raises RDY, reader responds combinatorially to
--- produce an ACK whenever it has time to handle the RDY (i.e. there
--- might be cycles with no response), an writer sees the delayed ACK
--- in the next cycle where it can decide to produce a new value.
+-- So the handshake looks like this:
 --
--- Illustrate with some examples.
+-- 1. writer raises RDY.
+--
+-- 2. reader responds combinatorially to produce an ACK whenever it
+--    has time to handle the RDY (i.e. there might be cycles with no
+--    response).
+--
+-- 3. writer sees the delayed ACK in the next cycle where it can
+--    decide to produce a new value combinatorially.
+--
+-- Illustrated below with some examples.
 --
 -- ex0: Only do handshake.  Writer only writes once.
 -- Writer has 3 states:
@@ -96,7 +102,7 @@ sync_ex0_write ack = do
       [rdy]
     return ([rdy'],rdy')
 
-sync_ex0_read ext rdy = do
+sync_ex_read ext rdy = do
   next  <- ext `band` rdy
   [ack] <- cond
     [(next, [cbit 1])]
@@ -106,7 +112,7 @@ sync_ex0_read ext rdy = do
 d_sync_ex0 [ext] =
   closeReg [bits 1] $ \[d_ack] -> do
     rdy  <- sync_ex0_write d_ack
-    ack  <- sync_ex0_read ext rdy
+    ack  <- sync_ex_read ext rdy
     "ext"   <-- ext
     "rdy"   <-- rdy    -- combinatorial rdy
     "ack"   <-- ack    -- combinatorial ack
@@ -131,17 +137,12 @@ d_sync_ex0 [ext] =
 
 
 
--- ex1: also transfer some data
+-- ex1: Use synchronization to transfer a data stream
 --
--- 1. Writer is a counter that writes out the next state.  To make it
--- a bit more interesting, only write out values that have bit 2 set,
+-- Writer is a counter that writes out the next state.  To make it a
+-- bit more interesting, only write out values that have bit 2 set,
 -- e.g. 4,5,6,7,12,14,14,15,...
 --
--- Due to the strong interaction between past and current state this
--- is surprisingly tricky to get right by manual factoring into a
--- chain of logic operations.  So we use a truth table instead.
---
-
 sync_ex1_write d_ack = do
   closeReg [bits 1, bits 4] $ \[d_rdy,d_out] -> do
 
@@ -155,13 +156,14 @@ sync_ex1_write d_ack = do
     -- be simplest to just delay the output value, and use that to
     -- compute the possible next state of the counter, and then use
     -- that update to determine if we can write out the new value.
+    
     cnt1 <- d_out `add` 1
     have <- slice' cnt1 3 2
 
     -- With this extra state update constraint we get the truth table.
-    -- Some intermediate values are used to make it easier to factor.
+    -- Some local values are used to make it easier to factor.
     --
-    -- IN                 INTERM  OUT
+    -- IN                 LOCAL   OUT
     -- d_rdy d_ack have   wait    rdy out     
     -- ------------------------------------
     -- 1     0     x      1       1   d_out
@@ -170,35 +172,119 @@ sync_ex1_write d_ack = do
     -- 0     x     0      0       0   cnt1
     -- 0     x     1      0       1   cnt1
 
-    n_d_ack   <- inv d_ack
-    wait      <- d_rdy `band` n_d_ack
-    out       <- if' wait d_out cnt1
-    rdy       <- wait `bor` have
+    n_d_ack <- inv d_ack
+    wait    <- d_rdy `band` n_d_ack
+    out     <- if' wait d_out cnt1
+    rdy     <- wait `bor` have
 
     return ([rdy,out],(rdy,out))
 
--- 2. reader is synchronized to an external pulse.  if the writer is
--- ready when that pulse arrives, reader will send an ack.
-sync_ex1_read ext rdy = do
-  next  <- ext `band` rdy
-  [ack] <- cond
-    [(next, [cbit 1])]
-    [cbit 0]  -- not ready or no ext pulse
-  return ack
 
 
--- 3. the two machines need to be "cross-wired" by inserting a delay
--- on the ACK line.
+-- The two machines need to be "cross-wired" by inserting a delay on
+-- the ACK line.
 d_sync_ex1 [ext] =
   closeReg [bits 1] $ \[d_ack] -> do
     (rdy, cnt) <- sync_ex1_write d_ack
-    ack        <- sync_ex1_read ext rdy
+    ack        <- sync_ex_read ext rdy
     "ext"   <-- ext
     "rdy"   <-- rdy    -- combinatorial rdy
     "ack"   <-- ack    -- combinatorial ack
     "cnt"   <-- cnt    -- channel data (combinatorial, follows rdy)
     "d_ack" <-- d_ack  -- delayed ack
     return ([ack],[])
+
+
+-- Same as ex1, but with the state machine factored out behind a
+-- generic ack/ready api.
+
+sync_sm_ex cont =
+  closeReg [bits 4] $ \[d_cnt] -> do
+     cnt1 <- d_cnt `add` 1
+     have <- slice' cnt1 3 2
+     cnt' <- if' cont cnt1 d_cnt
+     return ([cnt'], (have, cnt'))
+
+d_sync_ex2 [ext] =
+  closeReg [bits 1] $ \[d_ack] -> do
+    (rdy, cnt) <- sync_sm_write sync_sm_ex d_ack
+    ack        <- sync_ex_read ext rdy
+    "ext"   <-- ext
+    "rdy"   <-- rdy    -- combinatorial rdy
+    "ack"   <-- ack    -- combinatorial ack
+    "cnt"   <-- cnt    -- channel data (combinatorial, follows rdy)
+    "d_ack" <-- d_ack  -- delayed ack
+    return ([ack],[])
+
+
+-- Attempt at a generic read/write channel interface.  This looks a
+-- lot like a bus interface, so maybe should be treated as such?  See
+-- TestLib.hs for the example this was lifted from.  Basic idea is
+-- that we wrap this around a state machine sync_sm that takes a
+-- 'cont' signal and produces a 'have' signal + data in response,
+-- together with the next output of the machine.  FIXME: This might
+-- need some time to sink in as a generic pattern.
+
+-- FIXME: The circuit is actually symmetric: req and rdy are just
+-- conventions that indicate the direction the data is flowing in.
+
+sync_sm_write sync_sm d_ack = do
+  closeReg [bits 1] $ \[d_rdy] -> do
+
+    -- IN                 LOCAL       OUT
+    -- d_rdy d_ack have   wait cont   rdy
+    -- ----------------------------------
+    -- 1     0     x      1    0      1  
+    -- 1     1     1      0    1      1  
+    -- 1     1     0      0    1      0  
+    -- 0     x     0      0    1      0  
+    -- 0     x     1      0    1      1  
+    
+    n_d_ack          <- inv d_ack
+    wait             <- d_rdy `band` n_d_ack
+    sm_req           <- inv wait
+    (sm_rdy, sm_out) <- sync_sm sm_req
+    rdy              <- wait `bor` sm_rdy
+
+    return ([rdy],(rdy,sm_out))
+
+
+
+-- FIXME: Create a test case for the closeChannel operator in Lib.hs
+d_sync_ex3 [ext] = do
+  let writer d_rd_sync = do
+        let wr_sync = cbit 1
+            wr_data = cbit 1
+        return (wr_sync, wr_data, [])
+      reader wr_sync wr_data = do
+        let rd_sync = cbit 1
+        return (rd_sync, [])
+  closeChannel writer reader
+  return []
+
+
+
+-- UART DMA
+--
+-- In first attempt make it as simple as possible and do it ad-hoc.
+-- The source state machine is just a counter.
+--
+-- FIXME: Ready and done are not the same.
+
+
+sm_count d_wc = do
+  closeReg [bits 8] $ \[d_cnt] -> do
+    cnt1 <- d_cnt `add` 1
+    cnt <- if' d_wc cnt1 d_cnt
+    return ([cnt],d_cnt)
+
+
+d_uart_dma_tx [bc] = do
+  closeReg [bits 1] $ \[d_wc] -> do
+    dat <- sm_count d_wc
+    (wc, ser_out) <- async_transmit_pull bc (d_wc, dat)
+    return ([wc],[])
+
 
 
 
