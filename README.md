@@ -24,19 +24,33 @@ Some notes regarding Seq:
 
 - Seq uses applicative style: state machines are modeled as operators
   (monadic functions) that take inputs to outputs, with internal
-  register loops hidden from the user.  Seq operators can be thought
-  of as pure functions over sequences.
+  register loops hidden from the user.
   
-  Compared to the traditional port style approach where you "set" an
-  output port, the applicative style has about half the notiational
-  overhead as outputs do not need to be named.
+  Seq operators are "pure", in the sense that they can be thought of
+  as functions taking input sequences to output sequences, with the
+  added constraint that the i->o relation is causal.
   
-  This makes fine-grained abstraction moch more concise, but comes at
+  Obviously they cannot be pure in the Haskell embedding because state
+  is involved in the implementation, but at least the property is
+  there to be used for reasoning and the construction of higher level
+  abstractions.  This is the idea to prefer Applicative over Arrow.
+  
+  Compared to the traditional port style approach where you "connect"
+  ports, the applicative style has less notiational overhead because
+  outputs do not need to be named.  Combined with the idea of purity
+  over sequences explained above, there is no need to have a separate
+  instantiation phase: a state machine can just be used as any other
+  i/o function which is the second notational advantage.
+  
+  This makes fine-grained abstraction much more concise, but comes at
   a price.  Any operation that defines a state machine will also need
   to be written in applicative style where the combinatorial update
   function is structured as a function from register outputs to
-  register inputs.  A state machine is then constructed by an explicit
-  "close" operator, which essentially hides the registers from view.
+  register inputs (or more correctly expressed in the
+  pure-operation-on-sequences view: as the function that maps the
+  unit-delayed _sequence_ to the non-delayed sequence).  A state
+  machine is then constructed by an explicit "close" operator, which
+  essentially hides the registers from view.
   
   This tends to shift the forces that drive modularization: it makes
   it really easy to create lots of simple modules as they all just
