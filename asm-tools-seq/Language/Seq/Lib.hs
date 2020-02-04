@@ -818,43 +818,40 @@ async_transmit_pull bc (d_wc, dat) = do
 -- CHANNEL
 --
 -- A channel synchronization combinator to glue a reader and a writer,
--- each producing a sync signal to indicate it is ready to transact,
--- and taking in a sync signal that indicates the peer is ready to
--- transact.
+-- each producing and consuming a rdy signal to/from the peer.  When
+-- both signals are ready at once, a transaction takes place.
 --
 -- This is a CSP rendez-vous style channel: both reader and writer
--- need to agree before a transaction takes place.
+-- need to meet.
 --
 -- This is tricky because
 --
 -- 1) the _idea_ behind transaction is in essence symmetric, but
 --
--- 2) asymmetry needs to be introduced to break the combinatorial loop
+-- 2) asymmetry needs to be introduced in the implementation to break
+--    the combinatorial loop
 --
 --
 -- Let's explore the design space.
 --
--- To respect the idea that there is symmetry, we use the name 'sync'
--- for the synchronization signal.  Usually signals of this kind use
--- asymmetric naming, e.g. "ready" and "strobe".  In the view we take
--- here, the meaning is irrelevant, it is the communication pattern
--- that counts.
+-- To respect the idea that there is symmetry, we use the name 'rdy'
+-- for the synchronization signal at both ends.  Usually signals of
+-- this kind use asymmetric naming, e.g. request / acknowledge.
 --
--- So let's use frontend/backend terminology corresponding to the
--- asymmetry in the connection diagram determined by the location of
--- the loop-breaking delay.  The frontend sits at the start of the
--- combinatorial chain, right after the decoupleing delay, and the
--- backend takes in frontend signals and feeds into the decoupling
--- delay.
+-- Let's use a different terminology to express the assymetry:
+-- frontend/backend, based on the location of the loop-breaking delay.
+-- The frontend sits at the start of the combinatorial chain, right
+-- after the decoupleing delay, and the backend takes in frontend
+-- signals and feeds into the decoupling delay.
 --
--- The lines below show the sync signals as combinatorial paths.  The
+-- The lines below show the 'rdy' signals as combinatorial paths.  The
 -- synchronization loop needs to contain at least one delay.
 --
 --   /--------------------<---------------------\
 --   \-->--[D]-->--[frontend]-->--[backend]-->--/
 --
--- The frontend expects a delayed sync input while the backend takes a
--- combinatorial signal from the frontend.
+-- The frontend expects a delayed 'rdy' input while the backend takes
+-- a combinatorial signal from the frontend.
 --
 -- We didn't say anything about data yet, so lets add a data stream in
 -- both directions.  For one of them there needs to be a delay in the
@@ -868,14 +865,6 @@ async_transmit_pull bc (d_wc, dat) = do
 -- Since we only want a unidirectional channel, the flow direction
 -- without the additional delay is the most natural.  See below.
 --
--- Breaking symmetry the other way around would interchange frontend
--- and backand and look like this, which we deem to be suboptimal:
---
---   /--------------<----------------------\
---   \-->--[b:write]--[D]-->--[f:read]-->--/
---            \-------[D]-->-----/
---
---
 -- Another way to put this is that we break symmetry based on the
 -- requirement to not have a data delay as part of the loop closing
 -- operation.  This makes frontend=write, backend=read.
@@ -884,20 +873,31 @@ async_transmit_pull bc (d_wc, dat) = do
 --   \-->--[D]-->--[f:write]---->--[b:read]-->--/
 --                    \--------->-----/
 --
+-- Breaking symmetry the other way around would interchange frontend
+-- and backand and look like this, which we deem to be suboptimal due
+-- to the extra data register needed:
+--
+--   /--------------<----------------------\
+--   \-->--[b:write]--[D]-->--[f:read]-->--/
+--            \-------[D]-->-----/
+--
+--
 -- This brings us to the following implementation.  We use the
 -- following shorthands, also used in implementations:
--- cw : channel writer
--- cr : channel reader
 --
--- Note an implementation detail: the channel reader also receives its
--- own delayed read signal.  From implemenation it was clear that this
--- signal is often needed in the reader implementation, and providing
--- it directly avoids the need for a second delay to compute it.  The
--- most common pattern is to use this to create a strobe:
+-- cread  channel reader
+-- cwrite channel writer
 --
--- strobe <- d_rd_sync `band` wr_sync
+--
+-- This said, there is one additional implementation detail: we have
+-- the channel reader object also receive its own delayed read signal.
+-- From implemenation it was clear that this signal is often needed in
+-- the reader implementation, and providing it directly avoids the
+-- need for a second delay to compute it.  The most common pattern is
+-- to use this to create a strobe signal.  See READERS below.
 
-
+-- closeChannel takes the (combinatorial) reader and writer networks
+-- and joins them across the decoupling register.
 closeChannel cread cwrite = do
   closeReg [bits 1] $ \[d_rd_sync] -> do
     (wr_sync, wr_data, wr_out) <- cwrite d_rd_sync
@@ -906,15 +906,17 @@ closeChannel cread cwrite = do
     "rd_sync"   <-- rd_sync
     "wr_sync"   <-- wr_sync
     "wr_data"   <-- wr_data
-    -- wr_out, rd_out: other state machine outputs not necessarily
+    -- wr_out, rd_out are other state machine outputs not necessarily
     -- related to channel communication.
     return ([rd_sync],(rd_out, wr_out))
 
 
--- So, at this point we are convinced that this is the proper way to
--- structure a rendez-vous, but due to the asymmetry, the API is a
--- little odd.  Below are a couple of examples that implement the read
--- and write interface.
+
+-- From this derivation, we are convinced that this is the proper way
+-- to structure a rendez-vous, but the asymmetry (rd_sync input is
+-- delayed but wr_sync input is not), the API is a little odd.  Below
+-- are a couple of examples that implement the read and write
+-- interface.
     
 
 -- CHANNEL READERS
@@ -962,7 +964,7 @@ cwrite_count nb_bits d_rd_sync = do
     cnt  <- if' d_rd_sync cnt1 d_cnt
     return ([cnt],
             (cbit 1,  -- always ready
-             cnt,     -- combinatorial response
+             cnt,     -- combinatorial response to d_rd_sync
              ()))     -- no other data
 
 
