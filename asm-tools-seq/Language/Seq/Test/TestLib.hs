@@ -195,16 +195,12 @@ d_sync_ex1 [ext] =
     return ([ack],[])
 
 
--- Same as ex1, but with the state machine factored out behind a
--- generic ack/ready api.
-
 sync_sm_ex cont =
   closeReg [bits 4] $ \[d_cnt] -> do
      cnt1 <- d_cnt `add` 1
      have <- slice' cnt1 3 2
      cnt' <- if' cont cnt1 d_cnt
      return ([cnt'], (have, cnt'))
-
 d_sync_ex2 [ext] =
   closeReg [bits 1] $ \[d_ack] -> do
     (rdy, cnt) <- sync_sm_write sync_sm_ex d_ack
@@ -217,31 +213,29 @@ d_sync_ex2 [ext] =
     return ([ack],[])
 
 
--- Attempt at a generic read/write channel interface.  This looks a
--- lot like a bus interface, so maybe should be treated as such?  See
--- TestLib.hs for the example this was lifted from.  Basic idea is
--- that we wrap this around a state machine sync_sm that takes a
--- 'cont' signal and produces a 'have' signal + data in response,
--- together with the next output of the machine.  FIXME: This might
--- need some time to sink in as a generic pattern.
+-- CHANNEL WRITERS
+-- See also examples in Lib.hs
 
--- FIXME: The circuit is actually symmetric: req and rdy are just
--- conventions that indicate the direction the data is flowing in.
+-- This one isn't useful as a general purpose machine, but is there to
+-- illustrate a case where the writer isn't always ready.
+cwrite_busycount d_rd_sync =
+  closeReg [bits 4] $ \[d_cnt] -> do
+     cnt1    <- d_cnt `add` 1
+     wr_sync <- slice' cnt1 3 2
+     cnt'    <- if' d_rd_sync cnt1 d_cnt
+     return ([cnt'], (wr_sync, cnt', ()))
 
-
-
-
--- FIXME: Create a test case for the closeChannel operator in Lib.hs
 d_sync_ex3 [ext] = do
-  let write d_rd_sync = do
-        let wr_sync = cbit 1
-            wr_data = cbit 1
-        return (wr_sync, wr_data, [])
-      reade _ wr_sync wr_data = do
-        let rd_sync = cbit 1
-        return (rd_sync, [])
-  closeChannel reade write
+  let read  = cread_sample ext
+      write = cwrite_busycount
+  (rd_out, _) <- closeChannel read write
+  let (wc, w) = rd_out
+  -- ack and cnt are used in the testbench to recover the sequence
+  "ack"   <-- wc
+  "cnt"   <-- w
+  "ext"   <-- ext
   return []
+
 
 
 
@@ -250,22 +244,6 @@ d_sync_ex3 [ext] = do
 -- In first attempt make it as simple as possible and do it ad-hoc.
 -- The source state machine is just a counter.
 --
--- FIXME: Ready and done are not the same.
-
-
--- sm_count d_wc = do
---   closeReg [bits 8] $ \[d_cnt] -> do
---     cnt1 <- d_cnt `add` 1
---     cnt <- if' d_wc cnt1 d_cnt
---     return ([cnt],d_cnt)
-
-
--- d_uart_dma_tx [bc] = do
---   closeReg [bits 1] $ \[d_wc] -> do
---     dat <- sm_count d_wc
---     (wc, ser_out) <- async_transmit_pull bc (d_wc, dat)
---     return ([wc],[])
-
 d_uart_dma_tx [bc] = do
   let write = cwrite_count 8
       read  = cread_async_transmit bc

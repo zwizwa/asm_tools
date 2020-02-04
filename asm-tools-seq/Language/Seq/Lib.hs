@@ -760,7 +760,7 @@ async_transmit bitClock (wordClock, txData) = do
 
       -- Outputs are a function of previous state.
       out  <- slice' shiftReg 1 0
-      done <- cnt `equ` 0
+      idle <- cnt `equ` 0
 
       -- Make it so that inserting a new word in the shift register
       -- during the stop bit doesn't change the bit output (== 1).
@@ -768,25 +768,33 @@ async_transmit bitClock (wordClock, txData) = do
       -- Once fully shifted, contents is all 1, so also stop bit.
       newframe <- conc txData =<< conc (cbit 0) (cbit 1)
       shifted  <- conc (cbit 1) =<< slice' shiftReg (n+2) 1
-      cntDec   <- if' done 0 =<< dec cnt
+      cntDec   <- if' idle 0 =<< dec cnt
 
       [shiftReg', cnt'] <- cond
         [(wordClock, [newframe, cbits n' (n + 2)]),
          (bitClock,  [shifted,  cntDec])]
         [shiftReg, cnt]
 
-      "tx_bc"   <-- bitClock
-      "tx_wc"   <-- wordClock
-      "tx_in"   <-- txData
-      "tx_done" <-- done
-      "tx_out"  <-- out
-      "tx_sr"   <-- shiftReg
-      
-      -- return ([shiftReg', cnt'],
-      --         [out, done,
-      --          wordClock, bitClock, shiftReg', cnt'])
 
-      return ([shiftReg', cnt'], (out, done))
+      
+      -- rd_rdy is the sync signal to use this machine as a
+      -- synchronous channel read.  To properly rendez-vous, rd_rdy
+      -- needs to go low when wordClock is high.  This is a dirty
+      -- workaround.  FIXME: Restructure transmitter.
+
+      
+      -- real fix is to make the output combinatorial.
+      nWordClock <- inv wordClock
+      rd_rdy <- idle `band` nWordClock
+
+      "tx_bc"     <-- bitClock
+      "tx_wc"     <-- wordClock
+      "tx_in"     <-- txData
+      "tx_rd_rdy" <-- rd_rdy
+      "tx_out"    <-- out
+      "tx_sr"     <-- shiftReg
+
+      return ([shiftReg', cnt'], (out, rd_rdy))
 
 
 -- Have the UART "pull" a fast producer by producing a word clock.
@@ -884,7 +892,8 @@ async_transmit_pull bc (d_wc, dat) = do
 -- Note an implementation detail: the channel reader also receives its
 -- own delayed read signal.  From implemenation it was clear that this
 -- signal is often needed in the reader implementation, and providing
--- it directly avoids the need for a second delay to compute it.
+-- it directly avoids the need for a second delay to compute it.  The
+-- most common pattern is to use this to create a strobe:
 --
 -- strobe <- d_rd_sync `band` wr_sync
 
@@ -899,7 +908,7 @@ closeChannel cread cwrite = do
     "wr_data"   <-- wr_data
     -- wr_out, rd_out: other state machine outputs not necessarily
     -- related to channel communication.
-    return ([rd_sync],(wr_out,rd_out))
+    return ([rd_sync],(rd_out, wr_out))
 
 
 -- So, at this point we are convinced that this is the proper way to
@@ -915,6 +924,8 @@ closeChannel cread cwrite = do
 -- clock is always delayed one cycle, but migh be masked also if there
 -- is no data available.
 
+-- Note the pattern that co
+
 cread_sample wc d_rd_sync wr_sync wr_data = do
   -- incoming sample clock wc is used directly as rd_sync, so the
   -- output clock is valid if we requested data in the last cycle, and
@@ -923,17 +934,18 @@ cread_sample wc d_rd_sync wr_sync wr_data = do
   return (wc, (wc', wr_data))
 
 
--- A stub that acks a channel write as soon as it is available.
+-- A stub that acks a channel write as soon as it is available,
+-- turning the write into a strobed signal.
 cread_ack d_rd_sync wr_sync wr_data = do
   wc' <- d_rd_sync `band` wr_sync
   return (d_rd_sync, (wc', wr_data))
 
 
+-- async_transmit has been modified to provide a compatible rd_sync
+-- signal, so this is again just a strobe wrapper.
 cread_async_transmit bc d_rd_sync wr_sync wr_data = do
-  wc <- d_rd_sync `band` wr_sync  -- both meet
-  (ser_out, done) <- async_transmit bc (wc, wr_data)
-  -- FIXME: change meaning of done so it can be used as rd_sync directly
-  rd_sync <- posedge done  
+  wc <- d_rd_sync `band` wr_sync
+  (ser_out, rd_sync) <- async_transmit bc (wc, wr_data)
   return (rd_sync, ser_out)
 
 
@@ -955,16 +967,7 @@ cwrite_count nb_bits d_rd_sync = do
 
 
 
-
-
--- The next goal is to create a reader/writer for a DMA uart transfer
--- that uses this interface.
-
--- FIXME: I'm stuck with this thing though: what does it actually do?
--- It presents the channel sync operation, acting as a writer, and it
--- drives a state machine.  I think this can just be tossed out if I
--- create state machines to adhering to the channel mechanism directly.
-
+-- FIXME: Is this still needed?
 
 -- And why is this so complex?
 

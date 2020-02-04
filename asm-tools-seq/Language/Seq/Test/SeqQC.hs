@@ -356,18 +356,23 @@ e_sync_rx t_sync_ex (n_pulse,pulse_sep) = (ok, (expected, stream, table)) where
   expected = take (length stream) $ cycle [4,5,6,7,12,13,14,15]
   ok = stream == expected
 
-x_sync_ex t_sync_ex spec = do
+x_sync_ex = x_sync_ex' ["ext","rdy","ack","cnt","d_ack"]
+x_sync_ex' probe_names t_sync_ex spec = do
   let (ok, (expected, stream, (probes, (_, outs)))) = e_sync_rx t_sync_ex spec
   putStrLn "-- x_sync_ex0"
   print ok
   print expected
   print stream
-  printProbe ["ext","rdy","ack","cnt","d_ack"] $ (probes, outs)
+  printProbe probe_names $ (probes, outs)
 
 x_sync_ex0 = x_sync_ex t_sync_ex0 (1,10)  -- note: cnt output is dummy '0' for ex0
 x_sync_ex1 = x_sync_ex t_sync_ex1 (16,4)
 x_sync_ex2 = x_sync_ex t_sync_ex2 (16,4)
+x_sync_ex3 = x_sync_ex' ["ext","ack","cnt"] t_sync_ex3 (16,4)
 -- x_sync_ex1 = x_sync_ex t_sync_ex1 (15,1)
+
+-- x_sync_ex3 = x_sync_ex t_sync_ex3 (16,4)
+
 
 p_sync_ex = forAll spec $ fst . (e_sync_rx t_sync_ex2) where
   spec = do
@@ -396,7 +401,7 @@ x_uart_dma_tx = do
   putStrLn "-- x_uart_dma_tx0"
   print ok
   print stream
-  printProbe ["tx_bc","tx_wc","tx_in","tx_done"] $ (probes, outs)
+  printProbe ["tx_bc","tx_wc","tx_in","tx_rd_rdy"] $ (probes, outs)
 
 
 
@@ -540,8 +545,8 @@ x_soc = do
       push 0xf
       -- push 0xF
       write uart_tx_addr
-      nop                 -- tx_done doesnt clear fast enough
-      read  uart_tx_addr  -- waits until tx_done is high
+      nop                 -- tx_rd_rdy doesnt clear fast enough: FIXME: no longer needed?
+      read  uart_tx_addr  -- waits until tx_rd_rdy is high
       drop                -- value returned is dummy
       jmp 0
 
@@ -585,11 +590,11 @@ x_soc = do
     t_soc prog_push $ replicate 10 idle
 
   putStrLn "prog_bus:"
-  printProbe ["iw","ip","tx_bc","tx_wc","tx_in","tx_done","tx_out"] $
+  printProbe ["iw","ip","tx_bc","tx_wc","tx_in","tx_rd_rdy","tx_out"] $
     t_soc prog_bus $ replicate 30 idle
 
   putStrLn "uart_tx:"
-  printProbe ["iw","ip","tx_done","tx_sr","tx_bc","tx_out"] $
+  printProbe ["iw","ip","tx_rd_rdy","tx_sr","tx_bc","tx_out"] $
     t_soc uart_tx $ take 200 $ t_soc_baud_div 8
 
   putStrLn "prog_loop:"
@@ -646,12 +651,12 @@ x_soc_boot = do
   putStrLn "-- x_soc_boot"
 
   putStrLn "-- reference: execute from ROM"
-  printProbe ["iw","ip","tx_bc","tx_wc","tx_in","tx_done","tx_out"] $
+  printProbe ["iw","ip","tx_bc","tx_wc","tx_in","tx_rd_rdy","tx_out"] $
     t_soc prog $ replicate 30 $ t_soc_idle
   printL $ prog_bits prog'
 
   putStrLn "-- boot: execute from SPI booted RAM"
-  printProbe ["run","iw","ip","tx_bc","tx_wc","tx_in","tx_done","tx_out"] $
+  printProbe ["run","iw","ip","tx_bc","tx_wc","tx_in","tx_rd_rdy","tx_out"] $
     t_soc [] $ map ([1, 1] ++) $ spi ++ postamble ++ spi ++ postamble
   printL $ prog_bits prog'
 
