@@ -74,7 +74,7 @@ test = do
   qc "p_spi" p_spi
   qc "p_rmii_rx" p_rmii_rx
   qc "p_fifo" p_fifo
-  qc "p_sync_ex" p_sync_ex
+  qc "p_channel" p_channel
 
   qc "p_soc_fun" p_soc_fun
 
@@ -91,8 +91,7 @@ test = do
 
   x_st_testbench
 
-  x_sync_ex0
-  x_sync_ex1
+  x_channel0
 
   -- x_sync_mod
   qc "p_sync_mod" p_sync_mod
@@ -332,23 +331,20 @@ p_rmii_rx = forAll vars $ fst . e_rmii_rx where
   vars = listOf $ word 8
 
 
--- sync_ex
+-- channel
 
--- d_sync_ex* illustrate the use of the read/write handshake pattern.
--- See comments in TestLib.hs for more information.  We feed the
--- circuit with an external pulse to drive the reader, and we probe
--- the data going into the reader (ack,cnt).
+-- d_channel* illustrate the use of the read/write channel rendez-vous
+-- handshake pattern.  See comments in Lib.hs and TestLib.hs for more
+-- information.  We feed the circuit with an external pulse to drive
+-- the reader, and we probe the associated data stream (wc,c).
 
-t_sync_ex0 i = $(compile allProbe [1] d_sync_ex0) memZero $ TestInput i
-t_sync_ex1 i = $(compile allProbe [1] d_sync_ex1) memZero $ TestInput i
-t_sync_ex2 i = $(compile allProbe [1] d_sync_ex2) memZero $ TestInput i
-t_sync_ex3 i = $(compile allProbe [1] d_sync_ex3) memZero $ TestInput i
+t_channel0 i = $(compile allProbe [1] d_channel0) memZero $ TestInput i
 
-e_sync_rx t_sync_ex (n_pulse,pulse_sep) = (ok, (expected, stream, table)) where
+e_sync_rx t_channel (n_pulse,pulse_sep) = (ok, (expected, stream, table)) where
   ext_sync = rep n_pulse $ pulse pulse_sep pulse_sep
   ins = [[e] | e <- ext_sync]
-  table@(probes, (_, outs)) = t_sync_ex ins
-  stream = downSampleCD $ selectSignals ["ack","cnt"] probes outs
+  table@(probes, (_, outs)) = t_channel ins
+  stream = downSampleCD $ selectSignals ["wc","w"] probes outs
   -- If pulse_sep gets small, some ext pulses will get missed because
   -- the writer is not ready to write yet, so here we just check that
   -- the sequence is correct, but not that there are enough elements.
@@ -356,25 +352,19 @@ e_sync_rx t_sync_ex (n_pulse,pulse_sep) = (ok, (expected, stream, table)) where
   expected = take (length stream) $ cycle [4,5,6,7,12,13,14,15]
   ok = stream == expected
 
-x_sync_ex = x_sync_ex' ["ext","rdy","ack","cnt","d_ack"]
-x_sync_ex' probe_names t_sync_ex spec = do
-  let (ok, (expected, stream, (probes, (_, outs)))) = e_sync_rx t_sync_ex spec
-  putStrLn "-- x_sync_ex0"
+x_channel' probe_names t_channel spec = do
+  let (ok, (expected, stream, (probes, (_, outs)))) = e_sync_rx t_channel spec
+  putStrLn "-- x_channel0"
   print ok
   print expected
   print stream
   printProbe probe_names $ (probes, outs)
 
-x_sync_ex0 = x_sync_ex t_sync_ex0 (1,10)  -- note: cnt output is dummy '0' for ex0
-x_sync_ex1 = x_sync_ex t_sync_ex1 (16,4)
-x_sync_ex2 = x_sync_ex t_sync_ex2 (16,4)
-x_sync_ex3 = x_sync_ex' ["ext","ack","cnt"] t_sync_ex3 (16,4)
--- x_sync_ex1 = x_sync_ex t_sync_ex1 (15,1)
-
--- x_sync_ex3 = x_sync_ex t_sync_ex3 (16,4)
+-- x_channel0 = x_channel' ["ext","wc","w"] t_channel0 (16,4)
+x_channel0 = x_channel' ["ext","wc","w"] t_channel0 (16,0)
 
 
-p_sync_ex = forAll spec $ fst . (e_sync_rx t_sync_ex2) where
+p_channel = forAll spec $ fst . (e_sync_rx t_channel0) where
   spec = do
     n_pulse   <- choose (0,16)
     pulse_sep <- choose (0,10)

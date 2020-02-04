@@ -60,164 +60,12 @@ d_rmii_rx bits [crs_dv, rxd0, rxd1] = do
 
 
 
-
--- Read/write synchronization pattern.
---
--- This is tricky.
---
--- To allow up to one transfer per clock, we need to use only one
--- delay in the sync path: RDY -> ACK -> RDY.  To do this, we express
--- the reading and writing end as combinatorial...
---
--- Writer: ACK -> RDY
--- Reader: RDY -> ACK
---
--- This introduces a cycle that needs to be broken when the two
--- machines are combined.  It seems most convenient to do that on the
--- ack, e.g. writer sees the ack generated in the previous cycle.
---
--- So the handshake looks like this:
---
--- 1. writer raises RDY.
---
--- 2. reader responds combinatorially to produce an ACK whenever it
---    has time to handle the RDY (i.e. there might be cycles with no
---    response).
---
--- 3. writer sees the delayed ACK in the next cycle where it can
---    decide to produce a new value combinatorially.
---
--- Illustrated below with some examples.
---
--- ex0: Only do handshake.  Writer only writes once.
--- Writer has 3 states:
--- . wait for read to happen
--- . idle
--- The cross-wiring is done using ack delay
-sync_ex0_write ack = do
-  let rdy0 = 1  -- Start out with write ready
-  closeReg [bits' 1 rdy0] $ \[rdy] -> do
-    [rdy'] <- cond
-      [(ack, [cbit 0])]
-      [rdy]
-    return ([rdy'],rdy')
-
-sync_ex_read ext rdy = do
-  next  <- ext `band` rdy
-  [ack] <- cond
-    [(next, [cbit 1])]
-    [cbit 0]
-  return ack
-
-d_sync_ex0 [ext] =
-  closeReg [bits 1] $ \[d_ack] -> do
-    rdy  <- sync_ex0_write d_ack
-    ack  <- sync_ex_read ext rdy
-    "ext"   <-- ext
-    "rdy"   <-- rdy    -- combinatorial rdy
-    "ack"   <-- ack    -- combinatorial ack
-    "d_ack" <-- d_ack  -- delayed ack
-    "cnt"   <-- cbit 0 -- dummy value
-    return ([ack],[])
-
--- Controlling this circuit from a single pulse on ext gives the
--- following trace.  First line is writer rdy, waiting for ack, second
--- line is ext signal causing a read to happen, producing
--- combinatorial ack, and third line is the delayed ack causing the
--- writer to transition, which in this case is a finle idle (not rdy)
--- state.  The ack pulse is only 1 wide.
---
--- ext rdy ack d_ack
--- -----------------
---   0   1   0     0 (5x)
---   1   1   1     0
---   0   0   0     1
---   0   0   0     0 (19x)
-
-
-
-
--- ex1: Use synchronization to transfer a data stream
---
--- Writer is a counter that writes out the next state.  To make it a
--- bit more interesting, only write out values that have bit 2 set,
--- e.g. 4,5,6,7,12,14,14,15,...
---
-sync_ex1_write d_ack = do
-  closeReg [bits 1, bits 4] $ \[d_rdy,d_out] -> do
-
-    -- Regarding the write there are essentially 3 cases:
-    -- WAIT  d_rdy=1, d_ack=0  unacknowledged write  -> rdy=1, no stat change
-    -- NEXT  d_rdy=1, d_ack=1  acknowledged write    -> rdy=? dep on state change
-    -- IDLE  d_rdy=0, d_ack=x  no write, ignore ack
-    --
-    -- To complete the machine, one more piece of information is
-    -- necesary: do we have data ready to send out.  It turns out to
-    -- be simplest to just delay the output value, and use that to
-    -- compute the possible next state of the counter, and then use
-    -- that update to determine if we can write out the new value.
-    
-    cnt1 <- d_out `add` 1
-    have <- slice' cnt1 3 2
-
-    -- With this extra state update constraint we get the truth table.
-    -- Some local values are used to make it easier to factor.
-    --
-    -- IN                 LOCAL   OUT
-    -- d_rdy d_ack have   wait    rdy out     
-    -- ------------------------------------
-    -- 1     0     x      1       1   d_out
-    -- 1     1     1      0       1   cnt1
-    -- 1     1     0      0       0   cnt1
-    -- 0     x     0      0       0   cnt1
-    -- 0     x     1      0       1   cnt1
-
-    n_d_ack <- inv d_ack
-    wait    <- d_rdy `band` n_d_ack
-    out     <- if' wait d_out cnt1
-    rdy     <- wait `bor` have
-
-    return ([rdy,out],(rdy,out))
-
-
-
--- The two machines need to be "cross-wired" by inserting a delay on
--- the ACK line.
-d_sync_ex1 [ext] =
-  closeReg [bits 1] $ \[d_ack] -> do
-    (rdy, cnt) <- sync_ex1_write d_ack
-    ack        <- sync_ex_read ext rdy
-    "ext"   <-- ext
-    "rdy"   <-- rdy    -- combinatorial rdy
-    "ack"   <-- ack    -- combinatorial ack
-    "cnt"   <-- cnt    -- channel data (combinatorial, follows rdy)
-    "d_ack" <-- d_ack  -- delayed ack
-    return ([ack],[])
-
-
-sync_sm_ex cont =
-  closeReg [bits 4] $ \[d_cnt] -> do
-     cnt1 <- d_cnt `add` 1
-     have <- slice' cnt1 3 2
-     cnt' <- if' cont cnt1 d_cnt
-     return ([cnt'], (have, cnt'))
-d_sync_ex2 [ext] =
-  closeReg [bits 1] $ \[d_ack] -> do
-    (rdy, cnt) <- sync_sm_write sync_sm_ex d_ack
-    ack        <- sync_ex_read ext rdy
-    "ext"   <-- ext
-    "rdy"   <-- rdy    -- combinatorial rdy
-    "ack"   <-- ack    -- combinatorial ack
-    "cnt"   <-- cnt    -- channel data (combinatorial, follows rdy)
-    "d_ack" <-- d_ack  -- delayed ack
-    return ([ack],[])
-
-
 -- CHANNEL WRITERS
 -- See also examples in Lib.hs
 
 -- This one isn't useful as a general purpose machine, but is there to
--- illustrate a case where the writer isn't always ready.
+-- illustrate a case where the writer isn't always ready.  See
+-- SeqQC.p_channel property test.
 cwrite_busycount d_rd_sync =
   closeReg [bits 4] $ \[d_cnt] -> do
      cnt1    <- d_cnt `add` 1
@@ -225,15 +73,14 @@ cwrite_busycount d_rd_sync =
      cnt'    <- if' d_rd_sync cnt1 d_cnt
      return ([cnt'], (wr_sync, cnt', ()))
 
-d_sync_ex3 [ext] = do
+d_channel0 [ext] = do
   let read  = cread_sample ext
       write = cwrite_busycount
   (rd_out, _) <- closeChannel read write
   let (wc, w) = rd_out
-  -- ack and cnt are used in the testbench to recover the sequence
-  "ack"   <-- wc
-  "cnt"   <-- w
-  "ext"   <-- ext
+  "wc"  <-- wc
+  "w"   <-- w
+  "ext" <-- ext
   return []
 
 
