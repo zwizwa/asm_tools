@@ -228,38 +228,19 @@ d_sync_ex2 [ext] =
 -- FIXME: The circuit is actually symmetric: req and rdy are just
 -- conventions that indicate the direction the data is flowing in.
 
-sync_sm_write sync_sm d_ack = do
-  closeReg [bits 1] $ \[d_rdy] -> do
-
-    -- IN                 LOCAL       OUT
-    -- d_rdy d_ack have   wait cont   rdy
-    -- ----------------------------------
-    -- 1     0     x      1    0      1  
-    -- 1     1     1      0    1      1  
-    -- 1     1     0      0    1      0  
-    -- 0     x     0      0    1      0  
-    -- 0     x     1      0    1      1  
-    
-    n_d_ack          <- inv d_ack
-    wait             <- d_rdy `band` n_d_ack
-    sm_req           <- inv wait
-    (sm_rdy, sm_out) <- sync_sm sm_req
-    rdy              <- wait `bor` sm_rdy
-
-    return ([rdy],(rdy,sm_out))
 
 
 
 -- FIXME: Create a test case for the closeChannel operator in Lib.hs
 d_sync_ex3 [ext] = do
-  let writer d_rd_sync = do
+  let write d_rd_sync = do
         let wr_sync = cbit 1
             wr_data = cbit 1
         return (wr_sync, wr_data, [])
-      reader wr_sync wr_data = do
+      reade _ wr_sync wr_data = do
         let rd_sync = cbit 1
         return (rd_sync, [])
-  closeChannel writer reader
+  closeChannel reade write
   return []
 
 
@@ -272,18 +253,25 @@ d_sync_ex3 [ext] = do
 -- FIXME: Ready and done are not the same.
 
 
-sm_count d_wc = do
-  closeReg [bits 8] $ \[d_cnt] -> do
-    cnt1 <- d_cnt `add` 1
-    cnt <- if' d_wc cnt1 d_cnt
-    return ([cnt],d_cnt)
+-- sm_count d_wc = do
+--   closeReg [bits 8] $ \[d_cnt] -> do
+--     cnt1 <- d_cnt `add` 1
+--     cnt <- if' d_wc cnt1 d_cnt
+--     return ([cnt],d_cnt)
 
+
+-- d_uart_dma_tx [bc] = do
+--   closeReg [bits 1] $ \[d_wc] -> do
+--     dat <- sm_count d_wc
+--     (wc, ser_out) <- async_transmit_pull bc (d_wc, dat)
+--     return ([wc],[])
 
 d_uart_dma_tx [bc] = do
-  closeReg [bits 1] $ \[d_wc] -> do
-    dat <- sm_count d_wc
-    (wc, ser_out) <- async_transmit_pull bc (d_wc, dat)
-    return ([wc],[])
+  let write = cwrite_count 8
+      read  = cread_async_transmit bc
+  closeChannel read write
+  return []
+
 
 
 

@@ -1,0 +1,57 @@
+
+MISC notes to be included in documentation.
+
+* Assumptions
+
+** Applicative interface is better
+
+*** Pros:
+**** Connections are implicit
+**** Instantiations are implicit
+*** Cons:
+**** Ball of mud state machines become harder to manage
+
+** Sequential only
+
+We gain a lot of simplicity by restricting to sequential logic.
+
+The assumption is that the overwhelming majority of code is
+sequential.  We aim at providing a way to produce sequential modules
+that can then be integrated into an SoC with multiple clock domains
+and asynchronous circuits.
+
+
+* Communication channels
+
+** Master / Slave
+
+The convention used for data chains that do not need automatic
+synchronization is straightforward: a uni-directional data channel is
+associated with a strobe channel that indicates data is present in
+that time instance.
+
+We usually call this 'clock' in the library code, as in bit clock or
+word clock, since the digital logic clock driving the state machine's
+registers is never accessible in Seq code.
+
+These kinds of communication channels are fire and forget: it is
+assumed that the slave end can always keep up with the master.
+
+
+** Rendez-vous
+
+When more elaborate flow control is needed between two communicating
+machines, a rendez-vous channel can be used.  Both ends provide a sync
+signal indicating they are ready to participate in a transaction.
+
+When both sync signals are high, a transaction is assumed to occur.
+
+A channel rendez-vous is straightforward to convert to a master
+channel for any number of slaves to sync to.
+
+The synchronization principle is derived from a symmetric principle,
+but has to be asymmetric in a practical realization to break
+combinatorial loops.
+
+
+

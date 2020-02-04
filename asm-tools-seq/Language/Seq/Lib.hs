@@ -16,6 +16,8 @@ import Data.Key(Zip(..),zipWith, zip)
 import Prelude hiding (zipWith, zip)
 import Data.Bits hiding (bit)
 
+
+
 -- Some general guidelines.
 --
 -- (1) As a general rule, don't write library routines that take monadic
@@ -817,10 +819,10 @@ async_transmit_pull bc (d_wc, dat) = do
 --
 -- This is tricky because
 --
--- 1) the transaction is in essence symmetric, but
+-- 1) the _idea_ behind transaction is in essence symmetric, but
 --
 -- 2) asymmetry needs to be introduced to break the combinatorial loop
---    by inserting delays
+--
 --
 -- Let's explore the design space.
 --
@@ -856,7 +858,15 @@ async_transmit_pull bc (d_wc, dat) = do
 --                   \-----[D]-<--------/
 --
 -- Since we only want a unidirectional channel, the flow direction
--- without the additional delay is the most natural.
+-- without the additional delay is the most natural.  See below.
+--
+-- Breaking symmetry the other way around would interchange frontend
+-- and backand and look like this, which we deem to be suboptimal:
+--
+--   /--------------<----------------------\
+--   \-->--[b:write]--[D]-->--[f:read]-->--/
+--            \-------[D]-->-----/
+--
 --
 -- Another way to put this is that we break symmetry based on the
 -- requirement to not have a data delay as part of the loop closing
@@ -866,11 +876,23 @@ async_transmit_pull bc (d_wc, dat) = do
 --   \-->--[D]-->--[f:write]---->--[b:read]-->--/
 --                    \--------->-----/
 --
--- This brings us to the following implementation.
-closeChannel writer reader = do
+-- This brings us to the following implementation.  We use the
+-- following shorthands, also used in implementations:
+-- cw : channel writer
+-- cr : channel reader
+--
+-- Note an implementation detail: the channel reader also receives its
+-- own delayed read signal.  From implemenation it was clear that this
+-- signal is often needed in the reader implementation, and providing
+-- it directly avoids the need for a second delay to compute it.
+--
+-- strobe <- d_rd_sync `band` wr_sync
+
+
+closeChannel cread cwrite = do
   closeReg [bits 1] $ \[d_rd_sync] -> do
-    (wr_sync, wr_data, wr_out) <- writer d_rd_sync
-    (rd_sync, rd_out)          <- reader wr_sync wr_data
+    (wr_sync, wr_data, wr_out) <- cwrite d_rd_sync
+    (rd_sync, rd_out)          <- cread d_rd_sync wr_sync wr_data
     "d_rd_sync" <-- d_rd_sync
     "rd_sync"   <-- rd_sync
     "wr_sync"   <-- wr_sync
@@ -879,15 +901,96 @@ closeChannel writer reader = do
     -- related to channel communication.
     return ([rd_sync],(wr_out,rd_out))
 
--- Breaking symmetry the other way around would interchange frontend
--- and backand and look like this, which is we deem to be suboptimal:
---
---   /--------------<----------------------\
---   \-->--[b:write]--[D]-->--[f:read]-->--/
---            \-------[D]-->-----/
---
 
+-- So, at this point we are convinced that this is the proper way to
+-- structure a rendez-vous, but due to the asymmetry, the API is a
+-- little odd.  Below are a couple of examples that implement the read
+-- and write interface.
     
+
+-- CHANNEL READERS
+
+-- Sample a channel based on external word clock wc, providing a new
+-- word clock wc' corresponding to valid data from the channel.  That
+-- clock is always delayed one cycle, but migh be masked also if there
+-- is no data available.
+
+cread_sample wc d_rd_sync wr_sync wr_data = do
+  -- incoming sample clock wc is used directly as rd_sync, so the
+  -- output clock is valid if we requested data in the last cycle, and
+  -- the read was acknowledged.
+  wc' <- d_rd_sync `band` wr_sync
+  return (wc, (wc', wr_data))
+
+
+-- A stub that acks a channel write as soon as it is available.
+cread_ack d_rd_sync wr_sync wr_data = do
+  wc' <- d_rd_sync `band` wr_sync
+  return (d_rd_sync, (wc', wr_data))
+
+
+cread_async_transmit bc d_rd_sync wr_sync wr_data = do
+  wc <- d_rd_sync `band` wr_sync  -- both meet
+  (ser_out, done) <- async_transmit bc (wc, wr_data)
+  -- FIXME: change meaning of done so it can be used as rd_sync directly
+  rd_sync <- posedge done  
+  return (rd_sync, ser_out)
+
+
+-- CHANNEL WRITERS
+
+-- The thing to understand here is that a writer gets the delayed sync
+-- signal from the reader, and needs to produce the output value
+-- combinatorially in response to d_rd_sync going high while the
+-- internal write ready condition is valid as well.
+
+cwrite_count nb_bits d_rd_sync = do
+  closeReg [bits nb_bits] $ \[d_cnt] -> do
+    cnt1 <- d_cnt `add` 1
+    cnt  <- if' d_rd_sync cnt1 d_cnt
+    return ([cnt],
+            (cbit 1,  -- always ready
+             cnt,     -- combinatorial response
+             ()))     -- no other data
+
+
+
+
+
+-- The next goal is to create a reader/writer for a DMA uart transfer
+-- that uses this interface.
+
+-- FIXME: I'm stuck with this thing though: what does it actually do?
+-- It presents the channel sync operation, acting as a writer, and it
+-- drives a state machine.  I think this can just be tossed out if I
+-- create state machines to adhering to the channel mechanism directly.
+
+
+-- And why is this so complex?
+
+
+sync_sm_write sync_sm d_ack = do
+  closeReg [bits 1] $ \[d_rdy] -> do
+
+    -- IN                 LOCAL        OUT
+    -- d_rdy d_ack have   wait sm_req  rdy
+    -- ------------------------------------
+    -- 1     0     x      1    0       1  
+    -- 1     1     1      0    1       1  
+    -- 1     1     0      0    1       0  
+    -- 0     x     0      0    1       0  
+    -- 0     x     1      0    1       1  
+    
+    n_d_ack          <- inv d_ack
+    wait             <- d_rdy `band` n_d_ack
+    sm_req           <- inv wait
+    (sm_rdy, sm_out) <- sync_sm sm_req
+    rdy              <- wait `bor` sm_rdy
+
+    return ([rdy],(rdy,sm_out))
+
+
+
 
 
 -- RMII
