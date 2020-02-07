@@ -10,6 +10,12 @@
 -- state update function ((s,i)->(s,o))
 
 
+-- ( It would likely be possible to be a bit more elegant and
+-- implement a ST network directly from a Seq instance.  However, this
+-- works fine in practice and I really need to focus on the practical
+-- use case for now... )
+
+
 {-# LANGUAGE TemplateHaskell #-}
 
 module Language.Seq.TH(toExp, compile', compile, test, noProbe, allProbe) where

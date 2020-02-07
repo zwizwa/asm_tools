@@ -1,11 +1,6 @@
--- RTL code tends to be "algebraic".  I.e. all the action happens
--- within the domain of a type.  Apart from enforcing basic code
--- structure, types do not help.  Tests are needed to constrain
--- behavior.
--- 
 -- QuickCheck is used to raise the abstraction level of tests.
--- However, do note that in practice it is easier to work in steps,
--- i.e. graduate from "there exists" to "for all":
+--
+-- The tests below all follow a 3-step construction process:
 --
 -- . Create a trace wrapper (t_) to transform the abstract (r S)
 --   functions into the Int domain.
@@ -15,6 +10,14 @@
 --
 -- . Once this works, generalize the example into property tests (p_)
 --   to add test coverage, and comment out the verbose example.
+--
+--
+-- To create traces there are essentially two mechanisms:
+-- . allProbe gathers test probes (the <-- operator)
+-- . noProbe gathers only the outputs of a dedicated Seq wrapper circuit
+--
+-- The allProbe approach is newer and has some formatting code for
+-- printing logic traces.
 
 
 {-# LANGUAGE NoMonomorphismRestriction #-}
@@ -45,6 +48,7 @@ import Data.List hiding (drop)
 import Data.List.Split
 import Data.Bits
 import Data.Maybe
+import Data.Either
 import Data.Array.IArray
 import Test.QuickCheck hiding ((.&.),(.|.),again)
 import Test.QuickCheck.Gen hiding (bitSize, getLine)
@@ -234,30 +238,26 @@ t_async_transmit ins =
 
 -- FIXME: Multiple bytes.  This is not easy to test due to done->next
 -- word dependency.  Maybe make a CPU program?
-e_async_transmit tx_byte = ([tx_byte] == rx_bytes, (tx_out, rx_out, rx_bytes)) where
+e_async_transmit tx_byte = ([tx_byte] == rx_bytes, (tx_out, rx_bytes)) where
   tx_ins = take 100 $ [[0,0,0],[0,0,0],[1,1,tx_byte]] ++
            -- 8x oversampling
            (cycle $ replicate 7 [0,0,0] ++ [[1,0,0]])
                
   tx_out = t_async_transmit tx_ins
   -- use the receiver to test the transmitter
-  dline  = map head tx_out  -- the line carrying the data
-  rx_out = t_async_receive 8 $ map (:[]) dline
-  rx_bytes = map head $ downSample' rx_out
+  rx_bytes = async_receive_bytes 8 $ map head tx_out
 
 p_async_transmit = forAll vars pred where
   vars = word 8
   pred = fst . e_async_transmit
 
 x_async_transmit = do
-  let (_, (tx_out, rx_out, rx_bytes)) = e_async_transmit 0x5A -- 90
+  let (_, (tx_out, rx_bytes)) = e_async_transmit 0x5A -- 90
   putStrLn "-- x_async_transmit"
   putStrLn "rx-bytes:"
   print $ rx_bytes
   putStrLn "tx:"
   printL $ tx_out
-  putStrLn "rx:"
-  printL $ rx_out
   
 
 
@@ -370,28 +370,35 @@ p_channel = forAll spec $ fst . (e_sync_rx t_channel0) where
     pulse_sep <- choose (0,10)
     return (n_pulse, pulse_sep)
 
--- uart_dma_tx
 
--- d_uart_dma_tx* illustrate the use of the read/write handshake pattern.
--- See comments in TestLib.hs for more information.  We feed the
--- circuit with an external pulse to drive the reader, and we probe
--- the data going into the reader (ack,cnt).
+-- cread_async_transmit
 
-t_uart_dma_tx i = $(compile allProbe [1] d_uart_dma_tx) memZero $ TestInput i
+-- channel test for counter -> async_transmit
+t_cread_async_transmit i = $(compile allProbe [1] d_cread_async_transmit) memZero $ TestInput i
 
-e_uart_dma_tx = (True, (expected, stream, table)) where
-  ins = rep 100 [[1]] -- Bit clock is tested elsewhere, so just max it here.
-  table@(probes, (_, outs)) = t_uart_dma_tx ins
-  expected = []
-  stream   = downSampleCD $ selectSignals ["tx_wc","tx_in"] probes outs
+e_cread_async_transmit n_wait = (ok, (channel_stream, rx_bytes, table)) where
+  -- allow different bit clocks.
+  bc_frame = [[1]] ++ rep n_wait [[0]]
+  ins = rep 100 bc_frame
+  table@(probes, (_, outs)) = t_cread_async_transmit ins
+  tx_out   = map head $ selectSignals ["tx_out"] probes outs
+  -- for inspecting the channel stream
+  channel_stream = downSampleCD $ selectSignals ["tx_wc","tx_in"] probes outs
+  -- verify uart output using Haskell ref UART from TestTools
+  -- just discard bad frames (e.g. at the end of the trace)
+  rx_bytes = rights $ uartRX (n_wait + 1) tx_out
+  ok = head_equal [1..] rx_bytes
 
+p_cread_async_transmit = forAll n_wait pred where
+  n_wait = choose (0,8)
+  pred = fst . e_cread_async_transmit
 
-x_uart_dma_tx = do
-  let (ok, (expected, stream, (probes, (_, outs)))) = e_uart_dma_tx
-  putStrLn "-- x_uart_dma_tx0"
-  print ok
-  print stream
-  printProbe ["tx_bc","tx_wc","tx_in","tx_rd_rdy"] $ (probes, outs)
+x_cread_async_transmit = do
+  let (ok, (channel_stream, rx_bytes, (probes, (_, outs)))) = e_cread_async_transmit 0
+  putStrLn "-- x_cread_async_transmit"
+  print (ok, channel_stream)
+  print rx_bytes
+  printProbe ["tx_bc","tx_wc","tx_in","tx_rd_rdy", "tx_out"] $ (probes, outs)
 
 
 
@@ -735,6 +742,12 @@ x_st_testbench = do
               return [i'])
     memZero $ TestMachine [0] tb
     
+
+-- Tests created using instantiated TH logic code.
+
+async_receive_bytes div dataline = rx_bytes where
+   rx_out = t_async_receive 8 $ map (:[]) dataline
+   rx_bytes = map head $ downSample' rx_out
   
 
 
@@ -773,9 +786,6 @@ trace_b_b f is = map head $ f' $ transpose [is] where
 
 trace_bb_b f as bs = map head $ map f' $ transpose [as, bs] where
   f' = trace [1,1] $ \[a,b] -> do o <- f a b; return [o]
-
-rep n = concat . (replicate n)
-pulse pre post = rep pre [0] ++ [1] ++ rep post [0]
 
 data ShowProbe = ShowInt Int | ShowIW Int
 instance Show (ShowProbe) where

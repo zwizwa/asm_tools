@@ -7,6 +7,9 @@
 
 -- LICENSE: This is derived from https://en.wikibooks.org/wiki/Write_Yourself_a_Scheme_in_48_Hours
 
+-- Mod 2020/2/6: Make it work for PcbNew format.  This probably
+-- bitrotted old code.  Find a better way to parameterize this.
+
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveFunctor #-}
@@ -31,7 +34,7 @@ type SE = Free Node Leaf
 -- Parser
 
 symbol :: Parser Char
-symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
+symbol = oneOf "!#$%&|*+-/:<=>?@^_~."
 
 spaces1 :: Parser ()
 spaces1 = skipMany1 space
@@ -46,16 +49,11 @@ parseString = do
                 
 parseAtom :: Parser SE
 parseAtom = do 
-  first <- letter <|> symbol
-  rest <- many (letter <|> digit <|> symbol)
-  return $ Pure $ first:rest
-
--- Parse numbers separately, but represent them as strings.
-parseNumber :: Parser SE
-parseNumber = liftM Pure $ many1 digit               
+  str <- many1 (letter <|> digit <|> symbol)
+  return $ Pure $ str
 
 parseExpr :: Parser SE
-parseExpr  = spaces >> (parseAtom <|> parseNumber <|> parseString <|> parseList)
+parseExpr  = spaces >> (parseAtom <|> parseString <|> parseList)
 parseList  = do
   char '(' ;
   tag <- parseExpr

@@ -12,6 +12,9 @@
 -- The latter is used here, the latter in SeqArr.hs
 
 
+
+
+
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -130,3 +133,23 @@ instance Seq m r => Num (m (r S)) where
 -- selection turns out to be not very useful.  Intermediate nodes are
 -- ambiguous, requiring a lot of type annotation.  See git for old
 -- versions.
+
+-- c)
+--
+-- See haskell-cafe reply by Sebastiaan Joosten on 2/5/20:
+-- https://mail.haskell.org/pipermail/haskell-cafe/2020-February/131882.html
+--
+-- {-# LANGUAGE FlexibleInstances, FlexibleContexts, MultiParamTypeClasses #-}
+-- class Pureable a b where
+--   maybePure :: a -> b
+-- instance Pureable a [a] where
+--   maybePure = pure
+-- instance Pureable [a] [a] where
+--   maybePure = id
+
+-- (.&&) :: (Pureable a [Bool], Pureable b [Bool])
+--       => a -> b -> [Bool]
+-- a .&& b = (&&) <$> maybePure a <*> maybePure b
+
+-- test :: [Bool] -> [Bool]
+-- test x = (True .&& x) .&& (False .&& x)

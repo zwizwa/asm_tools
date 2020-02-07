@@ -5,6 +5,10 @@ MISC notes to be included in documentation.
 
 ** Applicative interface is better
 
+In a nutshell, combinatorial logic is represented as monadic
+functions, and cyclic register (or memory) structures are constructed
+using a "close" operator.
+
 *** Pros:
 **** Connections are implicit
 **** Instantiations are implicit
@@ -53,5 +57,83 @@ The synchronization principle is derived from a symmetric principle,
 but has to be asymmetric in a practical realization to break
 combinatorial loops.
 
+* Targets
+
+Seq is structured as a Tagless-Final DSL, i.e. the interface to the
+language is a type class.  This is deemed to be the most
+straightfoward embedding in Haskell.
+
+Do note that while creating direct class instances is possible, I have
+found it convenient in cases where a direct mapping to Haskell is not
+necessary, it is convenient to use an intermediate abstract syntax
+tree.  This is the Term instance, which contains type annotation, but
+has no type constraints.  Effecitively, the Seq type class is used as
+a type checker, and code operating on Term assumes types are correct.
+
+This works well, except for properties that are not caught in the Seq
+type sytem.  Bit size is one of them, making bit size errors
+"dynamic", i.e. the Term -> final target compiler needs to deal with
+those.
+
+** Instances
+
+*** Term
+
+Straightforward abstract data type for the syntax tree.  This is used
+as an intermediate form for most external source code outputs.
+Basically, if Haskell type information is no longer needed, it can be
+stripped away and code can be treated as data down the pipeline.
+
+*** Emu
+
+The Emu instance implements the refernce semantics of the Seq
+language, in terms of Haskell code.
+
+*** App
+
+Experimental: an attempt to "remove the monad".  The basic idea here
+is that Monad embedding is necessary becaus the language is in essence
+stateful, but if you abstract over sequences, the language is actually
+pure.
+
+However it is very hard (impossible?) to express this in Haskell
+because the semantics of stream processors seems to be strict,
+i.e. value sharing is important to retain to be able to implement it.
+There are ways around this but they either use unsafe constructs
+(FIXME: ref?) or use Haskell extensions such as compiling to
+categories.  The latter is probably the way to go.
+
+The current plan is to hope that compiling to categories becomes part
+of Haskell, and for now just accept that the Monad is not going away.
+
+*** DSP
+
+FIXME: Remove. This is a dead end, or needs a restart.
+
+
+** Targets using Term as IR
+
+The Term abstract syntax tree has enough information to be compiled to
+several textual language outputs that can be fed into external
+compilers.
+
+** Verilog
+** MyHDL
+** C
+
+** Template Haskell and ST Monad
+
+This is a special case.
+
+Seq can be translated to Haskell code expressed as an State Threads
+monad.  ST can be thought of as Haskell's "embedded ML", a typed,
+strict functional language extended with mutable variables and arrays.
+
+Going through a second pass using Template Haskell allows aggressive
+optimizations.
+
+TODO: TH is cumbersome to use due to the explicit compilation phase.
+Explain why it was not deemed feasible to do this directly as a type
+class instance.
 
 

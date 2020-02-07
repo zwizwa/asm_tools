@@ -29,13 +29,17 @@ toBitList = toBitList' MSBFirst
 
 data BitOrder = LSBFirst | MSBFirst
 
-bitOrder LSBFirst nb_bits = [0..nb_bits-1]
-bitOrder MSBFirst nb_bits = reverse $ bitOrder LSBFirst nb_bits
+bitOrder bo nb_bits = fromLSBFirst bo [0..nb_bits-1]
 
+fromLSBFirst LSBFirst bits = bits
+fromLSBFirst MSBFirst bits = reverse bits
 
-toWord :: [Int] -> Int
-toWord bits = foldr f 0 $ reverse bits where
+toWord' :: BitOrder -> [Int] -> Int
+toWord' bitorder bits = foldr f 0 $ fromLSBFirst bitorder bits where
   f bit accu = (bit .&. 1) .|. (shiftL accu 1)
+
+toWord = toWord' MSBFirst
+
 
 toBits :: Int -> [Int] -> [Int]
 toBits nb_bits = concat . (map $ toBitList nb_bits)
@@ -90,6 +94,33 @@ uartBits factor str = samps where
   toBits w = [1,0] ++ (reverse $ toBitList 8 w) ++ [1,1]
   samps = upSample factor bits
 
+-- Returns parsed word or bad frame bits.
+uartRX = uartRX' 8 1
+uartRX' :: Int -> Int -> Int -> [Int] -> [Either [Int] Int]
+uartRX' n_data n_stop skip ins = map parse frames where
+  frames = async_frames (n_frame * skip) ins
+  n_start = 1
+  n_frame = n_start + n_data + n_stop
+  skip_half = skip `div` 2
+  e_stop_bits = rep n_stop [1]
+  parse raw_frame = res where
+    res = case (n_frame == length sampled_frame, stop_bits == e_stop_bits) of
+            (True, True) -> Right $ toWord' LSBFirst data_bits
+            _ ->            Left sampled_frame
+    sampled_frame = fracSample skip $ drop (skip `div` 2) raw_frame
+    -- start bit is 0 from async_frames, so just discard
+    data_bits = take n_data $ drop 1 sampled_frame
+    stop_bits = drop (n_frame - n_stop) sampled_frame
+
+-- Split signal into list of bit frames based on frame size
+async_frames :: Int -> [Int] -> [[Int]]
+async_frames n = f where
+  f [] = []
+  f (1:ins) = f ins -- skip idle bits
+  f ins@(0:_) = take n ins : (f $ drop n ins)
+    
+  
+
 
 -- This upsamples by 2 to accomodate the clock toggles.
 -- Terminology is the one used in the Linux kernel.
@@ -142,7 +173,7 @@ downSampleBus unpack = downSample sel where
     (0,_) -> Nothing
 
 
-fracSample :: Double -> [t] -> [t]
+fracSample :: (Ord n, Num n) => n -> [t] -> [t]
 fracSample inc bits = f 0 bits where
   f _ [] = []
   f p bs@(b:bs') =
@@ -264,6 +295,13 @@ selectSignals columns names signals = signals' where
   fromJust' nm Nothing = error $
     "showSelectSignals: " ++ show nm ++ " not found in " ++ show names
   
+
+
+rep n = concat . (replicate n)
+pulse pre post = rep pre [0] ++ [1] ++ rep post [0]
+
+head_equal inf fin = fin == take (length fin) inf
+
 
 
 

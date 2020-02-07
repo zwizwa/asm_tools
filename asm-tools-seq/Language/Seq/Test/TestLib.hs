@@ -91,7 +91,7 @@ d_channel0 [ext] = do
 -- In first attempt make it as simple as possible and do it ad-hoc.
 -- The source state machine is just a counter.
 --
-d_uart_dma_tx [bc] = do
+d_cread_async_transmit [bc] = do
   let write = cwrite_count 8
       read  = cread_async_transmit bc
   closeChannel read write
