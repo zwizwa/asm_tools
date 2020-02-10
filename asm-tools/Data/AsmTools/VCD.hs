@@ -1,3 +1,4 @@
+-- (DESC) Value Change Dump
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE BangPatterns #-}
 module Data.AsmTools.VCD where

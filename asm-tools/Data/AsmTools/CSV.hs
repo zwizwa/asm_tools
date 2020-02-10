@@ -1,4 +1,4 @@
--- Multi-table CSV parser.  Should survive round-trips to Excel/LibreOffice
+-- (DESC) Multi-table CSV parser.  Should survive round-trips to Excel/LibreOffice
 
 -- TODO: add some TH to avoid IO.
 

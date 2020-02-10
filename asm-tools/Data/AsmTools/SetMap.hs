@@ -1,4 +1,4 @@
--- Finite functions from sets to sets.
+-- (DESC) Finite functions from sets to sets.
 
 -- Note: this is an intermediate step in realizing that the key
 -- representation is the partition (Set (Set t)), and that the key

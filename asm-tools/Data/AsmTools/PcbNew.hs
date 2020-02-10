@@ -1,4 +1,4 @@
--- PcbNew netlist parser
+-- (DESC) PcbNew netlist parser
 
 -- Ad hoc, based on KiCad output
 
@@ -67,18 +67,23 @@ refDict' dict name = rv where
 
 
 -- Parse netlist
+nets :: SE -> [(String, [(String,String)])]
 nets se = map parseNet $ head $ refExport se "nets" where
   parseNet (Free ((Pure "net") : netDict)) = (name,ns) where
     name = refDict' netDict "name"
     ns = map node $ refDict netDict "node"
     node nodeDict = (refDict' nodeDict "ref", refDict' nodeDict "pin")
 
-
+components :: SE -> [(String,String)]
 components se = map parseComp $ head $ refExport se "components" where
   parseComp (Free ((Pure "comp") : compDict)) = (ref,value) where
     ref   = refDict' compDict "ref"
     value = refDict' compDict "value"
 --   (components
 --      (comp ...) ...)
+
+
+  
+  
 
 

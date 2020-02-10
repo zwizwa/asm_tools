@@ -1,4 +1,4 @@
--- Given component semantics, convert a netlist to a function.
+-- (DESC) Given component semantics, convert a netlist to a function.
 
 -- This uses terminology that is common circuit design:
 -- . a netlist is a set of nets

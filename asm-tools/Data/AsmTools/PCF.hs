@@ -1,6 +1,6 @@
+--- (DESC) ice40 PCF pin configuration files
 module Data.AsmTools.PCF where
 
---- ice40 PCF pin configuration files
 pcf :: [String] -> (String -> String) -> String
 pcf names pin = pcf' where
   pcf' = concat $ map set_io names

@@ -1,6 +1,4 @@
--- Protel netlist parser
-
--- Ad hoc, Stringly-typed.
+-- (DESC) Protel netlist parser.  Ad hoc.
 -- See also SE.hs
 
 -- LICENSE: This is derived from https://en.wikibooks.org/wiki/Write_Yourself_a_Scheme_in_48_Hours

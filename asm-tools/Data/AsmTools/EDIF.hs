@@ -1,6 +1,4 @@
--- EDIF netlist parser
-
--- Ad hoc, based on Altium output.
+-- (DESC) EDIF netlist parser. Ad hoc, based on Altium output.
 
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveGeneric #-}

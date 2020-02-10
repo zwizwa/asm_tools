@@ -1,6 +1,6 @@
 {-# LANGUAGE BangPatterns #-}
 
--- Support for TechTools DigiView DV3100 compressed CSV data format.
+-- (DESC) Support for TechTools DigiView DV3100 compressed CSV data format.
 module Data.AsmTools.DigiView where
 
 -- This is based on parsec, and really not all that fast.

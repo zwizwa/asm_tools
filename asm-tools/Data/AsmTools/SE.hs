@@ -1,4 +1,4 @@
--- S-expression parser
+-- (DESC) S-expression parser. Ad hoc.
 
 -- Ad hoc, Stringly-typed.
 

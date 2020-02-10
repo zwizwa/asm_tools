@@ -1,10 +1,12 @@
+-- (DESC) Partition representation used in NetFun
+
+-- You should probably use Data.Partition
 
 -- Arrived at as a projection of SetMap (e.g. Setmap t ()).
 
 -- If keys are sets, then why not work with the original sets
 -- directly, e.g. a partition: a set of disjoint sets.
 
--- You should probably use Data.Partition
 
 -- https://en.wikipedia.org/wiki/Partition_of_a_set
 -- https://en.wikipedia.org/wiki/Setoid

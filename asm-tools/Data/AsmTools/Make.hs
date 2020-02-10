@@ -1,4 +1,4 @@
--- A simple wrapper to expose file generator rules as Makefile rules.
+-- (DISC) Expose hs file generator rules as Makefile rules.
 
 -- Back story:
 --
