@@ -284,7 +284,9 @@ padTable rows = prows where
   prows = transpose pcolumns
 
 
-selectSignals columns names signals = signals' where
+selectSignals :: [String] -> [(String,Int)] -> [[Int]] -> [[Int]]
+selectSignals columns probes signals = signals' where
+  names = map fst probes
   signals' = map select signals
   select row = map (row !!) indices
   indices = map name2col columns

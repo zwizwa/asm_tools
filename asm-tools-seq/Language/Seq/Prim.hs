@@ -81,15 +81,18 @@ data TestBench
   = TestInput [[Int]]
   | TestMachine [Int] (forall s. ([Int] -> ST s (Maybe [Int])))
 
+type Probe = (String,Int)
+
 seqRun ::
   (forall s. ([STMem s], rd, r, [Int]) -> ST s (rd, r, [Int]))
   -> [Int]
   -> (rd, r)
-  -> [String]
+  -> [Probe]
   -> [Int -> Int]
-  -> TestBench -> ([String], ([Mem], [[Int]]))
+  -> TestBench -> ([(String,Int)], ([Mem], [[Int]]))
 
-seqRun update memSpec (rd0, r0) probeNames memInits (TestInput i) = (probeNames, out) where
+seqRun update memSpec (rd0, r0) probes memInits (TestInput i) =
+  (probes, out) where
   out = runST $ do
     as <- sequence $ zipWith seqMemInit memSpec memInits
     let u _ _ [] = return []
@@ -101,7 +104,8 @@ seqRun update memSpec (rd0, r0) probeNames memInits (TestInput i) = (probeNames,
     as' <- sequence $ map unsafeFreeze as
     return (as', os)
 
-seqRun update memSpec (rd0, r0) probeNames memInits (TestMachine i0 tb) = (probeNames, out) where
+seqRun update memSpec (rd0, r0) probes memInits (TestMachine i0 tb) =
+  (probes, out) where
   out = runST $ do
     as <- sequence $ zipWith seqMemInit memSpec memInits
     let u rd r i = do
@@ -125,9 +129,11 @@ seqRun update memSpec (rd0, r0) probeNames memInits (TestMachine i0 tb) = (probe
 -- output needs to be collected differently.  Maybe best to collect it
 -- in an array as well.  Also, output types are unknown.
 
-seqRunProbes :: ([String], ([Mem], [[Int]])) -> [String]
-seqRunOuts :: ([String], ([Mem], [[Int]])) -> [[Int]]
-seqRunMems :: ([String], ([Mem], [[Int]])) -> [Mem]
+type Compiled = ([Probe], ([Mem], [[Int]]))
+
+seqRunProbes :: Compiled -> [Probe]
+seqRunOuts   :: Compiled -> [[Int]]
+seqRunMems   :: Compiled -> [Mem]
 seqRunProbes = fst
 seqRunOuts = snd . snd
 seqRunMems = fst . snd
@@ -136,10 +142,10 @@ seqRun' ::
   (forall s. ([STMem s], rd, r, [Int]) -> ST s (rd, r, [Int]))
   -> [Int]
   -> (rd, r)
-  -> [String]
+  -> [Probe]
   -> [Int -> Int]
-  -> [[Int]] -> ([String], ([Mem], [[Int]]))
-seqRun' update memSpec (rd0, r0) probeNames memInits i = (probeNames, out) where
+  -> [[Int]] -> ([Probe], ([Mem], [[Int]]))
+seqRun' update memSpec (rd0, r0) probes memInits i = (probes, out) where
   out = runST $ do
     as <- sequence $ zipWith seqMemInit memSpec memInits
     let u _ _ [] = return []

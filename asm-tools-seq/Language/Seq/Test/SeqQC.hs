@@ -26,6 +26,7 @@
 {-# LANGUAGE Arrows #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE TupleSections #-}
 
 module Language.Seq.Test.SeqQC where
 
@@ -36,6 +37,8 @@ import Language.Seq.Emu
 import Language.Seq.Prim
 import Language.Seq.Test.TestLib  -- for staging
 import Language.Seq.Test.TestTools
+
+import qualified Data.AsmTools.VCD as VCD
 
 import qualified Language.Seq.Forth as Forth
 
@@ -326,6 +329,11 @@ x_rmii_rx = do
   print bytes'
   printProbe ["crs_dv","rxd0","rxd1","rxreg","rxwc","rxaddr"] $ (probes, outs)
 
+v_rmii_rx = do
+  let bytes = [0,1,2,3,4,5,6,7]
+      (_, (bytes', (probes, (_, outs)))) = e_rmii_rx bytes
+  putStrLn ("nb_samples: " ++ (show $ length outs))
+  saveVCD "v_rmii_rx.vcd" (probes, outs)
 
 p_rmii_rx = forAll vars $ fst . e_rmii_rx where
   vars = listOf $ word 8
@@ -359,10 +367,10 @@ x_channel' probe_names t_channel spec = do
   print expected
   print stream
   printProbe probe_names $ (probes, outs)
+  saveVCD "v_channel0.vcd" (probes, outs)
 
 -- x_channel0 = x_channel' ["ext","wc","w"] t_channel0 (16,4)
 x_channel0 = x_channel' ["ext","wc","w"] t_channel0 (16,0)
-
 
 p_channel = forAll spec $ fst . (e_sync_rx t_channel0) where
   spec = do
@@ -795,9 +803,22 @@ instance Show (ShowProbe) where
 showProbe "iw" = ShowIW
 showProbe _    = ShowInt
 
-printProbe :: [String] -> ([String],[[Int]]) -> IO ()
-printProbe columns (names, signals) = do
-  let signals' = selectSignals columns names signals
+type Probe = (String,Int)
+type Trace = ([Probe],[[Int]])
+
+printProbe :: [String] -> Trace -> IO ()
+printProbe columns (probes, signals) = do
+  let signals' = selectSignals columns probes signals
       showcol = zipWith ($) (map showProbe columns)
   putStr $ showSignals' True columns $ map showcol signals'
 
+
+-- FIXME: The word size information is lost!
+saveVCD :: String -> Trace -> IO ()
+saveVCD outFile' trace@(header,table) = do
+  let vcd = VCD.toVCD "" (header, table)
+      outFile = "/tmp/" ++ outFile'
+  writeFile outFile $ show $ vcd
+  putStrLn $ "wrote " ++ outFile
+  putStrLn ("- signals: " ++ show header)
+  putStrLn ("- nb_samples: " ++ (show $ length table))

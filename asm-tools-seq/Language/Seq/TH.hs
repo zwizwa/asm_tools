@@ -69,7 +69,14 @@ toExp  (outputs, bindings, probes) = exp where
     update
     memSpec 
     (TupE [memRdInit, stateInit])
-    (ListE $ map (LitE . StringL . snd) probes)
+    probesE
+
+  probesE = (ListE $ map probeE probes) where
+    probeE (node, name) = TupE [nameE, sizeE] where
+      nameE = LitE $ StringL name
+      sizeE = LitE $ IntegerL $ bitSize $ opType node
+      bitSize (SInt (Just nb_bits) _) = fromIntegral nb_bits
+      bitSize _ = error "TH probes need defined bit size"
 
   update =
     LamE [TupP [memRef, memRdIn, stateIn, inputs]] $
@@ -160,9 +167,10 @@ termExp (Comb3 t opc a b c) = app4 (opVar opc) (bits t) (opE a) (opE b) (opE c)
 termExp e = error $ show e
 
 app1 = AppE
-app2 a b c     = app1 (app1 a b) c
-app3 a b c d   = app1 (app2 a b c) d
-app4 a b c d e = app1 (app3 a b c d) e
+app2 a b c       = app1 (app1 a b) c
+app3 a b c d     = app1 (app2 a b c) d
+app4 a b c d e   = app1 (app3 a b c d) e
+app5 a b c d e f = app1 (app4 a b c d e) f
 
 bits :: SType -> Exp
 bits = int . tbits

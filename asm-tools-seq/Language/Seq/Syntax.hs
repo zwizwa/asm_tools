@@ -1,5 +1,6 @@
 -- S-expression layer.
 -- Note: CCC might be more appropriate.
+-- Note: observable sharing might be more convenient
 
 module Language.Seq.Syntax where
 import Data.AsmTools.SE

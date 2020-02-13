@@ -23,6 +23,7 @@ import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Free
 import Data.Map.Strict(Map)
+import Data.Maybe
 import qualified Data.Map.Strict as Map
 
 -- Keep it really simple.
@@ -155,3 +156,49 @@ iterPathsM node = do
 -- properties are actually used in parsing nor path construction.
 
 
+
+
+-- Parsing by matching is actually quite a pain because there are so
+-- many cases that are not part of the grammar.  That is obvious in
+-- retrospect but was an unexpected complication for me in general,
+-- when mapping "dynamic" data types into a statically typed language.
+
+-- It is as if there really isn't any reason to split this up.
+-- E.g. don't parse to s-expressions, but parse to the language's
+-- expression syntax instead.
+
+type M = Either String
+
+string :: SE -> M String
+string (Pure a) = Right a
+string e = Left $ "expected (Pure a), got " ++ show e
+
+list :: SE -> M [SE]
+list (Free l) = Right l
+list e = Left $ "expected (Free l), got " ++ show e
+
+-- Assert that it is a tagged list, but tag is allowed to fail
+untag :: SE -> M (String, [SE])
+untag expr = do
+  l <- list expr
+  case l of
+    (Pure tag : l') ->
+      Right (tag, l')
+    _ ->
+      Left $ "expected tagged list, got: " ++ show expr
+
+tagged tag expr = do
+  (tag', l) <- untag expr
+  if tag == tag' then Right l
+    else Left $ "expected tag: " ++ tag ++ ", got tag: " ++ tag'
+  
+
+filter_tag :: String -> [SE] -> M [SE]
+filter_tag tag exprs = do
+  let fltr expr = do
+        (t, l) <- untag expr
+        return $ case t == tag of
+                   True  -> Just expr
+                   False -> Nothing
+  mls <- traverse fltr exprs
+  return $ catMaybes mls
