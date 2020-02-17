@@ -18,10 +18,19 @@ import Data.Maybe
 import System.IO
 import qualified Data.Map.Strict as Map
 
+readFile fileName = do
+  h <- System.IO.readFile fileName
+  return ()
+  case readSE fileName h of
+    Left msg ->
+      return $ Left msg
+    Right se -> do
+      return $ Right $ (nets se, components se)
+  
 testPcbNew = do
   -- KiCad Eeschema : export netlist as Pcbnew
   let fileName = "/home/tom/constell8/bob/KLSTR Interface Board.net"
-  h <- readFile fileName
+  h <- System.IO.readFile fileName
   case readSE fileName h of
     Left msg ->
       putStrLn msg

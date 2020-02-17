@@ -9,6 +9,9 @@ import Control.Applicative
 import Numeric
 import Data.Char
 
+import qualified Data.ByteString.Lazy as ByteString
+import Data.Binary.Get
+
 -- https://en.wikipedia.org/wiki/Value_change_dump
 tags :: [Char]
 tags = map toEnum [37..126]
@@ -66,3 +69,15 @@ diff signals = diff' where
   -- Adapter for use with tag
   something [] = Nothing
   something l  = Just l
+
+
+-- Convert raw binary to single channel VCD file
+fromByteString :: ByteString.ByteString -> VCD
+fromByteString bytes = vcd where
+  vcd = toVCD "1 ns" ([("data",8)], map (:[]) ints)
+  ints = runGet get bytes
+  nb_bytes = ByteString.length bytes
+  get = do
+    bs <- sequence $ [getWord8 | _ <- [1..nb_bytes]]
+    return $ map fromIntegral bs
+

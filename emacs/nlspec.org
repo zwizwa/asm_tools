@@ -1,0 +1,66 @@
+#+TITLE: Net List Specification
+
+This is work in progress.  Current status: table and code extraction
+to Haskell file is working, plus integration in exo build system.
+See ~exo.txt~ for more information about how to proceed.
+
+See proprietary archive for first iteration of document.
+
+* Notes
+
+** NLSpec meta
+
+   
+*** Checklist Files
+
+This is a checklist file for circuit design and review.  The idea is
+twofold: 
+
+- To provide a decently formatted, human readable document, and
+
+- To annotate the document with machine-verifiable constraints on the
+  netlist, which is a combination of:
+
+  - Tables exported with ~org-table-export~
+
+  - Code exported with ~org-babel-tangle~
+
+*** Org mode
+
+After looking for the proper markdown format to use, I found that
+there is no canonical way to do this, so I'm using Emacs org mode.
+
+To export the files and run the checks, run ~nlspe-compile~ in
+~nlspec.el~
+
+
+Some conventions
+
+- The human-readable output format is HTML.
+- Use tables instead of code where possible
+
+What is missing?
+
+- Export code and tables to machine-readable format.
+
+Org mode cheats
+
+- Getting Started With Org Mode - Harry Schwartz  https://www.youtube.com/watch?v=SzA2YODtgK4
+- C-c C-e h o to export to HTML and open
+- |-<tab> to start a table
+- https://orgmode.org/manual/Literal-Examples.html#Literal-Examples
+- M-x org-babel-tangle will export to node-checklist.nlspec
+- https://emacs.stackexchange.com/questions/53723/export-table-to-csv-file-without-prompt
+- M-x org-table-export
+- https://stackoverflow.com/questions/59257236/how-to-access-data-from-many-tables-in-src-blocks
+
+
+*** Language
+
+I tried this, and I see no advantage in doing this as s-expressions.
+Use Haskell syntax directly, and put all behavior in a separate
+module.
+
+
+
+

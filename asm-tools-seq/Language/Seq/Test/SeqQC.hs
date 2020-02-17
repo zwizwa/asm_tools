@@ -44,7 +44,7 @@ import qualified Language.Seq.Forth as Forth
 
 import Language.Seq.TH(compile,compile',noProbe,allProbe)
 
-import Prelude hiding (read, drop)
+import Prelude hiding (read, drop, catch)
 import Data.Char
 import Data.Bits
 import Data.List hiding (drop)
@@ -56,6 +56,8 @@ import Data.Array.IArray
 import Test.QuickCheck hiding ((.&.),(.|.),again)
 import Test.QuickCheck.Gen hiding (bitSize, getLine)
 import Language.Haskell.TH
+import System.Directory
+import Control.Monad (when)
 
 test :: IO ()
 test = do
@@ -328,11 +330,6 @@ x_rmii_rx = do
   print bytes
   print bytes'
   printProbe ["crs_dv","rxd0","rxd1","rxreg","rxwc","rxaddr"] $ (probes, outs)
-
-v_rmii_rx = do
-  let bytes = [0,1,2,3,4,5,6,7]
-      (_, (bytes', (probes, (_, outs)))) = e_rmii_rx bytes
-  putStrLn ("nb_samples: " ++ (show $ length outs))
   saveVCD "v_rmii_rx.vcd" (probes, outs)
 
 p_rmii_rx = forAll vars $ fst . e_rmii_rx where
@@ -367,6 +364,7 @@ x_channel' probe_names t_channel spec = do
   print expected
   print stream
   printProbe probe_names $ (probes, outs)
+  
   saveVCD "v_channel0.vcd" (probes, outs)
 
 -- x_channel0 = x_channel' ["ext","wc","w"] t_channel0 (16,4)
@@ -813,12 +811,17 @@ printProbe columns (probes, signals) = do
   putStr $ showSignals' True columns $ map showcol signals'
 
 
--- FIXME: The word size information is lost!
 saveVCD :: String -> Trace -> IO ()
 saveVCD outFile' trace@(header,table) = do
   let vcd = VCD.toVCD "" (header, table)
       outFile = "/tmp/" ++ outFile'
+  removeIfExists outFile
   writeFile outFile $ show $ vcd
   putStrLn $ "wrote " ++ outFile
   putStrLn ("- signals: " ++ show header)
   putStrLn ("- nb_samples: " ++ (show $ length table))
+
+removeIfExists fileName = do
+  exists <- doesFileExist fileName
+  when exists $ removeFile fileName
+  return ()
