@@ -21,9 +21,9 @@ First, what this is not:
   - https://hackage.haskell.org/package/ivory
   
   - And many other Haskell and non-Haskell projects generating C, and
-    of course the Rust programming languages
+    of course the Rust programming language.
   
-So what is it?  This project explores the idea of *substracte
+So what is it?  This project explores the idea of *substrate
 independence* for low level control and signal processing problems. I
 am essentially using only one trick:
 http://okmij.org/ftp/tagless-final/index.html, which in my adaptation
@@ -36,9 +36,9 @@ can be summarized as:
 - Where possible, try to organize the substrates hierarchically,
   e.g. create new substrates by composing smaller ones.
   
-- Implement the algorithms(s) on top of that abstract
+- Implement algorithms on top of those substrates.
 
-- Create interpretations for the substrate.  In practice this always
+- Create interpretations for the substrates.  In practice this always
   contains two interpretations: a compiler to some standard format (C,
   Verilog), and an emulator that provides instrumentation to allow
   implementing constraint checks.  I.e. a test bench.
@@ -122,7 +122,6 @@ Notes regarding Seq
   interpreters becomes much more straightforward, and at this point
   that is the most important design constraint.
   
-
 - Seq uses applicative style: state machines are modeled as operators
   (monadic functions) that take inputs to outputs. Compared to the
   traditional port style approach where you "connect" ports, the
@@ -146,7 +145,7 @@ Notes regarding Seq
   functions, but it can make it harder to create "ball of mud" state
   machines that have update functions spanning a large number of
   registers in a way that is not easy to factor into a combination of
-  smaller state machines.  In some way the language forces you to
+  smaller state machines.  In some way the Seq language forces you to
   modularize to a much finer degree. I have learned that some people
   are really not a fan of this approach.  Up to now I have found this
   to be a net plus and maybe the biggest lesson to learn about how to
@@ -160,9 +159,10 @@ Notes regarding the Forth CPU
 
 - The CPU in Seq is a simple proof-of-concept design.  It is
   definitely not general purpose.  However I do find it useful.  It
-  does not seem to need pipelining at the clock rates I'm using it at,
-  and it is terribly convenient to have function nesting and loops as
-  opposed to writing custom state machine sequencers.
+  does not seem to need pipelining at the clock rates and on th
+  hardware I'm using it, and it is terribly convenient to have
+  function nesting and loops as opposed to writing custom state
+  machine sequencers.
   
 - Being able to express both machine code and the instruction decoder,
   bus architecture etc.. in the same Haskell module opens up a lot of
