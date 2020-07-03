@@ -9,7 +9,7 @@ Library
     build-depends:   base, containers, mtl, free, keys, set-extra,
                      template-haskell, parsec, QuickCheck, array, split, 
                      binary, bytestring, process, unix, network, temporary,
-                     system-argv0, system-filepath
+                     system-argv0, system-filepath, utf8-string
 --                   ,mios
     exposed-modules: Data.AsmTools.CSV
                      Data.AsmTools.EDIF
@@ -23,4 +23,11 @@ Library
                      Data.AsmTools.DigiView
                      Data.AsmTools.MT
                      Data.AsmTools.Make
+
+Executable asm-tools
+   main-is:           asm-tools.hs 
+   build-depends:     base, bytestring, binary, utf8-string
+   default-language:  Haskell2010
+   other-modules:     Data.AsmTools.VCD
+                      Data.AsmTools.CmdLineTool
 
