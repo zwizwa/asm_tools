@@ -23,6 +23,7 @@ Library
                      Data.AsmTools.DigiView
                      Data.AsmTools.MT
                      Data.AsmTools.Make
+                     Test.RunC
 
 Executable asm-tools
    main-is:           asm-tools.hs 
