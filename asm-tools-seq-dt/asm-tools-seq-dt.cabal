@@ -1,0 +1,10 @@
+name: asm-tools-seq-dt
+version: 1.0.0
+cabal-version: >= 1.18
+build-type: Simple
+license: BSD3
+
+Library
+    default-language: Haskell98
+    build-depends:   base, containers, mtl
+    exposed-modules: Language.SeqDT
