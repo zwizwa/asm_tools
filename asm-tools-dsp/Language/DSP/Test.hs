@@ -64,50 +64,41 @@ module Language.DSP.Test where
 -- (s,s->(s,o)) but they are different in that they have a different
 -- sample rate, which means their different semantics is only
 -- observable in the implementation of a combinator.
+--
+-- Additionally, the primitive language's operators are in a Monad.
+-- This is necessary to implement context, like sharing of
+-- intermediate variables.
 
--- So let's start by giving everything a name.  The concrete signal
--- with state type exposed.  This is the inside view, i.e. the
--- implemenation.
-data SSO s a = SSO s (s -> (s, a))
-constSSO c = SSO () (\() -> ((), c))
 
--- The first combinator the simplest one I can think of: scale a
--- signal rate signal with a value.  It will present the first
--- problem: how to compose hidden signals?
+data SSO s m a = SSO s (s -> m (s, a))
+-- constSSO c = SSO $ return c
 
--- Let's first do a concrete version, then try to abstract the
--- composition mechanism in a type class.  This is only an example,
--- using the '*' primitive from Num class.
-scaleSSO' :: Num a => SSO s a -> a -> SSO s a
-scaleSSO' (SSO s0 u) a = SSO s0 u' where
-  u' s = (s', a * o) where (s',o) = u s
+class Monad m => PrimOp m a where
+  add :: a -> a -> m a
+  mul :: a -> a -> m a
 
--- My gut feeling says not to overengineer it and to tuck away _all_
--- the combinators and primitive data implementation in a single type
--- class.  Functional dependencies are a pain sometimes, and what we
--- want to express here is a single name that signifies "the
--- implementation".
-class SSOImpl s a where
-  scaleSSO :: (SSO s a) -> a -> (SSO s a)
+-- The base language implementation can then be hidden behind a type
+-- class.
+class SSOImpl s m a where
+  scaleSSO :: (SSO s m a) -> a -> (SSO s m a)
 
-class PrimOp a where  
-  add :: a -> a -> a
-  mul :: a -> a -> a
-  
-
-instance PrimOp a => SSOImpl s a where
+instance PrimOp m a => SSOImpl s m a where
   scaleSSO (SSO s0 u) a = SSO s0 u' where
-    u' s = (s', a `mul` o) where (s',o) = u s
+    u' s = do
+      (s', o) <- u s
+      a' <- a `mul` o
+      return $ (s', a')
   
+-- data S a = forall s. SSOImpl s m a => S (SSO s a)
+--data C a = forall s. SSOImpl s a => C (SSO s a)
 
-data S a = forall s. SSOImpl s a => S (SSO s a)
-data C a = forall s. SSOImpl s a => C (SSO s a)
+--scaleS :: S a -> a -> S a
+--scaleS (S sso) a = S $ scaleSSO sso a
 
-scaleS :: S a -> a -> S a
-scaleS (S sso) a = S $ scaleSSO sso a
+--scaleC :: C a -> a -> C a
+--scaleC (C sso) a = C $ scaleSSO sso a
 
-scaleC :: C a -> a -> C a
-scaleC (C sso) a = C $ scaleSSO sso a
+
 
 
 
