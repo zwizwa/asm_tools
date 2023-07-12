@@ -1,3 +1,7 @@
+{-# LANGUAGE
+MonoLocalBinds
+#-}
+
 module Language.DSP.Test where
 
 -- See also older drafts at the bottom.  Trying to figure out the
@@ -67,36 +71,37 @@ module Language.DSP.Test where
 data SSO s a = SSO s (s -> (s, a))
 constSSO c = SSO () (\() -> ((), c))
 
--- Primitive data types are provided by the compilation target, which
--- is C or some emulation in Haskell.  Keeping this simple for now as
--- there is really no magic here.
-class PrimData a where
-  add :: a -> a -> a
-  mul :: a -> a -> a
-
 -- The first combinator the simplest one I can think of: scale a
 -- signal rate signal with a value.  It will present the first
 -- problem: how to compose hidden signals?
 
 -- Let's first do a concrete version, then try to abstract the
--- composition mechanism in a type class.
-scaleSSO' :: PrimData a => SSO s a -> a -> SSO s a
+-- composition mechanism in a type class.  This is only an example,
+-- using the '*' primitive from Num class.
+scaleSSO' :: Num a => SSO s a -> a -> SSO s a
 scaleSSO' (SSO s0 u) a = SSO s0 u' where
-  u' s = (s', a `mul` o) where (s',o) = u s
+  u' s = (s', a * o) where (s',o) = u s
 
 -- My gut feeling says not to overengineer it and to tuck away _all_
--- combinators in a type class, so define the existential wrappers
--- like this.
-class PrimData a => SSOImpl s a where
+-- the combinators and primitive data implementation in a single type
+-- class.  Functional dependencies are a pain sometimes, and what we
+-- want to express here is a single name that signifies "the
+-- implementation".
+class SSOImpl s a where
   scaleSSO :: (SSO s a) -> a -> (SSO s a)
 
-instance PrimData a => SSOImpl s a where
+class PrimOp a where  
+  add :: a -> a -> a
+  mul :: a -> a -> a
+  
+
+instance PrimOp a => SSOImpl s a where
   scaleSSO (SSO s0 u) a = SSO s0 u' where
     u' s = (s', a `mul` o) where (s',o) = u s
   
 
-data S a = forall s. (PrimData a, SSOImpl s a) => S (SSO s a)
-data C a = forall s. (PrimData a, SSOImpl s a) => C (SSO s a)
+data S a = forall s. SSOImpl s a => S (SSO s a)
+data C a = forall s. SSOImpl s a => C (SSO s a)
 
 scaleS :: S a -> a -> S a
 scaleS (S sso) a = S $ scaleSSO sso a
