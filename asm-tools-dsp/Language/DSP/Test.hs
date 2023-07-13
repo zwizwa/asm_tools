@@ -39,8 +39,8 @@ import Control.Monad.Identity
 -- operations.  At the lowest level there is the scalar language with
 -- operations in a monad.
 class Monad m => PrimOp m a where
-  add :: a -> a -> m a
-  mul :: a -> a -> m a
+  add  :: a -> a -> m a
+  mul  :: a -> a -> m a
 
 -- Note that this monad only contains things like local variable
 -- context to implement sharing, and cannot contain things like
@@ -56,34 +56,65 @@ data SSO m s a = SSO s (s -> m (s, a))
 constSSO c = SSO () (\() -> return ((), c))
 
 -- This is then abstracted in the user signal types, one for control
--- rate and one for audio rate.
-data C a = forall s m. SSOImpl m s a => C (SSO m s a)
-data A a = forall s m. SSOImpl m s a => A (SSO m s a)
+-- rate and one for audio rate.  The implementation monad m is kept as
+-- a parameter to distinguish different implementations.
+data C m a = forall s. SSOImpl m s a => C (SSO m s a)
+data A m a = forall s. SSOImpl m s a => A (SSO m s a)
 
 -- The base language implementation can then be hidden behind a type
 -- class.
 class SSOImpl m s a where
   scaleSSO :: (SSO m s a) -> a -> (SSO m s a)
 
+-- The class that defines the combinators only needs the primitive
+-- operators.  It can be generic over the implementation monad m.
+
+-- FIXME: This doesn't need to be a class.  Implementation of
+-- combinators can be generic.
 instance PrimOp m a => SSOImpl m s a where
   scaleSSO (SSO s0 u) a = SSO s0 u' where
     u' s = do
       (s', o) <- u s
       a' <- a `mul` o
       return $ (s', a')
-  
 
-scaleA :: A a -> a -> A a
+-- Let's get into the habit of writing down the types explicitly.
+-- Inference doesn't always work, and the types are really the point
+-- of the exercise.
+
+-- Use Create 
+    
+scaleA :: PrimOp m a => A m a -> a -> A m a
 scaleA (A sso) a = A $ scaleSSO sso a
 
-scaleC :: C a -> a -> C a
+scaleC :: PrimOp m a => C m a -> a -> C m a
 scaleC (C sso) a = C $ scaleSSO sso a
 
-prog_half audio = scaleA audio (0.1 :: Float)
+-- To simplify, use Float as the base type so focus can be on the
+-- combinators.  Generalization to other base types can be solved
+-- later.
+--
+
+-- A simple processor that is built friom a combinator: scale the
+-- amplitude of an audio signal by 50%.
+ex_half :: PrimOp m Float => A m Float -> A m Float
+ex_half audio = scaleA audio 0.5
+
+
+-- Constant signal
+-- Needs explicit types
+ex_ones :: PrimOp m Float => A m Float
+ex_ones = A $ constSSO 1
+
+
+-- Apply it to a signal
+-- ex_halved = ex_half $ A $ constSSO (1 :: Float)
 
 -- Now, how to convert this into a concrete program?  E.g. a Haskell
 -- program that operations on arrays.  In this case the implementation
 -- monad can just be Identity.
+
+-- First set up some concrete implementation infrastructure (i.e. SSO)
 
 instance PrimOp Identity Float where
   mul a b = return $ a * b
@@ -92,7 +123,6 @@ instance PrimOp Identity Float where
 -- Example signal
 h1 = constSSO 1
 h1 :: SSO Identity () Float
-h1A = A h1
 
 -- Compiles signal representation to concrete infinite list.
 hlist :: SSO Identity () Float -> [Float]
@@ -102,15 +132,15 @@ hlist (SSO s0 u) = o:os where
 
 -- hlistA (A sso) = hlist (sso :: SSO Identity () Float)
   
-test = take 5 $ hlist h1
+testImpl = take 5 $ hlist h1
 
---hlist (A (SSO s0 u)) = o : os where
---  Identity (o, mos) = do
---    (s', o) <- u s0
---    return (o, 
-    
-  
-  
+
+
+-- Then cross the abstraction barrier where type information is
+-- erased.  Here we need to provide a means to access the compiler.
+
+h1A = A h1
+-- testAbs (A sso) = hlist sso
 
 
 
