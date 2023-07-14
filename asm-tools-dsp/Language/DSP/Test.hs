@@ -1,6 +1,21 @@
 {-# LANGUAGE
-MonoLocalBinds
+AllowAmbiguousTypes,
+MonoLocalBinds,
+ScopedTypeVariables
 #-}
+
+-- A note on the extensions.
+--
+--
+-- ScopedTypeVariables because it just seems to be a better default.
+-- Also seems to be necessary in some cases, mostly to constrain the
+-- monad.
+--
+-- MonoLocalBinds, AllowAmbigious types: added from a ghc suggestion.
+-- Can't say I really understand.
+--
+-- 
+
 
 module Language.DSP.Test where
 
@@ -48,47 +63,54 @@ class Monad m => PrimOp m a where
 -- the same "language monad m" will be active for a variety of state
 -- types).
 
--- Define the concrete signal form as a monadic version of
--- s->(s,a) with initial s and the implementation monad m.
-data SSO m s a = SSO s (s -> m (s, a))
+-- Define the concrete signal form as a monadic version of s->(s,a)
+-- with initial s and the implementation monad m that abstracts the
+-- target evaluation sequencing.
+data Sig m s a = Sig s (s -> m (s, a))
 
 
-constSSO c = SSO () (\() -> return ((), c))
+-- Let's get into the habit of writing down the types explicitly.
+-- Inference doesn't always work or we want to constrain more than
+-- what inference produces. And anyway, the types are really the point
+-- of the exercise.
+
+-- A lot of operations can be defined on signals, without knowing what
+-- kind of signal it is (see Audio and Control below).
+
+-- Create a constant signal.
+constSig :: PrimOp m a => a -> Sig m () a
+constSig c = Sig () (\() -> return ((), c))
+
+-- FIXME: more signal ops
+
+
+-- At the DSL level we can have different signal types, e.g. one for
+-- control rate and one for audio rate.
 
 -- This is then abstracted in the user signal types, one for control
 -- rate and one for audio rate.  The implementation monad m is kept as
 -- a parameter to distinguish different implementations.
-data C m a = forall s. SSOImpl m s a => C (SSO m s a)
-data A m a = forall s. SSOImpl m s a => A (SSO m s a)
+data Control m a = forall s. SigImpl m s a => Control (Sig m s a)
+data Audio   m a = forall s. SigImpl m s a => Audio   (Sig m s a)
 
--- The base language implementation can then be hidden behind a type
--- class.
-class SSOImpl m s a where
-  scaleSSO :: (SSO m s a) -> a -> (SSO m s a)
+-- The implementation of the semantics is hidden behind this class.
+class SigImpl m s a where
+  compileSig :: (Sig m s a) -> String
 
--- The class that defines the combinators only needs the primitive
--- operators.  It can be generic over the implementation monad m.
+-- The definition of signal combinators does not need to be part of
+-- SigImpl: the code is the same for all implementations (i.e. the
+-- behavior of the combinators is the same).
+scaleSig (Sig s0 u) a = Sig s0 u' where
+  u' s = do
+    (s', o) <- u s
+    a' <- a `mul` o
+    return $ (s', a')
 
--- FIXME: This doesn't need to be a class.  Implementation of
--- combinators can be generic.
-instance PrimOp m a => SSOImpl m s a where
-  scaleSSO (SSO s0 u) a = SSO s0 u' where
-    u' s = do
-      (s', o) <- u s
-      a' <- a `mul` o
-      return $ (s', a')
+scaleAudio :: PrimOp m a => Audio m a -> a -> Audio m a
+scaleAudio (Audio sig) a = Audio $ scaleSig sig a
 
--- Let's get into the habit of writing down the types explicitly.
--- Inference doesn't always work, and the types are really the point
--- of the exercise.
-
--- Use Create 
-    
-scaleA :: PrimOp m a => A m a -> a -> A m a
-scaleA (A sso) a = A $ scaleSSO sso a
-
-scaleC :: PrimOp m a => C m a -> a -> C m a
-scaleC (C sso) a = C $ scaleSSO sso a
+scaleControl :: PrimOp m a => Control m a -> a -> Control m a
+scaleControl (Control sig) a = Control $ scaleSig sig a
 
 -- To simplify, use Float as the base type so focus can be on the
 -- combinators.  Generalization to other base types can be solved
@@ -97,50 +119,101 @@ scaleC (C sso) a = C $ scaleSSO sso a
 
 -- A simple processor that is built friom a combinator: scale the
 -- amplitude of an audio signal by 50%.
-ex_half :: PrimOp m Float => A m Float -> A m Float
-ex_half audio = scaleA audio 0.5
-
+ex_half :: PrimOp m Float => Audio m Float -> Audio m Float
+ex_half audio = scaleAudio audio 0.5
 
 -- Constant signal
--- Needs explicit types
-ex_ones :: PrimOp m Float => A m Float
-ex_ones = A $ constSSO 1
+ex_ones :: (SigImpl m () a, PrimOp m a, Num a) => Audio m a
+ex_ones = Audio $ constSig 1
 
+-- Apply processor to signal
+ex_halves :: (PrimOp m Float, SigImpl m () Float) => Audio m Float
+ex_halves = ex_half ex_ones
 
--- Apply it to a signal
--- ex_halved = ex_half $ A $ constSSO (1 :: Float)
+-- Counter
+ex_ramp :: (PrimOp m Float, SigImpl m Float Float) => Audio m Float
+ex_ramp = Audio $ Sig 0 (\s -> do s' <- s `add` 1; return (s', s))
+
 
 -- Now, how to convert this into a concrete program?  E.g. a Haskell
--- program that operations on arrays.  In this case the implementation
--- monad can just be Identity.
+-- program that operations on lists.  In this case the implementation
+-- monad can just be Identity.  It is wrapped because we want to use
+-- this as a type tag, where the concrete Identity is not appropriate.
 
--- First set up some concrete implementation infrastructure (i.e. SSO)
+newtype HsList a = HsList (Identity a) deriving (Functor, Applicative, Monad)
 
-instance PrimOp Identity Float where
+
+
+
+-- First set up some concrete implementation infrastructure in terms
+-- of Sig, i.e. where state is explicit.  This is just an example,
+-- i.e. too specialzed to be usefulf for generic code.  Here hf_
+-- refers to Haskell Float, where the monad can just be HsList.
+
+instance PrimOp HsList Float where
   mul a b = return $ a * b
   add a b = return $ a + b
 
 -- Example signal
-h1 = constSSO 1
-h1 :: SSO Identity () Float
+hf_1 = constSig 1
+hf_1 :: Sig HsList () Float
 
 -- Compiles signal representation to concrete infinite list.
-hlist :: SSO Identity () Float -> [Float]
-hlist (SSO s0 u) = o:os where
-  Identity (s', o) = u s0
-  os = hlist (SSO s' u)
+hf_list :: Sig HsList () Float -> [Float]
+hf_list (Sig s0 u) = o:os where
+  HsList (Identity (s', o)) = u s0
+  os = hf_list (Sig s' u)
 
--- hlistA (A sso) = hlist (sso :: SSO Identity () Float)
-  
-testImpl = take 5 $ hlist h1
+hf_listf :: Sig HsList Float Float -> [Float]
+hf_listf (Sig s0 u) = o:os where
+  HsList (Identity (s', o)) = u s0
+  os = hf_listf (Sig s' u)
 
 
 
--- Then cross the abstraction barrier where type information is
--- erased.  Here we need to provide a means to access the compiler.
+hf_1trunc = take 5 $ hf_list hf_1
 
-h1A = A h1
--- testAbs (A sso) = hlist sso
+
+
+-- The final step is to implement compilation from the generic version
+-- of a signal to whatever the target representation is.  Note that it
+-- is enough to focus on compiling signals.  Compiling processors can
+-- be done implicitly by applying a representation of the input
+-- parameters.
+
+-- Start with the simples thing: a constant Float signal
+a1 :: forall m. (PrimOp m Float, SigImpl m () Float) => Audio m Float
+a1 = Audio $ constSig 1
+
+-- Create an implementation instance. 
+instance SigImpl HsList () Float where
+  compileSig sig = show lst where
+    lst = take 5 $ hf_list sig
+
+instance SigImpl HsList Float Float where
+  compileSig sig = show lst where
+    lst = take 5 $ hf_listf sig
+
+-- Specialized compiler function.
+hf_comp :: SigImpl HsList () a => Audio HsList a -> String
+hf_comp (Audio sig) = compileSig sig
+
+hf_compf :: SigImpl HsList Float a => Audio HsList a -> String
+hf_compf (Audio sig) = compileSig sig
+
+
+test_hf0 = hf_comp a1
+test_hf1 = hf_comp $ ex_half a1
+
+-- Not sure why I had to specify so many things, but it works.  Maybe
+-- continue building more complex examples.
+
+-- Next is a counter.  This can be added to the combinators.  First
+-- just write out.
+
+test_hf2 = hf_compf ex_ramp
+
+
 
 
 
