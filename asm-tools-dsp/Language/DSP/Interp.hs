@@ -60,8 +60,14 @@ instance Prim Int where
   mulPrim = (*)
   typePrim _ = PInt
 
+class Lit
 
-
+-- C representation needs different syntax for local and state
+-- (struct) variables, so let VarIn support this.  Add array
+-- references later.
+data Var = Var  Int
+         | StateVar Int
+         deriving Show
 
 data Opcode2 = Add | Mul deriving Show
 data Term t where
@@ -73,11 +79,10 @@ data Term t where
   Sig  :: Prim t => Val t -> Term (t -> (t,  t')) -> Term t'
   Tup2 :: Term t -> Term t' -> Term (t,t')
 
-  -- Some variants used only in implementation: variable introduction
-  -- for compilation, and construction of language terms from lists
-  -- for evaluation.
-  VarRep  :: Int -> Term t
-  ListRep :: [t] -> Term t
+  -- Inject target representations (variable, infinite list) into Term
+  -- expression.  ( Compiler Implementation )
+  VarIn  :: Var -> Term t
+  ListIn :: [t] -> Term t
 
 -- Constant term as used for Sig init
 data Val t where
@@ -85,11 +90,14 @@ data Val t where
   CI :: Int   -> Val Int
 
 
+unVarIn (VarIn v) = v
+
+
 -- LIBRARY
 
 -- Thinking about not exposing the constructors to the library, but
 -- wrap them in primitive functions instead.  Some constructors need
--- to be hidden, e.g. the *Rep words, but it might also be good to not
+-- to be hidden, e.g. the *In words, but it might also be good to not
 -- have to distinguish between functions and constructors.  And lib
 -- should never do interpretation (pattern matching).
 mul :: forall t. Prim t => Term t -> Term t -> Term t ; mul = Op2 Mul
@@ -120,21 +128,21 @@ eval (Op2 Mul a b) = eval2 mulPrim a b
 eval (App (Lam f) a) = eval $ f a
 eval (Tup2 a b) = zip (eval a) (eval b)
 
--- ListRep converts a Haskell list as a term.
-eval (ListRep r) = r
+-- ListIn converts a Haskell list as a term.
+eval (ListIn r) = r
 
 -- Signals are then defined recursively
 eval (Sig init (Lam next)) = o where
-  (so, o) = unzip $ eval $ next $ ListRep ((ceval init) : so)
+  (so, o) = unzip $ eval $ next $ ListIn ((ceval init) : so)
 
 
 -- FIXME: transpose
 --eval (Lam u) = u' where
---  u' i = eval $ u $ ListRep i
+--  u' i = eval $ u $ ListIn i
 
 
 run :: Term (t -> t') -> [t] -> [t']
-run (Lam f) i = eval $ f $ ListRep i
+run (Lam f) i = eval $ f $ ListIn i
 
 e p = take 10 $ eval p
 test_eval1 = e $ App (Lam (\x -> Op2 Add x x)) (F 1)
@@ -153,7 +161,7 @@ data Tagged = TFloat Float
             | TOp2 Opcode2 Tagged Tagged
             | TApp Tagged Tagged
             | TLam Tagged Tagged
-            | TVar Int
+            | TVar Var
             | TSig Tagged Tagged
             | TTup2 Tagged Tagged
             deriving Show
@@ -170,8 +178,7 @@ run_comp m = runState (runWriterT m) 0
 newCVar :: forall t. C (Term t)
 newCVar = do
   n <- get ; put $ n + 1
-  return $ VarRep n
-varNum (VarRep n) = n
+  return $ VarIn $ Var n
 
 -- Go multi-stage here. First pass 'comp' converts from GADT syntax to
 -- ADT tagged syntax.  Contains enough information to compile to C.
@@ -186,7 +193,7 @@ ccomp (CI i) = TInt i
 comp :: forall t. Term t -> C Tagged
 comp (F f) = return $ TFloat f
 comp (I i) = return $ TInt i
-comp (VarRep n) = return $ TVar n
+comp (VarIn v) = return $ TVar v
 
 comp (Tup2    a b) = comp2 TTup2      a b
 comp (Op2 op2 a b) = comp2 (TOp2 op2) a b
@@ -197,7 +204,7 @@ comp (App     f a) = comp2 TApp       f a
 comp (Lam f) = do
   v    <- newCVar
   expr <- comp $ f v
-  return $ TLam (TVar $ varNum v) expr
+  return $ TLam (TVar $ unVarIn v) expr
 
 -- Hide a state machine (init value and update function).  The state
 -- machine body needs to be compiled and saved somewhere.  Since it's
@@ -205,7 +212,7 @@ comp (Lam f) = do
 comp (Sig i u) = do
   u' <- comp u
   o  <- newCVar
-  let o' = TVar $ varNum o
+  let o' = TVar $ unVarIn o
   let i' = ccomp i
   tell $ [(o', TSig i' u')]
   return o'
@@ -247,8 +254,8 @@ test_comp4 = c $
 
 
 -- Compile to intermediate Ins language using Writer+State monad.
-data ABinding = ABinding PrimType Int Anf   deriving Show
-data AInit    = AInit PrimType Int AnfConst deriving Show
+data ABinding = ABinding PrimType Var Anf      deriving Show
+data AInit    = AInit    PrimType Var AnfConst deriving Show
 
 -- Use two writers.  One for intial values, one for commands.  The
 -- state monad is for variable numbering.
@@ -264,7 +271,7 @@ data AnfProg = AnfProg Anf [AInit] [ABinding]
 data AnfConst = AFloat Float | AInt Int deriving Show
 data Anf = AConst AnfConst
          | AOp2 Opcode2 Anf Anf
-         | AVar Int
+         | AVar Var
          | ATup2 Anf Anf
          deriving Show
 
@@ -280,7 +287,7 @@ canf (CI f) = AInt f
 anf :: forall t. Term t -> A Anf
 anf (F f) = return $ AConst $ AFloat f
 anf (I i) = return $ AConst $ AInt i
-anf (VarRep n) = return $ AVar n
+anf (VarIn v) = return $ AVar v
 
 anf (Tup2    a b)   = anf2 undefined    ATup2      a b
 anf c@(Op2 op2 a b) = anf2 (typePrim c) (AOp2 op2) a b
@@ -288,15 +295,16 @@ anf c@(Op2 op2 a b) = anf2 (typePrim c) (AOp2 op2) a b
 -- Signal definitions can only take this form.  All Lam/App needs to
 -- be eliminated by macro expansion.
 anf (Sig state0 (Lam update)) = do
-  state  <- newAVar
-  let n = varNum state
+  state  <- newAStateVar
+  let v = unVarIn state
   let t = typePrim state -- PFloat -- FIXME: where to get the type?
-  tell [AInit t n $ canf state0]
+  tell [AInit t v $ canf state0]
   let (Tup2 state' out) = update state
+  -- Inline state and out computation
   astate' <- anf state'
-  aout <- anf out
-  lift $ tell [ABinding t n astate']
-  return aout
+  aout    <- anf out
+  lift $ tell [ABinding t v astate']
+  return $ aout
 
 
 newAVarNum :: forall t. A Int
@@ -307,33 +315,48 @@ newAVarNum = do
 newAVar :: forall t. A (Term t)
 newAVar = do
   n <- newAVarNum
-  return $ VarRep n
+  return $ VarIn $ Var n
+
+newAStateVar :: forall t. A (Term t)
+newAStateVar = do
+  n <- newAVarNum
+  return $ VarIn $ StateVar n
 
 -- The basic structure of the form is that operation results are
 -- always bound to a variable.
+anf2 :: forall t t'.  PrimType -> (Anf -> Anf -> Anf) -> Term t -> Term t' -> A Anf
 anf2 t op a b = do
   a' <- anf a
   b' <- anf b
   let cmd = op a' b'
   n <- newAVarNum
-  lift $ tell [ABinding t n cmd] 
-  return $ AVar n
+  let v = Var n
+  lift $ tell [ABinding t v cmd] 
+  return $ AVar v
 
 instance Show AnfProg where
   show (AnfProg val inits defs) =
-    "// init\n" ++  concat (map showAnfInit inits) ++
-    "// update\n" ++  concat (map showAnfDef defs) ++
-    "return " ++ (showAnfExpr val) ++ "\n"
+    "struct state {\n" ++  concat (map showAnfField inits) ++ "};\n" ++
+    "struct state s = {\n"   ++  concat (map showAnfInit inits) ++ "};\n" ++
+    "void update(struct state *s) {\n" ++  concat (map showAnfDef defs)  ++
+    "  out(" ++ (showAnfExpr val) ++ ");\n}\n"
 
-showAnfDef (ABinding t n expr) =
-  (show t) ++ " r" ++ (show n) ++ " <- " ++ (showAnfExpr expr) ++ "\n"
 
-showAnfInit (AInit t n const) =
-  (show t) ++ " r" ++ (show n) ++ " <- " ++ (showAnfExpr $ AConst const) ++ "\n"
+showAnfDef (ABinding t (Var n) expr) =
+  "  " ++ (show t) ++ " r" ++ (show n) ++ " = " ++ (showAnfExpr expr) ++ ";\n"
+showAnfDef (ABinding t (StateVar n) expr) =
+  "  s->r" ++ (show n) ++ " = " ++ (showAnfExpr expr) ++ ";\n"
+
+-- Only defined for StateVars
+showAnfInit (AInit t (StateVar n) const) =
+  "  .r" ++ (show n) ++ " = " ++ (showAnfExpr $ AConst const) ++ ",\n"
+showAnfField (AInit t (StateVar n) const) =
+  "  " ++ (show t) ++ " r" ++ (show n) ++ ";\n"
 
 showAnfExpr (AConst (AFloat f)) = show f
 showAnfExpr (AConst (AInt i)) = show i
-showAnfExpr (AVar n) = "r" ++ (show n)
+showAnfExpr (AVar (Var n)) = "r" ++ (show n)
+showAnfExpr (AVar (StateVar n)) = "s->r" ++ (show n)
 showAnfExpr (AOp2 op2 a b) = (show op2) ++ "(" ++ (showAnfExpr a) ++ "," ++ (showAnfExpr b) ++ ")"
 
 a :: Term t -> AnfProg
