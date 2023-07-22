@@ -40,16 +40,37 @@ import Control.Monad.Identity
 
 -- SYNTAX
 
-class Rep t
+-- FIXME: Replace Num class with a class that does Num behavior +
+-- construct type tag.
+
+class Prim t where
+  addPrim :: t -> t -> t
+  mulPrim :: t -> t -> t
+  typePrim :: Term t -> PrimType
+
+data PrimType = PFloat | PInt deriving Show
+
+instance Prim Float where
+  addPrim = (+)
+  mulPrim = (*)
+  typePrim _ = PFloat
+  
+instance Prim Int where
+  addPrim = (+)
+  mulPrim = (*)
+  typePrim _ = PInt
+
+
+
 
 data Opcode2 = Add | Mul deriving Show
 data Term t where
   F    :: Float -> Term Float
   I    :: Int   -> Term Int
-  Op2  :: Num t => Opcode2 -> Term t -> Term t -> Term t
+  Op2  :: Prim t => Opcode2 -> Term t -> Term t -> Term t
   Lam  :: (Term t -> Term t') -> Term (t -> t')
   App  :: Term (t -> t') -> Term t -> Term t'
-  Sig  :: Val t -> Term (t -> (t,  t')) -> Term t'
+  Sig  :: Prim t => Val t -> Term (t -> (t,  t')) -> Term t'
   Tup2 :: Term t -> Term t' -> Term (t,t')
 
   -- Some variants used only in implementation: variable introduction
@@ -65,11 +86,17 @@ data Val t where
 
 
 -- LIBRARY
-mul :: forall t. Num t => Term t -> Term t -> Term t
-mul = Op2 Mul
-add :: forall t. Num t => Term t -> Term t -> Term t
-add = Op2 Add
-square :: Num t => Term (t -> t)
+
+-- Thinking about not exposing the constructors to the library, but
+-- wrap them in primitive functions instead.  Some constructors need
+-- to be hidden, e.g. the *Rep words, but it might also be good to not
+-- have to distinguish between functions and constructors.  And lib
+-- should never do interpretation (pattern matching).
+mul :: forall t. Prim t => Term t -> Term t -> Term t ; mul = Op2 Mul
+add :: forall t. Prim t => Term t -> Term t -> Term t ; add = Op2 Add
+
+
+square :: forall t. Prim t => Term (t -> t)
 square = Lam $ \x -> (mul x x)
 
 
@@ -88,8 +115,8 @@ eval2 f a b = zipWith f (eval a) (eval b)
 
 eval (F f) = repeat f
 eval (I i) = repeat i
-eval (Op2 Add a b) = eval2 (+) a b
-eval (Op2 Mul a b) = eval2 (*) a b
+eval (Op2 Add a b) = eval2 addPrim a b
+eval (Op2 Mul a b) = eval2 mulPrim a b
 eval (App (Lam f) a) = eval $ f a
 eval (Tup2 a b) = zip (eval a) (eval b)
 
@@ -154,7 +181,7 @@ varNum (VarRep n) = n
 
 ccomp :: forall t. Val t -> Tagged
 ccomp (CF f) = TFloat f
-ccomp (CI f) = TInt f
+ccomp (CI i) = TInt i
 
 comp :: forall t. Term t -> C Tagged
 comp (F f) = return $ TFloat f
@@ -208,7 +235,7 @@ c p = Program sigs val where
   
 test_comp1 = c $ App (Lam (\x -> Op2 Add x x)) (F 1)
 
-test_comp2 = c $ square
+test_comp2 = c $ (square :: Term (Float -> Float))
 
 test_comp3 = c $ Sig (CF 0) $ Lam (\x -> (Tup2 x x))
 
@@ -220,13 +247,14 @@ test_comp4 = c $
 
 
 -- Compile to intermediate Ins language using Writer+State monad.
-data ABinding = ABinding Int Anf   deriving Show
-data AInit    = AInit Int AnfConst deriving Show
+data ABinding = ABinding PrimType Int Anf   deriving Show
+data AInit    = AInit PrimType Int AnfConst deriving Show
 
--- Use two writers.  One for intial values, one for commands.
-type A = WriterT [AInit]
-        (WriterT [ABinding]
-         (State Int))
+-- Use two writers.  One for intial values, one for commands.  The
+-- state monad is for variable numbering.
+type A = (WriterT [AInit]
+         (WriterT [ABinding]
+         (State Int)))
      
 
 data AnfProg = AnfProg Anf [AInit] [ABinding]
@@ -247,24 +275,27 @@ canf (CF f) = AFloat f
 canf (CI f) = AInt f
 
 
+
+
 anf :: forall t. Term t -> A Anf
 anf (F f) = return $ AConst $ AFloat f
 anf (I i) = return $ AConst $ AInt i
 anf (VarRep n) = return $ AVar n
 
-anf (Tup2    a b) = anf2 ATup2      a b
-anf (Op2 op2 a b) = anf2 (AOp2 op2) a b
+anf (Tup2    a b)   = anf2 undefined    ATup2      a b
+anf c@(Op2 op2 a b) = anf2 (typePrim c) (AOp2 op2) a b
 
 -- Signal definitions can only take this form.  All Lam/App needs to
 -- be eliminated by macro expansion.
 anf (Sig state0 (Lam update)) = do
   state  <- newAVar
   let n = varNum state
-  tell [AInit n $ canf state0]
+  let t = typePrim state -- PFloat -- FIXME: where to get the type?
+  tell [AInit t n $ canf state0]
   let (Tup2 state' out) = update state
   astate' <- anf state'
   aout <- anf out
-  lift $ tell [ABinding n astate']
+  lift $ tell [ABinding t n astate']
   return aout
 
 
@@ -280,12 +311,12 @@ newAVar = do
 
 -- The basic structure of the form is that operation results are
 -- always bound to a variable.
-anf2 op a b = do
+anf2 t op a b = do
   a' <- anf a
   b' <- anf b
   let cmd = op a' b'
   n <- newAVarNum
-  lift $ tell [ABinding n cmd] 
+  lift $ tell [ABinding t n cmd] 
   return $ AVar n
 
 instance Show AnfProg where
@@ -294,11 +325,11 @@ instance Show AnfProg where
     "// update\n" ++  concat (map showAnfDef defs) ++
     "return " ++ (showAnfExpr val) ++ "\n"
 
-showAnfDef (ABinding n expr) =
-  "r" ++ (show n) ++ " <- " ++ (showAnfExpr expr) ++ "\n"
+showAnfDef (ABinding t n expr) =
+  (show t) ++ " r" ++ (show n) ++ " <- " ++ (showAnfExpr expr) ++ "\n"
 
-showAnfInit (AInit n const) =
-  "r" ++ (show n) ++ " <- " ++ (showAnfExpr $ AConst const) ++ "\n"
+showAnfInit (AInit t n const) =
+  (show t) ++ " r" ++ (show n) ++ " <- " ++ (showAnfExpr $ AConst const) ++ "\n"
 
 showAnfExpr (AConst (AFloat f)) = show f
 showAnfExpr (AConst (AInt i)) = show i
@@ -313,5 +344,5 @@ a p = AnfProg val inits defs where
   m_s = runWriterT m_ws
   (((val, inits), defs), _nextRegNum) = runState m_s initRegNum
 
-test_anf1 = a $ Sig (CF 0) $ Lam (\x -> (Tup2 (add x x) x))
+test_anf1 = a $ Sig (CI 0) $ Lam (\x -> (Tup2 (add x x) x))
 
