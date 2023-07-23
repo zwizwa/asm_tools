@@ -76,7 +76,7 @@ data Term t where
   Op2  :: Prim t => Opcode2 -> Term t -> Term t -> Term t
   Lam  :: (Term t -> Term t') -> Term (t -> t')
   App  :: Term (t -> t') -> Term t -> Term t'
-  Sig  :: Prim t => Val t -> Term (t -> (t,  t')) -> Term t'
+  Sig  :: (Prim t, Prim t') => Val t -> Term (t -> (t,  t')) -> Term t'
   Tup2 :: Term t -> Term t' -> Term (t,t')
 
   -- Inject target representations (variable, infinite list) into Term
@@ -267,10 +267,14 @@ data AInit    = AInit    PrimType Var AnfConst deriving Show
 type A = (WriterT [AInit]
          (WriterT [ABinding]
          (State Int)))
-     
+
+-- Monad stack operations
+saveAInit p v c = tell [AInit p v c]
+saveABinding v at = lift $ tell [ABinding v at]
+newAVarNum = do n <- get ; put $ n + 1 ; return n
+
 
 data AnfProg = AnfProg Anf [AInit] [ABinding]
-
 
 -- Fully flattened function body.  No Lam/App/Sig: everything is inlined.
 data AnfConst = AFloat Float | AInt Int deriving Show
@@ -288,7 +292,14 @@ canf (CF f) = AFloat f
 canf (CI f) = AInt f
 
 
-
+anfLocal :: forall t. Prim t => Term t -> A (Term t)
+anfLocal a = do
+  (dup :: Term t) <- newAVar
+  let v_dup = unVarIn dup
+  let t_dup = typePrim dup
+  a' <- anf a
+  lift $ tell [ABinding v_dup (AnfT t_dup a')]
+  return dup
 
 anf :: forall t. Term t -> A Anf
 anf (F f) = return $ AConst $ AFloat f
@@ -301,22 +312,24 @@ anf c@(Op2 op2 a b) = anf2 (typePrim c) (AOp2 op2) a b
 -- Signal definitions can only take this form.  All Lam/App needs to
 -- be eliminated by macro expansion.
 anf (Sig state0 (Lam update)) = do
-  state  <- newAStateVar
-  let v = unVarIn state
-  let t = typePrim state -- PFloat -- FIXME: where to get the type?
-  tell [AInit t v $ canf state0]
-  let (Tup2 state' out) = update state
-  -- Inline state and out computation
+  -- Create state variable and compile initializer.
+  state <- newAStateVar
+  let v_state = unVarIn state
+  let t_state = typePrim state
+  saveAInit t_state v_state $ canf state0
+  -- Copy the state variable into a local variable.  We don't want any
+  -- of the code to have a reference to the state variable because we
+  -- will update it using assignment.
+  state_in <- anfLocal state
+  -- Inline the state machine code
+  let (Tup2 state' out) = update state_in
   astate' <- anf state'
   aout    <- anf out
-  lift $ tell [ABinding v (AnfT t astate')]
+  -- After all update code is inlined, the state can be assigned a new
+  -- value.
+  saveABinding v_state (AnfT t_state astate')
   return $ aout
 
-
-newAVarNum :: forall t. A Int
-newAVarNum = do
-  n <- get ; put $ n + 1
-  return n
 
 newAVar :: forall t. A (Term t)
 newAVar = do
@@ -337,7 +350,7 @@ anf2 t op a b = do
   let cmd = op a' b'
   n <- newAVarNum
   let v = Var n
-  lift $ tell [ABinding v (AnfT t cmd)] 
+  saveABinding v (AnfT t cmd)
   return $ AVar v
 
 
