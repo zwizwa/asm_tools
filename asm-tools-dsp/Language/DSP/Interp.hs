@@ -153,8 +153,10 @@ test_eval2 = e $ Sig (CI 1) (Lam (\s -> (Tup2 (Op2 Add s s) s)))
 
 -- COMPILERS
 
+-- EXPRESSION COMPILER
+
 -- Tagged expression language, roughly mirroring Term.  For
--- explorations.  The useful target is Anf below.
+-- exploration.  The useful target is Anf below.
 
 data Tagged = TFloat Float
             | TInt Int
@@ -253,8 +255,11 @@ test_comp4 = c $
 
 
 
+
+-- ANF COMPILER
+
 -- Compile to intermediate Ins language using Writer+State monad.
-data ABinding = ABinding PrimType Var Anf      deriving Show
+data ABinding = ABinding Var AnfT              deriving Show
 data AInit    = AInit    PrimType Var AnfConst deriving Show
 
 -- Use two writers.  One for intial values, one for commands.  The
@@ -275,7 +280,8 @@ data Anf = AConst AnfConst
          | ATup2 Anf Anf
          deriving Show
 
-
+data AnfT = AnfT PrimType Anf
+          deriving Show
 
 canf :: forall t. Val t -> AnfConst
 canf (CF f) = AFloat f
@@ -303,7 +309,7 @@ anf (Sig state0 (Lam update)) = do
   -- Inline state and out computation
   astate' <- anf state'
   aout    <- anf out
-  lift $ tell [ABinding t v astate']
+  lift $ tell [ABinding v (AnfT t astate')]
   return $ aout
 
 
@@ -331,34 +337,12 @@ anf2 t op a b = do
   let cmd = op a' b'
   n <- newAVarNum
   let v = Var n
-  lift $ tell [ABinding t v cmd] 
+  lift $ tell [ABinding v (AnfT t cmd)] 
   return $ AVar v
 
-instance Show AnfProg where
-  show (AnfProg val inits defs) =
-    "struct state {\n" ++  concat (map showAnfField inits) ++ "};\n" ++
-    "struct state s = {\n"   ++  concat (map showAnfInit inits) ++ "};\n" ++
-    "void update(struct state *s) {\n" ++  concat (map showAnfDef defs)  ++
-    "  out(" ++ (showAnfExpr val) ++ ");\n}\n"
 
 
-showAnfDef (ABinding t (Var n) expr) =
-  "  " ++ (show t) ++ " r" ++ (show n) ++ " = " ++ (showAnfExpr expr) ++ ";\n"
-showAnfDef (ABinding t (StateVar n) expr) =
-  "  s->r" ++ (show n) ++ " = " ++ (showAnfExpr expr) ++ ";\n"
-
--- Only defined for StateVars
-showAnfInit (AInit t (StateVar n) const) =
-  "  .r" ++ (show n) ++ " = " ++ (showAnfExpr $ AConst const) ++ ",\n"
-showAnfField (AInit t (StateVar n) const) =
-  "  " ++ (show t) ++ " r" ++ (show n) ++ ";\n"
-
-showAnfExpr (AConst (AFloat f)) = show f
-showAnfExpr (AConst (AInt i)) = show i
-showAnfExpr (AVar (Var n)) = "r" ++ (show n)
-showAnfExpr (AVar (StateVar n)) = "s->r" ++ (show n)
-showAnfExpr (AOp2 op2 a b) = (show op2) ++ "(" ++ (showAnfExpr a) ++ "," ++ (showAnfExpr b) ++ ")"
-
+-- Compilation to AnfProg ANF language.
 a :: Term t -> AnfProg
 a p = AnfProg val inits defs where
   initRegNum = 0 :: Int
@@ -367,5 +351,61 @@ a p = AnfProg val inits defs where
   m_s = runWriterT m_ws
   (((val, inits), defs), _nextRegNum) = runState m_s initRegNum
 
+-- Compilation to C can be the Show instance
+instance Show AnfProg where
+  show = cProg
+
+
+-- AnfProg is structured such that it can be converted to C by local
+-- pattern matching only, i.e. no lookups are needed.
+
+cProg (AnfProg val inits defs) =
+  "struct state {\n" ++  struct ++ "};\n" ++
+  "struct state s = {\n"   ++  state ++ "};\n" ++
+  "void update(struct state *s) {\n" ++  update  ++
+  "  out(" ++ (cAnfExpr val) ++ ");\n}\n"
+  where
+    struct = concat (map cAnfField inits)
+    state  = concat (map cAnfInit  inits)
+    update = concat (map cAnfDef   defs)
+
+-- Special case the op2 because C op name name is dependent on type.
+cAnfTExpr (AnfT t (AOp2 op2 a b)) =
+  (cAnfTop2 t op2) ++ "(" ++ (cAnfExpr a) ++ ", " ++ (cAnfExpr b) ++ ")"
+-- The rest doesn't need type annotation
+cAnfTExpr (AnfT t expr) =
+  cAnfExpr expr
+
+cAnfExpr (AConst (AFloat f)) = show f
+cAnfExpr (AConst (AInt i)) = show i
+cAnfExpr (AVar (Var n)) = "r" ++ (show n)
+cAnfExpr (AVar (StateVar n)) = "s->r" ++ (show n)
+
+cAnfDef (ABinding (Var n) ate@(AnfT t _)) =
+  "  " ++ (cAnfT t) ++ " r" ++ (show n) ++ " = " ++ (cAnfTExpr ate) ++ ";\n"
+cAnfDef (ABinding (StateVar n) ate) =
+  "  s->r" ++ (show n) ++ " = " ++ (cAnfTExpr ate) ++ ";\n"
+
+cAnfTop2 t op2 = (cAnfOp2 op2) ++ "_" ++ (cAnfT t)
+
+-- Only defined for StateVars
+cAnfInit (AInit t (StateVar n) const) =
+  "  .r" ++ (show n) ++ " = " ++ (cAnfExpr $ AConst const) ++ ",\n"
+cAnfField (AInit t (StateVar n) const) =
+  "  " ++ (cAnfT t) ++ " r" ++ (show n) ++ ";\n"
+
+cAnfT PInt   = "int"
+cAnfT PFloat = "float"
+
+cAnfOp2 Add = "add"
+cAnfOp2 Mul = "mul"
+
+
 test_anf1 = a $ Sig (CI 0) $ Lam (\x -> (Tup2 (add x x) x))
 
+test_anf2 = a $
+  let s1 = Sig (CF 1) $ Lam (\x -> Tup2 (add x x) x)
+      s2 = Sig (CF 2) $ Lam (\x -> Tup2 (mul x x) x)
+  in s1 `add` s2
+
+test_anf3 = undefined
