@@ -69,15 +69,24 @@ data Var = Var  Int
          | StateVar Int
          deriving Show
 
+-- Vectors should be a family.
+data Vec t = Vec t
+           deriving Show
+
 data Opcode2 = Add | Mul deriving Show
 data Term t where
+  B    :: Bool  -> Term Bool
   F    :: Float -> Term Float
   I    :: Int   -> Term Int
   Op2  :: Prim t => Opcode2 -> Term t -> Term t -> Term t
   Lam  :: (Term t -> Term t') -> Term (t -> t')
   App  :: Term (t -> t') -> Term t -> Term t'
   Sig  :: (Prim t, Prim t') => Val t -> Term (t -> (t,  t')) -> Term t'
-  Tup2 :: Term t -> Term t' -> Term (t,t')
+
+  Tup2 :: Term t -> Term t' -> Term (t, t')
+  -- Tup3 :: Term t -> Term t' -> Term t'' -> Term (t, t',t'')
+
+  Arr  :: (Prim t, Prim t') => Term t -> Term (Int -> t -> (t,  t')) -> Term (t, Vec t')
 
   -- Inject target representations (variable, infinite list) into Term
   -- expression.  ( Compiler Implementation )
@@ -282,6 +291,7 @@ data Anf = AConst AnfConst
          | AOp2 Opcode2 Anf Anf
          | AVar Var
          | ATup2 Anf Anf
+         | AVec Var Int
          deriving Show
 
 data AnfT = AnfT PrimType Anf
@@ -292,9 +302,9 @@ canf (CF f) = AFloat f
 canf (CI f) = AInt f
 
 
-anfLocal :: forall t. Prim t => Term t -> A (Term t)
-anfLocal a = do
-  (dup :: Term t) <- newAVar
+anfCopy :: forall t. Prim t => Term t -> A (Term t)
+anfCopy a = do
+  (dup :: Term t) <- newAVar Var
   let v_dup = unVarIn dup
   let t_dup = typePrim dup
   a' <- anf a
@@ -313,14 +323,14 @@ anf c@(Op2 op2 a b) = anf2 (typePrim c) (AOp2 op2) a b
 -- be eliminated by macro expansion.
 anf (Sig state0 (Lam update)) = do
   -- Create state variable and compile initializer.
-  state <- newAStateVar
+  state <- newAVar StateVar
   let v_state = unVarIn state
   let t_state = typePrim state
   saveAInit t_state v_state $ canf state0
   -- Copy the state variable into a local variable.  We don't want any
   -- of the code to have a reference to the state variable because we
   -- will update it using assignment.
-  state_in <- anfLocal state
+  state_in <- anfCopy state
   -- Inline the state machine code
   let (Tup2 state' out) = update state_in
   astate' <- anf state'
@@ -331,15 +341,30 @@ anf (Sig state0 (Lam update)) = do
   return $ aout
 
 
-newAVar :: forall t. A (Term t)
-newAVar = do
-  n <- newAVarNum
-  return $ VarIn $ Var n
+-- Fill an array with the outputs of an iterated system.
 
-newAStateVar :: forall t. A (Term t)
-newAStateVar = do
+--  Arr  :: (Prim t, Prim t') => Term t -> Term (t -> (t,  t')) -> Term (Bool, t, Vec t')
+anf (Arr init update) = do
+  vec <- newAVar Var
+  let v_vec = unVarIn vec
+  let t_vec = undefined -- FIXME
+  let n = 1 -- For now, only 1-dim
+
+  -- In C, we need to separate vector declaration from vector
+  -- assigment.  Other bindings didn't need that.  Should this be
+  -- included in the Anf language, or moved to the C code gen?  I want
+  -- the C code gen to be local, so might not work...
+  
+  saveABinding v_vec (AnfT t_vec undefined)
+  
+  -- Once the vector is filled, it can be passed around as a reference.
+  return $ AVec v_vec n
+
+
+newAVar :: forall t. (Int -> Var) -> A (Term t)
+newAVar varCons = do
   n <- newAVarNum
-  return $ VarIn $ StateVar n
+  return $ VarIn $ varCons n
 
 -- The basic structure of the form is that operation results are
 -- always bound to a variable.
@@ -414,6 +439,8 @@ cAnfOp2 Add = "add"
 cAnfOp2 Mul = "mul"
 
 
+
+
 test_anf1 = a $ Sig (CI 0) $ Lam (\x -> (Tup2 (add x x) x))
 
 test_anf2 = a $
@@ -421,4 +448,5 @@ test_anf2 = a $
       s2 = Sig (CF 2) $ Lam (\x -> Tup2 (mul x x) x)
   in s1 `add` s2
 
-test_anf3 = undefined
+test_anf3 = a $ Arr (I 0) $ Lam (\i -> Lam (\x -> Tup2 (add x i) x))
+--  Arr  :: (Prim t, Prim t') => Term t -> Term (t -> (t,  t')) -> Term (t, Vec t')
