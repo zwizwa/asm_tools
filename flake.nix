@@ -1,54 +1,57 @@
-# Following example from
-# https://github.com/srid/haskell-flake
-# Runs into error:
-
-# error: Trying to retrieve system-dependent attributes for input nixpkgs, but this input is not a flake. Perhaps flake = false was added to the input declarations by mistake, or you meant to use a different input, or you meant to use plain old inputs, not inputs'.
-# (use '--show-trace' to show detailed location information)
-
 {
-  description = "asm_tools";
   inputs = {
-    # nixpkgs.url = github:NixOS/nixpkgs/23.11;
-    nixpkgs.url = github:NixOS/nixpkgs/85f1ba3e51676fa8cc604a3d863d729026a6b8eb;
+    nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
     haskell-flake.url = "github:srid/haskell-flake";
-    
   };
+  outputs = inputs@{ self, nixpkgs, flake-parts, ... }:
+    flake-parts.lib.mkFlake { inherit inputs; } {
+      systems = nixpkgs.lib.systems.flakeExposed;
+      imports = [ inputs.haskell-flake.flakeModule ];
 
+      perSystem = { self', pkgs, ... }: {
 
-  outputs = inputs:
-    inputs.flake-parts.lib.mkFlake { inherit inputs; } {
-      systems = [ "x86_64-linux" ];
-      imports = [
-        inputs.haskell-flake.flakeModule
-      ];
-      perSystem = { self', system, lib, config, pkgs, ... }: {
+        # Typically, you just want a single project named "default". But
+        # multiple projects are also possible, each using different GHC version.
         haskellProjects.default = {
+          # The base package set representing a specific GHC version.
+          # By default, this is pkgs.haskellPackages.
+          # You may also create your own. See https://community.flake.parts/haskell-flake/package-set
           # basePackages = pkgs.haskellPackages;
 
-          # Packages to add on top of `basePackages`, e.g. from Hackage
-          packages = {
-            aeson.source = "1.5.0.0"; # Hackage version
-          };
+          # Extra package information. See https://community.flake.parts/haskell-flake/dependency
+          #
+          # Note that local packages are automatically included in `packages`
+          # (defined by `defaults.packages` option).
+          #
+          # packages = {
+          #   aeson.source = "1.5.0.0"; # Hackage version override
+          #   shower.source = inputs.shower;
+          # };
+          # settings = {
+          #   aeson = {
+          #     check = false;
+          #   };
+          #   relude = {
+          #     haddock = false;
+          #     broken = false;
+          #   };
+          # };
 
-          # my-haskell-package development shell configuration
-          devShell = {
-            hlsCheck.enable = false;
-          };
-
-          # What should haskell-flake add to flake outputs?
-          autoWire = [ "packages" "apps" "checks" ]; # Wire all but the devShell
+          # devShell = {
+          #  # Enabled by default
+          #  enable = true;
+          #
+          #  # Programs you want to make available in the shell.
+          #  # Default programs can be disabled by setting to 'null'
+          #  tools = hp: { fourmolu = hp.fourmolu; ghcid = null; };
+          #
+          #  hlsCheck.enable = true;
+          # };
         };
 
-        devShells.default = pkgs.mkShell {
-          name = "my-haskell-package custom development shell";
-          inputsFrom = [
-            config.haskellProjects.default.outputs.devShell
-          ];
-          nativeBuildInputs = with pkgs; [
-            # other development tools.
-          ];
-        };
+        # haskell-flake doesn't set the default package, but you can do it here.
+        packages.default = self'.packages.asm-tools-seq;
       };
     };
 }
