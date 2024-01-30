@@ -9,7 +9,7 @@ Library
     build-depends:   base, containers, mtl, free, keys, set-extra,
                      template-haskell, parsec, QuickCheck, array, split, 
                      binary, bytestring, process, unix, network, temporary,
-                     system-argv0, system-filepath, hmatrix,
+                     system-argv0, system-filepath, hmatrix, directory,
                      asm-tools
 --                   ,mios
     exposed-modules: Language.Seq
