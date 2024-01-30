@@ -11,7 +11,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE NoMonadFailDesugaring #-}
+-- {-# LANGUAGE NoMonadFailDesugaring #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module Language.Seq.Forth where
@@ -48,10 +48,13 @@ compile' m = (v, code') where
 
 get' = get :: M CompState
 
+popFail (el:stk) = (el, stk)
+popFail [] = error "Stack underflow"
+
 advance n  = do (stk,cur) <- get' ; put (stk, cur + n)
 cpush addr = do (stk,cur) <- get' ; put (addr:stk, cur)
 here       = do (stk,cur) <- get' ; return cur
-cpop       = do (addr:stk,cur) <- get' ; put (stk,cur) ; return addr
+cpop       = do (addr_stk,cur) <- get' ; let (addr,stk) = popFail addr_stk in do put (stk,cur) ; return addr
 mark       = here >>= cpush
   
 save inss  = do advance $ length inss ; tell inss

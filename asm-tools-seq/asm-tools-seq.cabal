@@ -19,6 +19,7 @@ Library
                      Language.Seq.CPU
                      Language.Seq.Emu
                      Language.Seq.Expr
+                     Language.Seq.Unwrap
                      Language.Seq.Forth
                      Language.Seq.IfElse
                      Language.Seq.Lib

@@ -10,7 +10,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE NoMonadFailDesugaring #-}
+-- {-# LANGUAGE NoMonadFailDesugaring #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module Language.Seq.Term where

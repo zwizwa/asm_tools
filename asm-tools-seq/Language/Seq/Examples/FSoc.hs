@@ -20,7 +20,7 @@
 
 
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE NoMonadFailDesugaring #-}
+-- {-# LANGUAGE NoMonadFailDesugaring #-}
 
 module Language.Seq.Examples.FSoc where
 

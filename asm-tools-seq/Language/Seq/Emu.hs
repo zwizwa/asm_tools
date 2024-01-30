@@ -18,7 +18,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE NoMonadFailDesugaring #-}
+-- {-# LANGUAGE NoMonadFailDesugaring #-}
 
 module Language.Seq.Emu where
 import Language.Seq
@@ -311,9 +311,13 @@ process init = do
   
   return r
 
+unJust (Just t) = t
+unJust Nothing = error "FIXME: Emu.hs pattern fail"
+
+
 getProcess r = do
-  Just v <- getProcess' r
-  return v
+  maybeV <- getProcess' r
+  return $ unJust maybeV
 
 getProcess' :: Typeable s => RegNum -> M (Maybe s)
 getProcess' r = do

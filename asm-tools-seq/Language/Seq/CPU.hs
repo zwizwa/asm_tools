@@ -10,12 +10,13 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE NoMonadFailDesugaring #-}
+-- {-# LANGUAGE NoMonadFailDesugaring #-}
 
 module Language.Seq.CPU where
 import Language.Seq
 import Language.Seq.Lib
 import qualified Language.Seq.Forth as Forth
+import Language.Seq.MPop
 
 import Control.Monad
 import Control.Applicative
@@ -75,6 +76,7 @@ import Numeric (showIntAtBase)
 
 
 
+
 -- The sequencer and the instruction memory can be decoupled using
 -- these interfaces:
 data Ins r  = Ins {
@@ -122,8 +124,8 @@ sequencer (MemWrite wEn wAddr wData) run execute = do
       -- Execute instruction, which produces control flow information.
       (Control loop jump ipJump, o) <- execute (Ins iw' ipCont)
 
-      rst      <- inv run
-      [ipNext] <- cond
+      rst        <- inv run
+      (ipNext,_) <- mpop1 $ cond
                   [(rst,  [0]),
                    (loop, [ip]),
                    (jump, [ipJump])]
@@ -350,10 +352,10 @@ stack_machine  nb_stack (BusRd bus_rdy bus_data) (Ins iw ip) = do
     push <- one_of [ push, push_read, call ]
     
     -- what to push
-    [push_data] <- cond
-                   [(call,      [ip]), 
-                    (push_read, [bus_data])]
-                   [arg]
+    (push_data,_) <- mpop1 $ cond
+                     [(call,      [ip]), 
+                      (push_read, [bus_data])]
+                     [arg]
 
     set <- loop .| down
     let set_data = top_dec
@@ -363,12 +365,14 @@ stack_machine  nb_stack (BusRd bus_rdy bus_data) (Ins iw ip) = do
         __ack = tail _tack
         
 
-    stack'@(top':snd':_) <- cond
+    stack' <- cond
       [(push,   push_data : stac_),
        (pop,    _tack ++ [0]),
        (swap,   snd : top : __ack),
        (set,    set_data : _tack)]
       stack
+
+
 
     -- reads can take multiple cycles.  it is assumed that rReady is
     -- high for only one cycle.
@@ -423,7 +427,7 @@ bus [rx, tx_bc] (BusWr rEn wEn addr wData) = do
   -- Bus read operations.  It's ok to leave these always on, e.g. for
   -- streaming data ports, but when a read causes a side effect, the
   -- rEn bit should be used.
-  [rStrobe, rData] <- switch addr'
+  (rStrobe, rData, _) <- pop2 $ switch addr'
     [(c uart_rx_addr,
       do
         (s,d) <- async_receive 8 rx;

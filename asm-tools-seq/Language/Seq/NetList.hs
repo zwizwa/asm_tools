@@ -7,7 +7,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 --{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE NoMonadFailDesugaring #-}
+-- {-# LANGUAGE NoMonadFailDesugaring #-}
 -- {-# LANGUAGE DerivingStrategies #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
@@ -15,6 +15,7 @@ module Language.Seq.NetList where
 
 import Language.Seq
 import qualified Language.Seq.Term as SeqTerm
+import Language.Seq.Unwrap
 
 import Prelude hiding (foldr)
 import Control.Monad.State
@@ -133,12 +134,12 @@ convert (ports, bindings, hier_probes) = NetList ports' (Map.fromList bindings')
   
   conv' (SeqTerm.Input t) = return $ Input
   
-  conv' (SeqTerm.Delay t o)         = do [o']       <- ops [o];     return $ Delay o' $ val t
-  conv' (SeqTerm.Connect _ o)       = do [o']       <- ops [o];     return $ Connect o'
-  conv' (SeqTerm.Comb1 _ opc a)     = do [a']       <- ops [a];     return $ Comb1 opc a'
-  conv' (SeqTerm.Comb2 _ opc a b)   = do [a',b']    <- ops [a,b];   return $ Comb2 opc a' b'
-  conv' (SeqTerm.Comb3 _ opc a b c) = do [a',b',c'] <- ops [a,b,c]; return $ Comb3 opc a' b' c'
-  conv' (SeqTerm.Slice _ o a b)     = do [o']       <- ops [o];     return $ Slice o' a b
+  conv' (SeqTerm.Delay t o)         = do (o',_)       <- munwrap1 $ ops [o];     return $ Delay o' $ val t
+  conv' (SeqTerm.Connect _ o)       = do (o',_)       <- munwrap1 $ ops [o];     return $ Connect o'
+  conv' (SeqTerm.Comb1 _ opc a)     = do (a',_)       <- munwrap1 $ ops [a];     return $ Comb1 opc a'
+  conv' (SeqTerm.Comb2 _ opc a b)   = do (a',b',_)    <- munwrap2 $ ops [a,b];   return $ Comb2 opc a' b'
+  conv' (SeqTerm.Comb3 _ opc a b c) = do (a',b',c',_) <- munwrap3 $ ops [a,b,c]; return $ Comb3 opc a' b' c'
+  conv' (SeqTerm.Slice _ o a b)     = do (o',_)       <- munwrap1 $ ops [o];     return $ Slice o' a b
 
   conv' _ = error $ "inernal error: already matched in conv"
   

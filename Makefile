@@ -15,10 +15,16 @@
 
 # all: compile
 
+.PHONY: all seq
+
 all:
 	@echo "FIXME: This has been split into separate modules."
 
 .SECONDARY:
+
+
+# 20210130. Above is validated for new flake.nix build
+# Below needs to be reviewed.
 
 clean:
 	rm -f result *~ x_* *.v *.vhd *.bin *.blif *.asc f_*.py x_*.py \

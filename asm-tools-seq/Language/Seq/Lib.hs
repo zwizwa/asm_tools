@@ -6,7 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE EmptyDataDecls #-}
-{-# LANGUAGE NoMonadFailDesugaring #-}
+-- {-# LANGUAGE NoMonadFailDesugaring #-}
 
 module Language.Seq.Lib where
 import Language.Seq
@@ -15,6 +15,7 @@ import Control.Applicative
 import Data.Key(Zip(..),zipWith, zip)
 import Prelude hiding (zipWith, zip)
 import Data.Bits hiding (bit)
+import Language.Seq.Unwrap
 
 
 
@@ -198,11 +199,6 @@ register we v = do
   withClockEnable we $ reg1 t $ \_ -> return v
 
 
-
-
-
-
-
 -- Some simple building blocks
 
 inc :: Seq m r => r S -> m (r S)
@@ -308,11 +304,18 @@ si_edge i = do
 -- We pick reset as the one that overrides.
 set_reset set reset = do
   closeReg [bit] $ \[s] -> do
-    [s'] <- cond
-            [(reset, [0]),
-             (set,   [1])]
-            [s]
-    return ([s'], s')
+    sv <- cond
+          [(reset, [0]),
+           (set,   [1])]
+          [s]
+    case sv of
+      [s'] -> return ([s'], s')
+      _ -> error "NOT_REACHED"
+
+-- 20240130: The need for the case + error here arises after
+-- NoMonadFailDesugaring is no longer supported.  We know by
+-- construction that the match should never fail.  Encode that in the
+-- error message in a consistent way.
   
 
 
@@ -502,14 +505,15 @@ sync_mod period frame idata = do
     -- enabled (= outside of frame).
     clk_rst <- (edge' `bor`) =<< inv frame'
     
-    [cnt'] <- cond
+    lcnt' <- cond
       [(clk_rst, [half_bit]),
        (carry',  [full_bit])]
       [dec']
-
-    sync_out <- carry' `band` frame'
-    return ([cnt'], sync_out)
-
+    case lcnt' of
+      [cnt'] -> do
+        sync_out <- carry' `band` frame'
+        return ([cnt'], sync_out)
+      _ -> error "NOT_REACHED"
 
   
 
@@ -701,23 +705,23 @@ async_receive_sample nb_data_bits@8 rx = sm where
     phase      <- slice' count 3 0
     bitClock   <- phase .== 0
     
-    (bc:wc:regs') <- switch state [
+    (bc,wc,regs') <- munwrap2 $ switch state [
       (idle,  do
           state' <- if' rx idle start
           -- skip half a bit to sample mid-bit
           return [0, 0, state', half_bit]),
       (start, do
           -- skip start bit
-          [state', count'] <- ifs c [word, all_bits] [state, count1]
+          (state', count', _) <- munwrap2 $ ifs c [word, all_bits] [state, count1]
           return [0, 0, state', count']),
       (word,  do
           -- send out bit clock mid-bit
-          [state', count'] <- ifs c [stop, one_bit] [state, count1]
+          (state', count', _) <- munwrap2 $ ifs c [stop, one_bit] [state, count1]
           return [bitClock, 0, state', count']),
       (stop,  do
           -- only send out the word clock if stop bit is 1
           wordClock <- bitClock .& rx
-          [state', count'] <- ifs c [idle, 0] [state, count1]
+          (state', count', _) <- munwrap2 $ ifs c [idle, 0] [state, count1]
           return [0, wordClock, state', count'])]
       -- FIXME: not reached.  How to express mutex states?
       (return [0, 0, 0, 0])
@@ -726,10 +730,9 @@ async_receive_sample nb_data_bits@8 rx = sm where
     "rx_in" <-- rx
     "rx_bc" <-- bc
     "rx_wc" <-- wc
-      
     return (regs', (bc,wc))
 
-
+  
 
 async_receive nb_bits i = do
   (bc,wc) <- async_receive_sample nb_bits i
@@ -1058,7 +1061,7 @@ deser dir sr_bits rst bc b = do
       sr_shift     <- shiftUpdate dir sr b
       (c, cnt_dec) <- carry dec cnt
       
-      [wc, cnt', sr'] <- cond
+      (wc, cnt', sr', _) <- munwrap3 $ cond
         [(rst, [0, cnt_init, 0]),
          (bc,  [c, cnt_dec,  sr_shift])]
         [0, cnt, sr]
