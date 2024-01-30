@@ -188,10 +188,6 @@ cbit = constant . bit'
 cbits :: Seq m r => Int -> Int -> r S
 cbits n = constant . (bits' n)
 
--- Wrappers for argument list pattern matching.
-f1arg f = \args -> let (a,_) = unwrap1 args in f a
-f2arg f = \args -> let (a,b,_) = unwrap2 args in f (a,b)
-
 -- Special closeReg case: single register, with register as output
 reg1 :: Seq m r => SType -> (r S -> m (r S)) -> m (r S)
 reg1 t f = do closeReg [t] $ f1arg $ \r -> do r' <- f r ; return ([r'], r)

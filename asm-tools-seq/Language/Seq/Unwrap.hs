@@ -42,3 +42,10 @@ unwrap5 list = do
   case list of
     (a:b:c:d:e:rest) -> (a,b,c,d,e,rest)
     _ -> error "unwrap5"
+
+
+
+-- Wrappers for argument list pattern matching.
+f1arg f = \args -> let (a,_) = unwrap1 args in f a
+f2arg f = \args -> let (a,b,_) = unwrap2 args in f (a,b)
+

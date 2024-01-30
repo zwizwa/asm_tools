@@ -63,16 +63,17 @@ toExp  (outputs, bindings, probes) = exp where
   -- generating a closed expression to avoid "impredicative
   -- polymorphism" errors, and 2) placing the arrays in a list and
   -- giving them all the same type, instead of a tuple.
-  
+
+ 
   exp = app4
     (seqVar "Run")
     update
     memSpec 
-    (TupE [memRdInit, stateInit])
+    (TupE [Just memRdInit, Just stateInit])
     probesE
 
   probesE = (ListE $ map probeE probes) where
-    probeE (node, name) = TupE [nameE, sizeE] where
+    probeE (node, name) = TupE [Just nameE, Just sizeE] where
       nameE = LitE $ StringL name
       sizeE = LitE $ IntegerL $ bitSize $ opType node
       bitSize (SInt (Just nb_bits) _) = fromIntegral nb_bits
@@ -80,10 +81,10 @@ toExp  (outputs, bindings, probes) = exp where
 
   update =
     LamE [TupP [memRef, memRdIn, stateIn, inputs]] $
-    DoE $
+    DoE Nothing $
     bindings' ++
     memUpdate ++ 
-    [NoBindS $ return' $ TupE [memRdOut, stateOut, outputs']]
+    [NoBindS $ return' $ TupE [Just memRdOut, Just stateOut, Just outputs']]
 
   partition = partition' bindings
     
@@ -139,7 +140,7 @@ toExp  (outputs, bindings, probes) = exp where
 
 tupE' :: [Exp] -> Exp
 tupE' [a] = a
-tupE' as = TupE as
+tupE' as = TupE $ map Just as
 
 tupP' :: [Pat] -> Pat
 tupP' [a] = a
@@ -165,6 +166,13 @@ termExp (Comb2 t opc a b)   = app3 (opVar opc) (bits t) (opE a) (opE b)
 termExp (Comb3 t opc a b c) = app4 (opVar opc) (bits t) (opE a) (opE b) (opE c)
 
 termExp e = error $ show e
+
+app1 :: Exp -> Exp -> Exp
+app2 :: Exp -> Exp -> Exp -> Exp
+app3 :: Exp -> Exp -> Exp -> Exp -> Exp
+app4 :: Exp -> Exp -> Exp -> Exp -> Exp -> Exp
+app5 :: Exp -> Exp -> Exp -> Exp -> Exp -> Exp -> Exp
+
 
 app1 = AppE
 app2 a b c       = app1 (app1 a b) c
