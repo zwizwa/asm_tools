@@ -7,7 +7,7 @@ import Language.Seq(Seq,S)
 import Language.Seq.Term
 import qualified Language.Seq as Seq
 import qualified Language.Seq.Verilog as Verilog
-import qualified Language.Seq.Test.Tools as TestTools
+import qualified Language.Seq.Test.TestTools as TestTools
 
 import Control.Monad
 import Data.Binary.Get

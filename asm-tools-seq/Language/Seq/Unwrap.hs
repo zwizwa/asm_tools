@@ -8,6 +8,7 @@
 
 module Language.Seq.Unwrap where
 
+-- FIXME: lift of unwrap*
 munwrap1 (mlist) = do
   list <- mlist
   case list of
@@ -25,3 +26,19 @@ munwrap3 (mlist) = do
     _ -> error "munwrap3"
 
 
+
+
+unwrap1 list = do
+  case list of
+    (a:rest) -> (a,rest)
+    _ -> error "unwrap1"
+
+unwrap2 list = do
+  case list of
+    (a:b:rest) -> (a,b,rest)
+    _ -> error "unwrap2"
+
+unwrap5 list = do
+  case list of
+    (a:b:c:d:e:rest) -> (a,b,c,d,e,rest)
+    _ -> error "unwrap5"

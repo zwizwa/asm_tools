@@ -16,7 +16,7 @@ module Language.Seq.CPU where
 import Language.Seq
 import Language.Seq.Lib
 import qualified Language.Seq.Forth as Forth
-import Language.Seq.MPop
+import Language.Seq.Unwrap
 
 import Control.Monad
 import Control.Applicative
@@ -117,15 +117,17 @@ sequencer :: Seq m r =>
 sequencer (MemWrite wEn wAddr wData) run execute = do
   t_wAddr <- stype wAddr
   t_wData <- stype wData
-  closeMem [t_wData] $ \[iw] -> do
-    (ipNext, o) <- closeReg [t_wAddr] $ \[ip] -> do
+  closeMem [t_wData] $ \_iw -> let
+    (iw,_) = unwrap1 _iw in do
+    (ipNext, o) <- closeReg [t_wAddr] $ \_ip -> let
+      (ip,_) = unwrap1 _ip in do
       iw'    <- if' run iw 0
       ipCont <- inc ip
       -- Execute instruction, which produces control flow information.
       (Control loop jump ipJump, o) <- execute (Ins iw' ipCont)
 
       rst        <- inv run
-      (ipNext,_) <- mpop1 $ cond
+      (ipNext,_) <- munwrap1 $ cond
                   [(rst,  [0]),
                    (loop, [ip]),
                    (jump, [ipJump])]
@@ -352,7 +354,7 @@ stack_machine  nb_stack (BusRd bus_rdy bus_data) (Ins iw ip) = do
     push <- one_of [ push, push_read, call ]
     
     -- what to push
-    (push_data,_) <- mpop1 $ cond
+    (push_data,_) <- munwrap1 $ cond
                      [(call,      [ip]), 
                       (push_read, [bus_data])]
                      [arg]
@@ -403,7 +405,9 @@ uart_tx_addr = 2 :: Int
 dbg_addr     = 3 :: Int
 -- -1 is the void used for "drop"
 
-bus [rx, tx_bc] (BusWr rEn wEn addr wData) = do
+bus :: Seq m r => [r S] -> BusWr r -> m (BusRd r, [r S])
+bus bus_inputs (BusWr rEn wEn addr wData) =
+  let (rx, tx_bc, _) = unwrap2 bus_inputs in do
   
   -- Instantiate peripherals, routing i/o registers.
   addr' <- slice' addr 2 0
@@ -427,7 +431,7 @@ bus [rx, tx_bc] (BusWr rEn wEn addr wData) = do
   -- Bus read operations.  It's ok to leave these always on, e.g. for
   -- streaming data ports, but when a read causes a side effect, the
   -- rEn bit should be used.
-  (rStrobe, rData, _) <- pop2 $ switch addr'
+  (rStrobe, rData, _) <- munwrap2 $ switch addr'
     [(c uart_rx_addr,
       do
         (s,d) <- async_receive 8 rx;
@@ -452,7 +456,8 @@ spi_boot nb_bits cs sck sda = do
 -- rom_boot = noIMemWrite 16 8
 
 soc :: Seq m r => [r S] -> m [r S]
-soc [rx,tx_bc,cs,sck,sda] = do
+soc soc_inputs = let
+  (rx,tx_bc,cs,sck,sda,_) = unwrap5 soc_inputs in do
 
   -- FIXME: create a more permissive bus structure that allows
   -- stubbing out some signals.
@@ -484,7 +489,8 @@ soc [rx,tx_bc,cs,sck,sda] = do
       busOut = sequencer boot nrst execute
   
   -- Couple bus master and slave through bus registers.
-  closeReg [bit, bits imem_bits] $ \[rStrobe,rData] -> do
+  closeReg [bit, bits imem_bits] $ \inputs -> 
+    let (rStrobe,rData,_) = unwrap2 inputs in do
     bus_wr <- bus_master (BusRd rStrobe rData)
     (BusRd rStrobe' rData', soc_output) <- bus [rx, tx_bc] bus_wr
     return ([rStrobe', rData'], soc_output)

@@ -188,9 +188,13 @@ cbit = constant . bit'
 cbits :: Seq m r => Int -> Int -> r S
 cbits n = constant . (bits' n)
 
+-- Wrappers for argument list pattern matching.
+f1arg f = \args -> let (a,_) = unwrap1 args in f a
+f2arg f = \args -> let (a,b,_) = unwrap2 args in f (a,b)
+
 -- Special closeReg case: single register, with register as output
 reg1 :: Seq m r => SType -> (r S -> m (r S)) -> m (r S)
-reg1 t f = do closeReg [t] $ \[r] -> do r' <- f r ; return ([r'], r)
+reg1 t f = do closeReg [t] $ f1arg $ \r -> do r' <- f r ; return ([r'], r)
 
 -- Register with write enable.  This is what a programmer thinks upon
 -- hearing "register": something that can be written to.
@@ -239,7 +243,7 @@ mod_counter' :: Seq m r => Int -> m (r S, r S)
 mod_counter' period = do
   let n = nb_bits period
       init = cbits n $ period - 1
-  closeReg [bits n] $ \[s] -> do
+  closeReg [bits n] $ f1arg $ \s -> do
     (c, dec') <- carry dec s
     s'        <- if' c init dec'
     return ([s'], (c, s))
@@ -254,7 +258,7 @@ mod_counter period = do
 -- Free running 2^N upcounter, combinatorial output for carry flag
 carry_counter' :: Seq m r => SType -> m (r S, r S)
 carry_counter' t = do
-  closeReg [t] $ \[s] -> do
+  closeReg [t] $ f1arg $ \s -> do
     (c, s') <- carry inc s
     return ([s'], (c, s))
 
@@ -303,7 +307,7 @@ si_edge i = do
 -- determine what to do when both signals are active at the same time.
 -- We pick reset as the one that overrides.
 set_reset set reset = do
-  closeReg [bit] $ \[s] -> do
+  closeReg [bit] $ f1arg $ \s -> do
     sv <- cond
           [(reset, [0]),
            (set,   [1])]
@@ -359,7 +363,7 @@ spi_bc mode cs sck = do
   let (cpol, cpha) = spi_mode mode
       sample_edge = 1 `xor` cpol `xor` cpha
   
-  closeReg [bit' cpol] $ \[d_sck] -> do
+  closeReg [bit' cpol] $ f1arg $ \d_sck -> do
     ncs  <- inv cs
     edge <- sck .^ d_sck
     -- bc selects the correct edge when cs is active
@@ -461,7 +465,7 @@ spi_bc mode cs sck = do
 
 -- 1,1,1 and delayed versions
 seq1 :: Seq m r => m (r S)
-seq1 = closeReg [bit' 0] $ \[r] -> return ([1], r)
+seq1 = closeReg [bit' 0] $ f1arg $ \r -> return ([1], r)
 
 seq01 :: Seq m r => m (r S)
 seq01 = delay =<< seq1
@@ -498,7 +502,7 @@ sync_mod period frame idata = do
   let n        = nb_bits period
       full_bit = cbits n $ period - 1
       half_bit = cbits n $ (period `div` 2) - 1
-  closeReg [bits n] $ \[cnt] -> do
+  closeReg [bits n] $ f1arg $ \cnt -> do
     (carry', dec') <- carry dec cnt
 
     -- Reset sub-bit clock to 1/2 bits on data edges, or when not
@@ -521,7 +525,7 @@ sync_mod period frame idata = do
 -- Shift register in terms of slice + conc.
 shiftReg :: Seq m r => ShiftDir -> SType -> r S -> m (r S)
 shiftReg dir tr i = do
-  closeReg [tr] $ \[r] -> do
+  closeReg [tr] $ f1arg $ \r -> do
     r_shift <- shiftUpdate dir r i
     return $ ([r_shift], r)
 
@@ -758,7 +762,7 @@ async_transmit bitClock (wordClock, txData) = do
   let n' = nb_bits $ n + 2
   closeReg [SInt (Just $ n+2) (-1),
             SInt (Just $ n') 0] $
-    \[shiftReg, cnt] -> do
+    f2arg $ \(shiftReg, cnt) -> do
 
 
       -- Outputs are a function of previous state.
@@ -773,7 +777,7 @@ async_transmit bitClock (wordClock, txData) = do
       shifted  <- conc (cbit 1) =<< slice' shiftReg (n+2) 1
       cntDec   <- if' idle 0 =<< dec cnt
 
-      [shiftReg', cnt'] <- cond
+      (shiftReg', cnt', _) <- munwrap2 $ cond
         [(wordClock, [newframe, cbits n' (n + 2)]),
          (bitClock,  [shifted,  cntDec])]
         [shiftReg, cnt]
@@ -902,7 +906,7 @@ async_transmit_pull bc (d_wc, dat) = do
 -- closeChannel takes the (combinatorial) reader and writer networks
 -- and joins them across the decoupling register.
 closeChannel cread cwrite = do
-  closeReg [bits 1] $ \[d_rd_sync] -> do
+  closeReg [bits 1] $ f1arg $ \d_rd_sync -> do
     (wr_sync, wr_data, wr_out) <- cwrite d_rd_sync
     (rd_sync, rd_out)          <- cread d_rd_sync wr_sync wr_data
     "d_rd_sync" <-- d_rd_sync
@@ -962,7 +966,7 @@ cread_async_transmit bc d_rd_sync wr_sync wr_data = do
 -- internal write ready condition is valid as well.
 
 cwrite_count nb_bits d_rd_sync = do
-  closeReg [bits nb_bits] $ \[d_cnt] -> do
+  closeReg [bits nb_bits] $ f1arg $ \d_cnt -> do
     cnt1 <- d_cnt `add` 1
     cnt  <- if' d_rd_sync cnt1 d_cnt
     return ([cnt],
@@ -978,7 +982,7 @@ cwrite_count nb_bits d_rd_sync = do
 
 
 sync_sm_write sync_sm d_ack = do
-  closeReg [bits 1] $ \[d_rdy] -> do
+  closeReg [bits 1] $ f1arg $ \d_rdy -> do
 
     -- IN                 LOCAL        OUT
     -- d_rdy d_ack have   wait sm_req  rdy
@@ -1056,7 +1060,7 @@ deser dir sr_bits rst bc b = do
       cnt_init  = cbits cnt_bits $ cnt_init'
   closeReg [bits' cnt_bits cnt_init',
             bits sr_bits] $
-    \[cnt, sr] -> do
+    f2arg $ \(cnt, sr) -> do
       
       sr_shift     <- shiftUpdate dir sr b
       (c, cnt_dec) <- carry dec cnt
@@ -1083,13 +1087,13 @@ fifo ta (rc,wc,wd) = do
   td <- stype wd
   wa <- fifoPtr ta wc
   ra <- fifoPtr ta rc
-  closeMem [td] $ \[rd] -> do
+  closeMem [td] $ f1arg $ \rd -> do
     return ([(wc, wa, wd, ra)], rd)
 
 
 fifoPtr :: Seq m r => SType -> r S -> m (r S)
 fifoPtr t wc = do
-  closeReg [t] $ \[a] -> do
+  closeReg [t] $ f1arg $ \a -> do
     a1 <- inc a
     a' <- if' wc a1 a
     return ([a'], a)
@@ -1097,7 +1101,7 @@ fifoPtr t wc = do
 -- Polarity as used with SPI
 arrPtr :: Seq m r => SType -> r S -> r S -> m (r S)
 arrPtr t cs wc = do
-  closeReg [t] $ \[a] -> do
+  closeReg [t] $ f1arg $ \a -> do
     a1 <- inc a
     a' <- if' wc a1 a
     a' <- if' cs 0 a'
@@ -1121,8 +1125,8 @@ arrPtr t cs wc = do
 stack :: Seq m r => SType -> r S -> r S -> r S -> m (r S)
 stack t_a en upDown wData = do
   t_d <- stype wData
-  closeReg [t_a] $ \[ptr] -> do
-    closeMem [t_d] $ \[rData] -> do
+  closeReg [t_a] $ f1arg $ \ptr -> do
+    closeMem [t_d] $ f1arg $ \rData -> do
       ptrUpDown <- lift2 (if' upDown) (inc ptr) (dec ptr)
       ptrNext   <- if' en ptrUpDown ptr
       return ([(en, ptrNext, wData, ptrNext)],
@@ -1140,8 +1144,8 @@ stack t_a en upDown wData = do
 stackUpDown :: Seq m r => SType -> r S -> r S -> r S -> m (r S)
 stackUpDown t_a up down wData = do
   t_d <- stype wData
-  closeReg [t_a] $ \[ptr] -> do
-    closeMem [t_d] $ \[rData] -> do
+  closeReg [t_a] $ f1arg $ \ptr -> do
+    closeMem [t_d] $ f1arg $ \rData -> do
       en        <- up `bor`  down
       move      <- up `bxor` down
       ptrUpDown <- lift2 (if' up) (inc ptr) (dec ptr)
