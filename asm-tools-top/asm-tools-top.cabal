@@ -1,0 +1,15 @@
+-- Toplevel project.  Intended mostly for testing.
+
+name: asm-tools-top
+version: 1.0.0
+cabal-version: >= 1.18
+build-type: Simple
+license: BSD3
+
+executable asm-tools-top
+    main-is: Main.hs
+    default-language: Haskell98
+    build-depends:   base
+                   , asm-tools
+                   , asm-tools-seq
+

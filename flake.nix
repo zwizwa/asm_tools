@@ -51,7 +51,13 @@
         };
 
         # haskell-flake doesn't set the default package, but you can do it here.
-        packages.default = self'.packages.asm-tools-seq;
+        # packages.default = self'.packages.asm-tools-pru;
+        # packages.default = self'.packages.asm-tools-seq;
+
+        # Simpler to build just a single top level package, since this
+        # is mostly library code anyway.  Top level can then contain
+        # driver binary.
+        packages.default = self'.packages.asm-tools-top;
       };
     };
 }

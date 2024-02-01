@@ -1,4 +1,6 @@
 packages:
   asm-tools/
   asm-tools-seq/
+  asm-tools-pru/
+  asm-tools-top/
 
