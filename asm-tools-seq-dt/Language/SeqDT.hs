@@ -1,3 +1,14 @@
+-- Picking up 2024-02-01
+--
+-- . Last summer I started playing with DSP langauge
+--
+-- . Might be good to do something simpler first: RTL, and find a way
+--   to link library code to existing Seq implementation.
+
+-- Older notes below.
+
+-----------------------------------------------------------------------
+
 -- Experimenting with Dependent Types.
 
 -- Main idea is to represent signals in such a way that more

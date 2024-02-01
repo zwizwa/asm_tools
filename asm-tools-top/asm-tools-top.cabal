@@ -12,4 +12,6 @@ executable asm-tools-top
     build-depends:   base
                    , asm-tools
                    , asm-tools-seq
+                   , asm-tools-seq-dt
+                   , asm-tools-pru
 
