@@ -1,0 +1,11 @@
+name: asm-tools-dsp
+version: 1.0.0
+cabal-version: >= 1.18
+build-type: Simple
+license: BSD3
+
+Library
+    default-language: Haskell98
+    build-depends:   base, containers, mtl, asm-tools
+    exposed-modules: Language.DSP.Interp
+                     Language.DSP.Test

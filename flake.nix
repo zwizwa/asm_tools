@@ -48,6 +48,7 @@
           #
           #  hlsCheck.enable = true;
           # };
+
         };
 
         # haskell-flake doesn't set the default package, but you can do it here.
@@ -58,6 +59,11 @@
         # is mostly library code anyway.  Top level can then contain
         # driver binary.
         packages.default = self'.packages.asm-tools-top;
+
+
+        # FIXME: I do not understand how to add a shellHook to the
+        # devShell output.  I'd like to set the prompt.
+
       };
     };
 }

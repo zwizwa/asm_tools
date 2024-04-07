@@ -3,5 +3,7 @@ packages:
   asm-tools-seq/
   asm-tools-seq-dt/
   asm-tools-pru/
+  asm-tools-dsp/
   asm-tools-top/
+
 

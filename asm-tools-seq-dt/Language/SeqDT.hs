@@ -5,6 +5,12 @@
 -- . Might be good to do something simpler first: RTL, and find a way
 --   to link library code to existing Seq implementation.
 
+-- The features that are most important:
+-- . A "close" operator for feedback through register, bus or memory
+-- . Debug probes
+-- . Quickcheck
+
+
 -- Older notes below.
 
 -----------------------------------------------------------------------
