@@ -5,5 +5,7 @@ packages:
   asm-tools-pru/
   asm-tools-dsp/
   asm-tools-top/
+  asm-tools-c/
+
 
 
