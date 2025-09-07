@@ -1,3 +1,4 @@
+-- SMC - State Machines in C
 -- WIP.
 
 -- Design Ideas:
@@ -60,9 +61,9 @@ class (MonadFix m, Expr r) => Ctrl m r | m -> r, r -> m where
   goto  :: r Label -> m ()      -- Jump to
 
 class Expr r => Mem m r | m -> r, r -> m where
-  var :: r t -> m (r (Var t))
-  set :: r (Var t) -> r t -> m ()
-  get :: r (Var t) -> m (r t)
+  var   :: r t -> m (r (Var t))
+  store :: r (Var t) -> r t -> m ()
+  ref   :: r (Var t) -> m (r t)
 
 test1 :: (Ctrl m r, Mem m r) => Int -> m ()
 test1 init = mdo
@@ -70,10 +71,10 @@ test1 init = mdo
   v <- var $ lit init
   
   f1 <- block $ do
-    v' <- get v
+    v' <- ref v
     let x = op2 Add v' v'
         y = op2 Mul x x
-    set v y
+    store v y
     goto f2
         
   f2 <- block $ do
@@ -95,7 +96,7 @@ newtype CM t = CM (WriterT [CCode] (State.State CState) t)
                        State.MonadState CState)
 
 instance Ctrl CM C where
-  label = undefined
+  block = undefined
   goto  = undefined
 
 instance Expr C where
