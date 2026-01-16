@@ -1,0 +1,13 @@
+name: asm-tools-neon
+version: 1.0.0
+cabal-version: >= 1.18
+build-type: Simple
+license: BSD3
+
+Library
+    default-language: Haskell2010
+    ghc-options: -fprint-potential-instances
+    build-depends:   base, containers, mtl
+    exposed-modules: 
+                     Language.Neon
+
